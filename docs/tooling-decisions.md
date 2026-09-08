@@ -28,7 +28,11 @@ What the current tree (`D:\Git\XexTool`) actually contains:
 | `mbedtls` | 449 | **no** | **drop** |
 | `XeCrypt` | 14 | linked | **submodule** |
 | `ldic` | 47 | linked, LZX codec | **replace with mspack** |
-| `tinyxml` | 9 | linked | keep, or replace |
+| `tinyxml` | 9 | linked | keep |
+
+Scaffolded at `D:\Git\XexTool-V2`: sources gathered into `src/`, XeCrypt wired
+as a submodule, tinyxml vendored, mbedtls removed. Build files and the ldic
+replacement remain.
 
 ### mbedtls is dead weight
 
@@ -45,15 +49,24 @@ Note the remote there is `github.com/cOzInABox/XeCrypt`, not
 `github.com/team-Resurgent/XeCrypt` as intended -- worth confirming which is the
 canonical one before wiring the submodule.
 
-### ldic to mspack
+### ldic replacement -- library not yet identified
 
-`ldic` is a full LZX codec with both `encoder/` and `decoder/` directories, used
-by `XexPatcher.cpp`.
+`ldic` is a full LZX codec with both `encoder/` and `decoder/` directories.
+XexTool only ever calls the decoder: `LdicCreateDecompression`,
+`LdicSetWindowData`, `LdicDecompress`, `LdicResetDecompression` and
+`LdicDestroyDecompression`, from `XexPacker.cpp` and `XexPatcher.cpp`. So the
+tool unpacks XEXs but never creates compressed ones.
 
-The important detail: **stock libmspack decompresses LZX but does not compress
-it**, so it cannot replace `ldic` on its own. `fhanau/mspack` adds LZX
-compression, which is exactly what XEX packing needs -- so that fork is the
-right target, not upstream libmspack.
+That splits the requirement:
+
+- preserving current behaviour needs only an LZX **decompressor**;
+- creating compressed XEXs, which RXDK-360 will need to turn a linked image
+  into a XEX, needs an LZX **compressor** -- the harder half to source.
+
+`github.com/fhanau/mspack` turned out to be a mass-spectrometry data
+compressor, not Stuart Caie's libmspack; the names collide. Its sources are
+`SHA1.cpp`, `tinyxml2.cpp`, `msprint.cpp` and it contains no LZX at all. The
+right library still needs to be chosen.
 
 ## Test artefacts
 
