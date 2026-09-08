@@ -131,8 +131,15 @@ PE_SCN_MEM_EXECUTE = 0x20000000
 PE_SCN_MEM_READ = 0x40000000
 PE_SCN_MEM_WRITE = 0x80000000
 
-SECTION_ALIGN = 0x10000          # XEX images use 64KB pages
 FILE_ALIGN = 0x1000
+
+
+def page_size_for(base):
+    """The 360 memory map pages the two title regions differently: the
+    0x80000000-0x8FFFFFFF range uses 64KB pages, 0x90000000+ uses 4KB. The XEX
+    page descriptors count pages in these units, so the packer must match the
+    load address or the loader reserves the wrong amount and overruns it."""
+    return 0x10000 if base < 0x90000000 else 0x1000
 
 
 def _pe_section_flags(s):
@@ -160,10 +167,11 @@ def build_pe_basefile(base, sections, entry):
     headers_end = e_lfanew + 4 + 20 + PE_SIZEOF_OPTIONAL_HEADER + nsec * 40
     size_of_headers = (headers_end + FILE_ALIGN - 1) & ~(FILE_ALIGN - 1)
 
+    page = page_size_for(base)
     image_end = base
     for s in sections:
         image_end = max(image_end, s.vaddr + s.memsize)
-    size_of_image = ((image_end - base) + SECTION_ALIGN - 1) & ~(SECTION_ALIGN - 1)
+    size_of_image = ((image_end - base) + page - 1) & ~(page - 1)
 
     code_rva = next((s.vaddr - base for s in sections if s.flags & SHF_EXECINSTR),
                     size_of_headers)
@@ -193,7 +201,7 @@ def build_pe_basefile(base, sections, entry):
                       entry - base, code_rva, 0)        # BaseOfCode, BaseOfData
     opt += struct.pack("<IIIHHHHHHIIIIHHIIIIII",
                        base,                            # ImageBase
-                       SECTION_ALIGN, FILE_ALIGN,
+                       page, FILE_ALIGN,               # SectionAlignment, FileAlignment
                        4, 0, 0, 0, 0, 0,                # os/image/subsystem versions
                        0,                               # Win32VersionValue
                        size_of_image, size_of_headers,
@@ -289,10 +297,10 @@ def pack(elf_path, out_path, base_override=None):
     load_base, image, entry, image_size = build_pe_basefile(load_base, sections, entry)
 
     # the basefile is the PE image; nothing is zero-trimmed for the first cut.
-    # XEX images are paged in 64KB units, so the security-info section table
-    # counts 64KB pages (image_size is already 64KB-aligned by the PE builder).
+    # the security-info section table counts pages in the load region's page
+    # size (64KB below 0x90000000, 4KB above), matching what the loader reserves.
     zero_size = 0
-    pages = image_size // 0x10000
+    pages = image_size // page_size_for(load_base)
 
     basefile_format = build_basefile_format(len(image), zero_size)
     # one section spanning the whole image, read/write data
