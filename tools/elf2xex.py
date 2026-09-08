@@ -161,9 +161,12 @@ def build_pe_basefile(base, sections, entry):
     size_of_code = sum(len(s.data) for s in sections if s.flags & SHF_EXECINSTR)
     size_of_data = sum(len(s.data) for s in sections if not (s.flags & SHF_EXECINSTR))
 
-    # --- DOS header (just the MZ magic and e_lfanew) ---
+    # --- DOS header ---
+    # xenia's is_valid_executable checks the first dword is 0x905A4D, i.e. the
+    # bytes "MZ\x90\x00" -- the standard DOS magic with e_cblp = 0x90, not a
+    # bare "MZ\0\0". Getting this wrong makes the loader reject a valid PE.
     dos = bytearray(e_lfanew)
-    dos[0:2] = b"MZ"
+    dos[0:4] = b"MZ\x90\x00"
     struct.pack_into("<I", dos, 0x3C, e_lfanew)
 
     # --- file header ---
