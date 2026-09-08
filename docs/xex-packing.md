@@ -65,3 +65,13 @@ subsystem 14), so it satisfies every check `ReadPEHeaders` makes.
 - wire kernel imports (the import manifest from `coff2elf.py`) into an
   IMPORT_LIBRARIES optional header, so title code can call the kernel
 - a real entry that calls a debug-print import, to close the boot-and-print loop
+
+## Production home
+
+`elf2xex.py` is the research prototype -- Python is fast to iterate while the
+format is being pinned down, and XexTool is verifying every output. Once the
+format is settled (imports wired, loads under xenia, boots on hardware), the
+natural home is **XexTool itself**: it already reads and writes XEX and carries
+the header/basefile machinery (`XexWriter`, `XexHeader`, `XexPacker`), so an
+ELF-input packing mode would reuse that C++ code rather than reimplement it.
+The Python stays as the reference/spec.
