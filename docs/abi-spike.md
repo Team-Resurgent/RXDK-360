@@ -96,6 +96,7 @@ same spike harness.
 
 - [x] ABI divergence characterised
 - [ ] LLVM `CallingConv::MSPPC` prototype
-- [ ] COFF -> ELF archive translator (5 reloc types: ADDR32, REL24, REFHI, REFLO, PAIR)
+- [~] COFF -> ELF archive translator (5 reloc types: ADDR32, REL24, REFHI, REFLO, PAIR)
+      parser + input survey done, see [coff-translation.md](coff-translation.md); ELF emitter next
 - [ ] VMX128 register set + encodings in the PPC backend
 - [ ] ELF -> XEX packer
