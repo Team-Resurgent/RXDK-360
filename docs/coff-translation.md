@@ -111,4 +111,31 @@ shipped libraries and one would mean a convention this hasn't seen.
       2730 indexed symbols in xapilib, each mapped to its defining member
 - [x] import manifest for the short-import members (585 xapilib imports of
       `xam.xex`, with ordinals -- feeds the XEX packer's import table)
-- [ ] link a translated object with lld and confirm the resolved code
+- [x] linked with lld (via zig's PPC lld) into a working PPC executable, every
+      relocation type confirmed applied correctly
+
+## Linking, and the halfword-offset fix
+
+lld (the one zig bundles, which has full PPC ELF support) reads the translated
+`.a`, pulls the right member for each symbol through the archive index, and
+applies the relocations. A caller referencing `RaiseException` links to a
+complete `ET_EXEC` PowerPC image once the two genuinely-external symbols are
+supplied -- `RtlRaiseException` (an `xboxkrnl.exe` import, resolved by the XEX
+loader) and `_blkmov` (a CRT helper).
+
+The link test caught a bug that readelf could not: PPC ELF's 16-bit
+relocations (`ADDR16_HA`/`ADDR16_LO`) put `r_offset` on the **immediate
+halfword** -- two bytes into the big-endian instruction -- whereas COFF
+REFHI/REFLO point at the instruction start. Emitting the COFF offset unchanged
+made lld write the value over the opcode. With `+2` on those two types, the
+linked code reads back exactly right:
+
+```
+lis  r9, 0x2       ; RaiseException@ha   (0x201E8 -> 0x0002)
+addi r9, r9, 0x1E8 ; RaiseException@lo   -> r9 = 0x201E8 = &RaiseException
+bl   _blkmov                             ; REL24, lands on 0x201CC
+bl   RtlRaiseException                    ; REL24, lands on 0x201B0
+```
+
+The 4-byte relocations (`ADDR32`, `REL24`) sit at the instruction start and
+were already right.
