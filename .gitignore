@@ -8,3 +8,4 @@ zig-out/
 .zig-cache/
 __pycache__/
 vendor/
+build/
