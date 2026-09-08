@@ -307,8 +307,12 @@ def pack(elf_path, out_path, base_override=None):
 
     basefile_format = build_basefile_format(len(image), zero_size)
     # one section spanning the whole image, read/write data
+    # At least one page descriptor must be marked CODE: xenia's per-title hash
+    # (user_module.cc) scans for the first and last CODE page, and if it finds
+    # none it computes an out-of-bounds range (page index UINT32_MAX) and reads
+    # wild memory. Mark the image CODE so that scan succeeds.
     security = build_security_info(image_size, load_base,
-                                   [(pages, SECTIONINFO_DATA)])
+                                   [(pages, SECTIONINFO_CODE)])
 
     # optional-header directory: inline-value keys (low byte 0x00/0x01) carry
     # their value directly; others carry a file offset to their data.
