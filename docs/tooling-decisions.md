@@ -49,24 +49,26 @@ Note the remote there is `github.com/cOzInABox/XeCrypt`, not
 `github.com/team-Resurgent/XeCrypt` as intended -- worth confirming which is the
 canonical one before wiring the submodule.
 
-### ldic replacement -- library not yet identified
+### ldic: XexTool uses both halves
 
-`ldic` is a full LZX codec with both `encoder/` and `decoder/` directories.
-XexTool only ever calls the decoder: `LdicCreateDecompression`,
-`LdicSetWindowData`, `LdicDecompress`, `LdicResetDecompression` and
-`LdicDestroyDecompression`, from `XexPacker.cpp` and `XexPatcher.cpp`. So the
-tool unpacks XEXs but never creates compressed ones.
+`ldic` is a 47-file LZX codec with an encoder and a decoder, and XexTool calls
+both:
 
-That splits the requirement:
+- decompression, from `XexPacker::unpackCompressed` / `unpackDeltaCompressed`
+  and `XexPatcher::XexpDeltaDecompress`;
+- compression, from `XexPacker::packCompressed`, which drives
+  `LdicCreateCompression`, `LdicCompress` per 0x8000 block,
+  `LdicFlushCompressorOutput` and `LdicDestroyCompression`.
 
-- preserving current behaviour needs only an LZX **decompressor**;
-- creating compressed XEXs, which RXDK-360 will need to turn a linked image
-  into a XEX, needs an LZX **compressor** -- the harder half to source.
+The libmspack subset at `D:\Git\libXexUnpack\mspack` is `lzxd.c`:
+decompression only. It covers the decode side completely -- including
+`lzxd_set_reference_data`, the equivalent of `LdicSetWindowData` that XEXP delta
+patching needs -- but has no compressor, so it cannot replace ldic outright
+without losing the ability to create compressed XEXs.
 
-`github.com/fhanau/mspack` turned out to be a mass-spectrometry data
-compressor, not Stuart Caie's libmspack; the names collide. Its sources are
-`SHA1.cpp`, `tinyxml2.cpp`, `msprint.cpp` and it contains no LZX at all. The
-right library still needs to be chosen.
+**This also settles a question for RXDK-360.** Turning a linked image into a XEX
+needs an LZX compressor, and I had recorded that as unsourced. It is not:
+`ldic`'s encoder is a working one, already in hand.
 
 ## Test artefacts
 
