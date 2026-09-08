@@ -25,6 +25,9 @@ KEY_ENTRY_POINT = 0x00010100
 KEY_IMAGE_BASE_ADDRESS = 0x00010201
 KEY_IMPORT_LIBRARIES = 0x000103FF
 KEY_ORIGINAL_BASE_ADDRESS = 0x00010001
+KEY_STACK_SIZE = 0x00020200
+
+DEFAULT_STACK_SIZE = 0x40000        # what a real XDK title carries
 
 # module / image flags
 MODULEFLAG_TITLE_MODULE = 0x00000001
@@ -313,6 +316,9 @@ def pack(elf_path, out_path, base_override=None):
         (KEY_ENTRY_POINT, entry),
         (KEY_IMAGE_BASE_ADDRESS, load_base),
         (KEY_ORIGINAL_BASE_ADDRESS, load_base),
+        # a real title carries a stack size; without it the loader sets up the
+        # main thread with a zero stack
+        (KEY_STACK_SIZE, DEFAULT_STACK_SIZE),
     ]
     offset_entries = [KEY_BASEFILE_FORMAT]            # data appended after headers
 
