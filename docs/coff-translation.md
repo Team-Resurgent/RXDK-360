@@ -64,6 +64,14 @@ produced silently wrong relocations if assumed:
    adjusted) rather than plain `@h`. The translator reads the PAIR to compute
    the addend, then emits a single ELF relocation.
 
+   Measured: across all of `xapilib.lib` every REFHI/REFLO has a **zero**
+   in-place immediate and a **zero** PAIR field, so the target is carried
+   entirely by the symbol (section number + value) and the addend is 0. This
+   is the plain `lis rX, sym@ha; addi rX, rX, sym@lo` pattern. The emitter
+   still combines the site immediate with the PAIR half generally and warns if
+   it ever sees a non-zero addend, so a differently-built library would surface
+   loudly rather than translate wrong.
+
 ## COFF field endianness
 
 Every scalar in the COFF file/section/symbol/relocation headers is
@@ -71,12 +79,32 @@ Every scalar in the COFF file/section/symbol/relocation headers is
 section *contents* (code and data) are big-endian. `coff2elf.py` unpacks all
 headers with `<` and passes section bytes through untouched.
 
+## Relocation addend reconstruction
+
+COFF relocations are REL-form (the addend lives in the section bytes at the
+site); PPC ELF is RELA (explicit `r_addend`). Each type recovers its addend
+differently, all verified on `raiseexception.obj`, which exercises the whole
+set:
+
+| type | ELF | addend |
+|---|---|---|
+| `ADDR32` | `R_PPC_ADDR32` | the 32-bit big-endian word at the site (absolute, additive) |
+| `REL24` | `R_PPC_REL24` | `LI + P`. The branch's 24-bit field holds `(addend - P)` as a compile-time placeholder -- with the section based at 0, the only PC-relative value it can encode -- and ELF computes `S + A - P`, so `A = LI + P`. Comes out 0 for a plain call. |
+| `REFHI` (+PAIR) | `R_PPC_ADDR16_HA` | combined site-imm/PAIR halves; 0 in practice |
+| `REFLO` (+PAIR) | `R_PPC_ADDR16_LO` | combined halves; 0 in practice |
+
+The section bytes are copied verbatim -- the emitted `.text` is byte-identical
+to the COFF `.text` -- and the linker overwrites each relocated field from
+`S + A`. A non-zero addend on any type is warned about, since none occur in the
+shipped libraries and one would mean a convention this hasn't seen.
+
 ## Status
 
 - [x] archive + COFF parser, relocation numbering verified on real libs
 - [x] input structure surveyed and documented
-- [ ] ELF32 BE emitter: one code object -> `.o` that lld accepts
-- [ ] section + symbol + relocation mapping
-- [ ] REFHI/REFLO/PAIR -> `@ha`/`@lo` addend reconstruction
-- [ ] repack archive as System V `.a`
+- [x] ELF32 BE emitter: one code object -> well-formed `.o` (readelf clean)
+- [x] section + symbol + relocation mapping (`.text`/`.rodata`/`.data`/`.bss`/`.pdata`)
+- [x] REFHI/REFLO/PAIR -> `@ha`/`@lo`, REL24/ADDR32 addend reconstruction
+- [ ] link a translated object with lld and confirm the resolved code
+- [ ] repack a whole archive as System V `.a`
 - [ ] import manifest for the short-import members

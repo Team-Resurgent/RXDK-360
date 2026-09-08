@@ -190,6 +190,303 @@ class CoffObject:
         return out
 
 
+# ---- PPC32 big-endian ELF emission ------------------------------------------
+
+# ELF constants
+ET_REL = 1
+EM_PPC = 20
+SHT_PROGBITS, SHT_SYMTAB, SHT_STRTAB, SHT_RELA, SHT_NOBITS = 1, 2, 3, 4, 8
+SHF_WRITE, SHF_ALLOC, SHF_EXECINSTR = 0x1, 0x2, 0x4
+STB_LOCAL, STB_GLOBAL = 0, 1
+STT_NOTYPE, STT_OBJECT, STT_FUNC, STT_SECTION = 0, 1, 2, 3
+SHN_UNDEF, SHN_ABS = 0, 0xFFF1
+
+# PPC ELF relocation types
+R_PPC_ADDR32, R_PPC_ADDR16_LO, R_PPC_ADDR16_HI, R_PPC_ADDR16_HA, R_PPC_REL24 = \
+    1, 4, 5, 6, 10
+
+# COFF section characteristics
+IMAGE_SCN_CNT_CODE = 0x00000020
+IMAGE_SCN_CNT_UNINITIALIZED_DATA = 0x00000080
+IMAGE_SCN_MEM_WRITE = 0x80000000
+IMAGE_SCN_MEM_EXECUTE = 0x20000000
+
+# COFF storage classes
+IMAGE_SYM_CLASS_EXTERNAL = 2
+IMAGE_SYM_CLASS_STATIC = 3
+IMAGE_SYM_CLASS_LABEL = 6
+
+# relocation types handled or deliberately dropped
+_DROP_RELOCS = {0x0B, 0x0C}          # SECREL, SECTION -- debug only
+_IMPORT_RELOCS = {0x0A}              # ADDR32NB -- import descriptors, packer's job
+
+
+def _keep_section(name):
+    """Sections carried into the ELF, and the name they take there."""
+    if name == ".rdata" or name.startswith(".rdata$"):
+        return ".rodata"
+    base = name.split("$")[0]
+    if base in (".text", ".data", ".bss", ".pdata", ".xdata"):
+        return base
+    return None                       # debug, drectve, XBLD, idata, CRT -> dropped
+
+
+class StrTab:
+    """An ELF string table: deduplicated, first byte is the empty string."""
+
+    def __init__(self):
+        self.buf = bytearray(b"\0")
+        self.offsets = {"": 0}
+
+    def add(self, s):
+        if s in self.offsets:
+            return self.offsets[s]
+        off = len(self.buf)
+        self.offsets[s] = off
+        self.buf += s.encode("utf-8") + b"\0"
+        return off
+
+
+def coff_to_elf(obj, warn=print):
+    """Translate one parsed CoffObject to PPC32 big-endian ELF32 bytes.
+
+    Each kept COFF section becomes its own ELF section in the same order, so a
+    symbol's 1-based section number and a relocation's section-relative offset
+    both carry across unchanged.
+    """
+    # 1. decide which COFF sections survive, in order, and assign ELF indices.
+    #    ELF layout: [0]=null, then kept sections, then .symtab .strtab .shstrtab,
+    #    then one .rela.* per kept section that has real relocations.
+    kept = []                          # (coff_index, elf_name, Section)
+    coff_to_elfshndx = {}              # 1-based COFF secnum -> ELF section index
+    for ci, s in enumerate(obj.sections, start=1):
+        elf_name = _keep_section(s.name)
+        if elf_name is None:
+            continue
+        coff_to_elfshndx[ci] = 1 + len(kept)
+        kept.append((ci, elf_name, s))
+
+    # 2. symbols. Emit locals first (ELF requires it): a STT_SECTION symbol per
+    #    kept section, then local COFF symbols, then globals. Build a map from
+    #    COFF symbol index to ELF symbol index for the relocations.
+    strtab = StrTab()
+    elf_syms = [(0, 0, 0, 0, 0, SHN_UNDEF)]   # index 0 is the null symbol
+    sym_name_off = [0]
+
+    section_sym_of = {}                # ELF section index -> its STT_SECTION sym
+    for elf_idx, (ci, name, s) in enumerate(kept, start=1):
+        section_sym_of[elf_idx] = len(elf_syms)
+        elf_syms.append((0, 0, 0, (STB_LOCAL << 4) | STT_SECTION, 0, elf_idx))
+        sym_name_off.append(0)
+
+    coff_to_elfsym = {}
+    # locals (STATIC / LABEL) first
+    for pass_globals in (False, True):
+        for csi, sym in _enumerate_coff_syms(obj):
+            is_global = sym.cls == IMAGE_SYM_CLASS_EXTERNAL
+            if is_global != pass_globals:
+                continue
+            # a STATIC symbol whose name is a kept section is that section's
+            # definition -- fold it onto the ELF section symbol
+            if (sym.cls == IMAGE_SYM_CLASS_STATIC and sym.secnum in coff_to_elfshndx
+                    and _keep_section(sym.name) is not None
+                    and sym.name.split("$")[0] == obj.sections[sym.secnum - 1].name.split("$")[0]):
+                coff_to_elfsym[csi] = section_sym_of[coff_to_elfshndx[sym.secnum]]
+                continue
+            # a section symbol for a dropped section (.debug$S, .drectve, ...):
+            # nothing kept references it, so leave it out rather than emit a
+            # bare undefined name
+            if (sym.cls == IMAGE_SYM_CLASS_STATIC and sym.name.startswith(".")
+                    and sym.secnum not in coff_to_elfshndx):
+                continue
+
+            bind = STB_GLOBAL if is_global else STB_LOCAL
+            if sym.secnum == 0:                     # undefined external
+                shndx, value, styp = SHN_UNDEF, 0, STT_NOTYPE
+            elif sym.secnum == 0xFFFF or sym.secnum == 0xFFFFFFFF:
+                shndx, value, styp = SHN_ABS, sym.value, STT_NOTYPE
+            elif sym.secnum in coff_to_elfshndx:
+                shndx = coff_to_elfshndx[sym.secnum]
+                value = sym.value
+                styp = STT_FUNC if (obj.sections[sym.secnum - 1].flags & IMAGE_SCN_MEM_EXECUTE) else STT_OBJECT
+            else:
+                # symbol in a dropped section (debug etc.) -- keep as a name only
+                shndx, value, styp = SHN_UNDEF, 0, STT_NOTYPE
+            coff_to_elfsym[csi] = len(elf_syms)
+            elf_syms.append((strtab.add(sym.name), value, 0, (bind << 4) | styp, 0, shndx))
+            sym_name_off.append(0)
+
+    first_global = next((i for i, s in enumerate(elf_syms)
+                         if (s[3] >> 4) == STB_GLOBAL), len(elf_syms))
+
+    # 3. relocations per kept section
+    rela = {}                          # elf section index -> list of (off, sym, type, addend)
+    for elf_idx, (ci, name, s) in enumerate(kept, start=1):
+        entries = []
+        i = 0
+        while i < len(s.relocs):
+            va, symidx, typ = s.relocs[i]
+            tt = typ & 0xFF
+            if tt in _DROP_RELOCS:
+                i += 1
+                continue
+            if tt in _IMPORT_RELOCS:
+                i += 1               # ADDR32NB -> handled by the import manifest
+                continue
+            elfsym = coff_to_elfsym.get(symidx)
+            if elfsym is None:
+                warn(f"  reloc at 0x{va:X} targets unmapped symbol {symidx}")
+                i += 1
+                continue
+            site = s.data[va:va + 4]
+            inplace = struct.unpack(">I", site)[0] if len(site) == 4 else 0
+            if tt == 0x02:                                  # ADDR32
+                entries.append((va, elfsym, R_PPC_ADDR32, inplace))
+            elif tt == 0x06:                                # REL24
+                # The branch's 24-bit LI field holds (intended addend - P) as a
+                # compile-time placeholder -- with the section based at 0, the
+                # only PC-relative value it can encode. ELF RELA computes
+                # S + A - P, so recover A = LI + P (P is this reloc's offset).
+                li = inplace & 0x03FFFFFC
+                if li & 0x02000000:
+                    li -= 0x04000000
+                addend = li + va
+                if addend != 0:
+                    warn(f"  non-zero REL24 addend {addend} at 0x{va:X}")
+                entries.append((va, elfsym, R_PPC_REL24, addend))
+            elif tt in (0x10, 0x11):                         # REFHI / REFLO (+ PAIR)
+                pair_low = 0
+                if i + 1 < len(s.relocs) and (s.relocs[i + 1][2] & 0xFF) == 0x12:
+                    pair_low = s.relocs[i + 1][1]
+                    i += 1
+                imm = inplace & 0xFFFF
+                addend = ((imm << 16) | (pair_low & 0xFFFF)) if tt == 0x10 else \
+                         ((pair_low << 16) | imm)
+                if addend & 0x80000000:
+                    addend -= 0x100000000
+                if addend != 0:
+                    warn(f"  non-zero REFHI/REFLO addend 0x{addend:X} at 0x{va:X}"
+                         f" -- check the split convention")
+                rtype = R_PPC_ADDR16_HA if tt == 0x10 else R_PPC_ADDR16_LO
+                entries.append((va, elfsym, rtype, addend))
+            else:
+                warn(f"  unhandled relocation type 0x{tt:X} at 0x{va:X}")
+            i += 1
+        if entries:
+            rela[elf_idx] = entries
+
+    return _write_elf(kept, elf_syms, strtab, first_global, rela, coff_to_elfshndx)
+
+
+def _enumerate_coff_syms(obj):
+    """Yield (index, Symbol) skipping the aux records that follow each symbol."""
+    i = 0
+    for sym in obj.symbols:
+        yield i, sym
+        i += 1 + sym.naux
+
+
+class ElfSec:
+    __slots__ = ("name", "typ", "flags", "data", "size", "link", "info",
+                 "align", "entsize", "offset", "_nameoff")
+
+    def __init__(self, name, typ, flags=0, data=b"", size=None, link=0,
+                 info=0, align=1, entsize=0):
+        self.name = name
+        self.typ = typ
+        self.flags = flags
+        self.data = data                        # bytes for everything but NOBITS
+        self.size = len(data) if size is None else size
+        self.link = link
+        self.info = info
+        self.align = align
+        self.entsize = entsize
+        self.offset = 0
+
+
+def _write_elf(kept, elf_syms, strtab, first_global, rela, coff_to_elfshndx):
+    # section order: [0] null, kept sections, .symtab, .strtab, then one
+    # .rela.* per kept section that has relocations, then .shstrtab last.
+    secs = [ElfSec("", 0)]                       # null section
+
+    kept_elf_index = {}                          # kept elf_idx (1-based) -> secs[] index
+    for elf_idx, (ci, name, s) in enumerate(kept, start=1):
+        flags = SHF_ALLOC
+        if s.flags & IMAGE_SCN_MEM_WRITE:
+            flags |= SHF_WRITE
+        if s.flags & IMAGE_SCN_MEM_EXECUTE:
+            flags |= SHF_EXECINSTR
+        nalign = (s.flags >> 20) & 0xF           # COFF align is (n+1) in this nibble
+        align = (1 << (nalign - 1)) if nalign else 4
+        kept_elf_index[elf_idx] = len(secs)
+        if s.flags & IMAGE_SCN_CNT_UNINITIALIZED_DATA:
+            secs.append(ElfSec(name, SHT_NOBITS, flags, b"",
+                               size=s.vsize or s.rawsize, align=align))
+        else:
+            secs.append(ElfSec(name, SHT_PROGBITS, flags, s.data, align=align))
+
+    sym_bytes = b"".join(struct.pack(">IIIBBH", *s) for s in elf_syms)
+    symtab_idx = len(secs)
+    secs.append(ElfSec(".symtab", SHT_SYMTAB, data=sym_bytes, link=symtab_idx + 1,
+                       info=first_global, align=4, entsize=16))
+    secs.append(ElfSec(".strtab", SHT_STRTAB, data=bytes(strtab.buf), align=1))
+
+    for elf_idx, entries in rela.items():
+        target = kept_elf_index[elf_idx]
+        blob = b"".join(struct.pack(">IIi", off, (sym << 8) | rtype, add)
+                        for off, sym, rtype, add in entries)
+        secs.append(ElfSec(".rela" + secs[target].name, SHT_RELA, data=blob,
+                           link=symtab_idx, info=target, align=4, entsize=12))
+
+    shstr = StrTab()
+    for sec in secs:
+        sec._nameoff = shstr.add(sec.name)
+    shstrtab_idx = len(secs)
+    secs.append(ElfSec(".shstrtab", SHT_STRTAB, align=1))
+    secs[-1]._nameoff = shstr.add(".shstrtab")
+    secs[-1].data = bytes(shstr.buf)
+    secs[-1].size = len(secs[-1].data)
+
+    # lay out: ELF header (52), then each non-empty section's bytes (aligned),
+    # then the section header table.
+    offset = 52
+    for sec in secs:
+        if sec.typ in (0, SHT_NOBITS):
+            sec.offset = 0
+            continue
+        if sec.align > 1 and offset % sec.align:
+            offset += sec.align - (offset % sec.align)
+        sec.offset = offset
+        offset += len(sec.data)
+
+    if offset % 4:
+        offset += 4 - (offset % 4)
+    shoff = offset
+
+    out = bytearray()
+    e_ident = b"\x7fELF" + bytes([1, 2, 1, 0]) + b"\0" * 8   # class32, BE, ver1
+    out += e_ident
+    out += struct.pack(">HHIIIIIHHHHHH",
+                       ET_REL, EM_PPC, 1, 0, 0, shoff, 0,
+                       52, 0, 0, 40, len(secs), shstrtab_idx)
+    out += b"\0" * (52 - len(out))
+
+    for sec in secs:
+        if sec.typ in (0, SHT_NOBITS) or not sec.data:
+            continue
+        if len(out) < sec.offset:
+            out += b"\0" * (sec.offset - len(out))
+        out += sec.data
+    if len(out) < shoff:
+        out += b"\0" * (shoff - len(out))
+
+    for sec in secs:
+        out += struct.pack(">IIIIIIIIII",
+                           sec._nameoff, sec.typ, sec.flags, 0, sec.offset,
+                           sec.size, sec.link, sec.info, sec.align, sec.entsize)
+    return bytes(out)
+
+
 # ---- reporting --------------------------------------------------------------
 
 def first_coff(path):
@@ -258,6 +555,29 @@ def cmd_survey(paths):
         print(f"  {k:<16} {v}")
 
 
+def find_member(path, needle):
+    """Return (name, CoffObject) for the first PPC member whose name contains needle."""
+    blob = open(path, "rb").read()
+    for member, longnames in read_archive(blob):
+        if member.name in ("/", "//"):
+            continue
+        if member.data[:2] != struct.pack("<H", IMAGE_FILE_MACHINE_POWERPCBE):
+            continue
+        name = member_name(member.name, longnames)
+        if needle in name:
+            return name, CoffObject(member.data)
+    sys.exit(f"no PowerPC member matching {needle!r}")
+
+
+def cmd_emit(path, member, out):
+    name, obj = find_member(path, member)
+    print(f"translating {name}")
+    elf = coff_to_elf(obj)
+    with open(out, "wb") as f:
+        f.write(elf)
+    print(f"wrote {out} ({len(elf)} bytes)")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -266,12 +586,18 @@ def main():
     d.add_argument("lib")
     s = sub.add_parser("survey")
     s.add_argument("libs", nargs="+")
+    e = sub.add_parser("emit", help="translate one object to a PPC32 ELF")
+    e.add_argument("lib")
+    e.add_argument("member", help="substring of the member (object) name")
+    e.add_argument("-o", "--out", default="out.o")
     args = ap.parse_args()
 
     if args.cmd == "dump":
         cmd_dump(args.lib)
     elif args.cmd == "survey":
         cmd_survey(args.libs)
+    elif args.cmd == "emit":
+        cmd_emit(args.lib, args.member, args.out)
 
 
 if __name__ == "__main__":
