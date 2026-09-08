@@ -105,6 +105,10 @@ shipped libraries and one would mean a convention this hasn't seen.
 - [x] ELF32 BE emitter: one code object -> well-formed `.o` (readelf clean)
 - [x] section + symbol + relocation mapping (`.text`/`.rodata`/`.data`/`.bss`/`.pdata`)
 - [x] REFHI/REFLO/PAIR -> `@ha`/`@lo`, REL24/ADDR32 addend reconstruction
+- [x] whole archive translated: 480/480 code objects across xapilib/d3d9/xgraphics,
+      zero failures, zero warnings
+- [x] repack as System V `.a` with a GNU symbol index -- binutils `ar`/`nm` read it,
+      2730 indexed symbols in xapilib, each mapped to its defining member
+- [x] import manifest for the short-import members (585 xapilib imports of
+      `xam.xex`, with ordinals -- feeds the XEX packer's import table)
 - [ ] link a translated object with lld and confirm the resolved code
-- [ ] repack a whole archive as System V `.a`
-- [ ] import manifest for the short-import members
