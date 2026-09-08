@@ -9,3 +9,9 @@ zig-out/
 __pycache__/
 vendor/
 build/
+t1.*
+t_*.s
+probe_*.s
+probe_*.ll
+*.obj
+build-log*.txt
