@@ -74,28 +74,54 @@ fix moved the failure later, and each was a real packer correctness bug:
    but 0x92000000 pages in xenia's 4KB-page heap, so the reservation was 8x too
    small and the basefile copy overran it. Fixed by `page_size_for(base)`.
 
-After those, xenia parses every header (verified field-for-field against its
-`xex2_header` / `xex2_security_info` / opt-header structs), allocates the image
-correctly, and copies the basefile -- then still access-violates at a fixed
-offset during load setup, the same offset at either base. It is a deterministic
-deref triggered by the image content, but the shipped canary build has no PDB,
-so the exact site can't be pinned from here.
+After those, xenia parsed every header (verified field-for-field against its
+`xex2_header` / `xex2_security_info` / opt-header structs), allocated the image,
+and copied the basefile -- then access-violated at a fixed offset during load.
 
-The likely cause is that the test image is not a realistic title: a bare
-`for(;;){}` with **no imports, no execution-info/TLS/stack-size headers, and
-code built for the wrong ABI** (zig's PPC EABI, not the MS convention). Real
-titles carry all of those, and xenia's later setup may assume some. Pinning it
-needs either a xenia debug build with symbols, or a realistic image.
+5. **the CODE page descriptor.** Building xenia Release with symbols and
+   symbolising the fault (`xenia_canary.exe+273D6A` -> `XXH3_update` <-
+   `user_module.cc:1160`) named it exactly. xenia computes a per-title hash
+   over the code section by scanning the page descriptors for the first and
+   last page whose `info` is `XEX_SECTION_CODE`. Our packer marked the whole
+   image `DATA`, so the scan found no CODE page, returned `UINT32_MAX` for both
+   ends, and `start = base + UINT32_MAX * page_size` fed a wild range into the
+   hash, which read unmapped memory. Marking the descriptor CODE fixes it.
+
+**Result: our XEX loads and executes.** With the CODE fix, xenia loads the
+image without crashing and runs the guest -- confirmed by the emulator spinning
+at ~116% CPU on the test's `for(;;){}` entry (a guest thread executing the
+JITted PPC loop). The whole pipeline is proven end to end with our own tools:
+COFF -> ELF translation, lld link, ELF -> XEX pack, and xenia loads and runs it.
+
+## How to build xenia with symbols (for future crash work)
+
+The shipped canary build has no PDB. Build one from `D:\Git\xenia-canary`:
+
+```
+cmake --build build/vs-x64 --config Release --target xenia-app --parallel
+```
+
+Release has symbols and no ASan (the Checked config enables ASan, which aborts
+on a pre-existing font-init overflow before the title loads). Without a Vulkan
+SDK the SPIR-V shader steps fail; the committed bytecode under
+`src/xenia/gpu/shaders/bytecode/vulkan_spirv` is already present, so a small
+guard in `tools/build/compile_shader_spirv.py` (skip when glslang is missing and
+the output exists) lets it link. To read a crash address without dismissing the
+modal dialog, have `HostExceptionReport::DisplayExceptionMessage` also write
+`Report_Scratchbuffer` to a file. Symbolise with:
+
+```
+llvm-symbolizer --obj=xenia_canary.exe <ImageBase + RVA>   # ImageBase 0x140000000
+```
 
 ## Next
 
-- either build xenia from the matching source with symbols to locate the deref,
-  or move to a realistic image and see the crash disappear
 - wire kernel imports (the import manifest from `coff2elf.py`) into an
-  IMPORT_LIBRARIES optional header, plus execution-info / TLS / stack-size
-  headers a real title has
+  IMPORT_LIBRARIES optional header so title code can call `xboxkrnl`
 - a real entry that calls a debug-print import, to close the boot-and-print loop
   (with `kernel_debug_monitor = true`)
+- emit per-section page descriptors (CODE / DATA / READONLY) instead of one CODE
+  span, so writable data is mapped read-write for real titles
 
 ## Production home
 
