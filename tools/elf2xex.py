@@ -84,13 +84,22 @@ def read_elf_sections(blob):
         end = blob.index(b"\0", strtab_off + off)
         return blob[strtab_off + off:end].decode("utf-8", "replace")
 
+    # Metadata sections that are SHF_ALLOC in the ELF but not part of the
+    # runtime image we want in the XEX. lld places .eh_frame right after the
+    # ELF headers at tiny RVAs that collide with the PE headers, so they must
+    # not be carried across. (No unwinder on a freestanding target needs them.)
+    SKIP_PREFIXES = (".eh_frame", ".comment", ".note", ".ARM.")
+
     out = []
     for i in range(e_shnum):
         nm, typ, flags, addr, off, size, *_ = shdr(i)
         if not (flags & SHF_ALLOC) or size == 0:
             continue
+        secname = name(nm)
+        if any(secname.startswith(p) for p in SKIP_PREFIXES):
+            continue
         s = ElfSection()
-        s.name = name(nm)
+        s.name = secname
         s.vaddr = addr
         s.typ = typ
         s.flags = flags
@@ -194,6 +203,15 @@ def build_pe_basefile(base, sections, entry):
                        0, 16)                           # LoaderFlags, NumberOfRvaAndSizes
     opt += b"\0" * (16 * 8)                             # data directories
     assert len(opt) == PE_SIZEOF_OPTIONAL_HEADER, len(opt)
+
+    # a kept section that starts inside the PE header region cannot be
+    # represented -- the ELF must be linked to leave headroom below the first
+    # section. Surface it rather than emit an overlapping, unloadable image.
+    for s in sections:
+        if (s.vaddr - base) < size_of_headers:
+            sys.exit(f"section {s.name} at RVA 0x{s.vaddr - base:X} overlaps the "
+                     f"PE headers (0x{size_of_headers:X}); link with headroom below "
+                     f"the first section")
 
     # --- section table ---
     sec_hdrs = b""
@@ -307,7 +325,7 @@ def pack(elf_path, out_path, base_override=None):
     directory += struct.pack(">II", KEY_BASEFILE_FORMAT, fmt_off)
 
     image_header = struct.pack(">4sIiiiI", b"XEX2",
-                               MODULEFLAG_TITLE_MODULE | MODULEFLAG_USER_MODE,
+                               MODULEFLAG_TITLE_MODULE,
                                basefile_off,          # sizeOfHeaders
                                0,                     # sizeOfDiscardableHeaders (loader checks 0)
                                sec_off,               # securityInfoOffset
