@@ -58,13 +58,44 @@ Sections
 `XexTool -b` extracts a basefile that is a valid PE (MZ / PE / machine 0x01F2 /
 subsystem 14), so it satisfies every check `ReadPEHeaders` makes.
 
+## Loading under xenia: how far it gets
+
+Tested against the user's canary build (`canary_experimental@99b3ccad2`), which
+loads and runs a real XDK sample fine, so xenia itself is a good oracle. Each
+fix moved the failure later, and each was a real packer correctness bug:
+
+1. **rejected outright** -- basefile was a flat image, not a PE. Fixed by
+   synthesising the little-endian PPC PE (above).
+2. **"load failed with code 3"** -- `is_valid_executable` wants the first dword
+   to be `0x905A4D`; the DOS header must be `MZ\x90\x00`, not `MZ\0\0`.
+3. **"conflicting address range"** at 0x82000000 -- that region conflicted in
+   this xenia; the real sample loads at 0x92000000, so we link there.
+4. **memcpy overrun in the loader** -- the page descriptors counted 64KB pages
+   but 0x92000000 pages in xenia's 4KB-page heap, so the reservation was 8x too
+   small and the basefile copy overran it. Fixed by `page_size_for(base)`.
+
+After those, xenia parses every header (verified field-for-field against its
+`xex2_header` / `xex2_security_info` / opt-header structs), allocates the image
+correctly, and copies the basefile -- then still access-violates at a fixed
+offset during load setup, the same offset at either base. It is a deterministic
+deref triggered by the image content, but the shipped canary build has no PDB,
+so the exact site can't be pinned from here.
+
+The likely cause is that the test image is not a realistic title: a bare
+`for(;;){}` with **no imports, no execution-info/TLS/stack-size headers, and
+code built for the wrong ABI** (zig's PPC EABI, not the MS convention). Real
+titles carry all of those, and xenia's later setup may assume some. Pinning it
+needs either a xenia debug build with symbols, or a realistic image.
+
 ## Next
 
-- load it under xenia and read the module-load path (with
-  `kernel_debug_monitor = true`, the load should now emit debug output)
+- either build xenia from the matching source with symbols to locate the deref,
+  or move to a realistic image and see the crash disappear
 - wire kernel imports (the import manifest from `coff2elf.py`) into an
-  IMPORT_LIBRARIES optional header, so title code can call the kernel
+  IMPORT_LIBRARIES optional header, plus execution-info / TLS / stack-size
+  headers a real title has
 - a real entry that calls a debug-print import, to close the boot-and-print loop
+  (with `kernel_debug_monitor = true`)
 
 ## Production home
 
