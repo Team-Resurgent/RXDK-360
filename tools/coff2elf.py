@@ -368,7 +368,10 @@ def coff_to_elf(obj, warn=print):
                     warn(f"  non-zero REFHI/REFLO addend 0x{addend:X} at 0x{va:X}"
                          f" -- check the split convention")
                 rtype = R_PPC_ADDR16_HA if tt == 0x10 else R_PPC_ADDR16_LO
-                entries.append((va, elfsym, rtype, addend))
+                # PPC ELF's 16-bit relocations modify the immediate halfword, so
+                # r_offset points two bytes into the big-endian instruction --
+                # where COFF REFHI/REFLO point at the instruction start.
+                entries.append((va + 2, elfsym, rtype, addend))
             else:
                 warn(f"  unhandled relocation type 0x{tt:X} at 0x{va:X}")
             i += 1
