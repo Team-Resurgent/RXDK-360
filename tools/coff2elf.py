@@ -386,6 +386,94 @@ def _enumerate_coff_syms(obj):
         i += 1 + sym.naux
 
 
+def defined_globals(obj):
+    """Names of the global symbols this object defines (for the archive index)."""
+    kept = {ci for ci, s in enumerate(obj.sections, start=1)
+            if _keep_section(s.name) is not None}
+    out = []
+    for _, sym in _enumerate_coff_syms(obj):
+        if sym.cls == IMAGE_SYM_CLASS_EXTERNAL and sym.secnum in kept:
+            out.append(sym.name)
+    return out
+
+
+# ---- System V archive (.a) --------------------------------------------------
+
+def _ar_header(name, size):
+    return ("%-16s%-12d%-6d%-6d%-8s%-10d`\n" %
+            (name, 0, 0, 0, "0", size)).encode("ascii")
+
+
+def write_archive(members, path):
+    """Write a System V `.a` with a GNU symbol index and longnames member.
+
+    `members` is a list of (name, elf_bytes, [defined_global_symbols]). The
+    symbol index (member "/") lets lld pull the right object for each symbol;
+    long member names go in the "//" member.
+    """
+    # long member names -> "//" table; short names stored inline as "name/"
+    longnames = bytearray()
+    stored_names = []
+    for name, _, _ in members:
+        short = name + "/"
+        if len(short) <= 16:
+            stored_names.append(short)
+        else:
+            stored_names.append("/%d" % len(longnames))
+            longnames += name.encode("ascii") + b"/\n"
+
+    # symbol index: 4-byte BE count, count*4-byte BE member offsets, then names.
+    symbols = []                        # (symbol_name, member_index)
+    for mi, (_, _, defs) in enumerate(members):
+        for sym in defs:
+            symbols.append((sym, mi))
+    index_names = b"".join(s.encode("ascii") + b"\0" for s, _ in symbols)
+    index_size = 4 + 4 * len(symbols) + len(index_names)
+
+    magic = len(ARCHIVE_MAGIC)
+    # offsets are to each member's header; compute after the two special members
+    def padded(n):
+        return n + (n & 1)
+
+    off = magic
+    off += 60 + padded(index_size)                       # "/" symbol table member
+    longnames_size = len(longnames)
+    if longnames_size:
+        off += 60 + padded(longnames_size)               # "//" longnames member
+
+    member_offsets = []
+    cur = off
+    for (name, data, _), stored in zip(members, stored_names):
+        member_offsets.append(cur)
+        cur += 60 + padded(len(data))
+
+    out = bytearray(ARCHIVE_MAGIC)
+    # symbol table member
+    out += _ar_header("/", index_size)
+    out += struct.pack(">I", len(symbols))
+    for _, mi in symbols:
+        out += struct.pack(">I", member_offsets[mi])
+    out += index_names
+    if index_size & 1:
+        out += b"\n"
+    # longnames member
+    if longnames_size:
+        out += _ar_header("//", longnames_size)
+        out += longnames
+        if longnames_size & 1:
+            out += b"\n"
+    # object members
+    for (name, data, _), stored in zip(members, stored_names):
+        out += _ar_header(stored, len(data))
+        out += data
+        if len(data) & 1:
+            out += b"\n"
+
+    with open(path, "wb") as f:
+        f.write(out)
+    return len(symbols)
+
+
 class ElfSec:
     __slots__ = ("name", "typ", "flags", "data", "size", "link", "info",
                  "align", "entsize", "offset", "_nameoff")
@@ -578,6 +666,91 @@ def cmd_emit(path, member, out):
     print(f"wrote {out} ({len(elf)} bytes)")
 
 
+def cmd_translate_all(path):
+    """Translate every PPC object in the archive, reporting what does not fit.
+
+    Scaling from one object to all of them is where the assumptions that held
+    for a single clean object break, so this drives the emitter over the whole
+    library and tallies warnings and failures rather than writing anything.
+    """
+    blob = open(path, "rb").read()
+    n_ok = n_fail = n_import = 0
+    warnings = Counter()
+    failures = []
+    for member, longnames in read_archive(blob):
+        if member.name in ("/", "//"):
+            continue
+        if member.data[:2] != struct.pack("<H", IMAGE_FILE_MACHINE_POWERPCBE):
+            n_import += 1
+            continue
+        name = member_name(member.name, longnames)
+        msgs = []
+        try:
+            obj = CoffObject(member.data)
+            coff_to_elf(obj, warn=lambda m: msgs.append(m.strip()))
+            n_ok += 1
+            for m in msgs:
+                warnings[m.split(" at ")[0].split(" 0x")[0].strip()] += 1
+        except Exception as e:                                # noqa: surface, don't hide
+            n_fail += 1
+            if len(failures) < 20:
+                failures.append(f"{name}: {type(e).__name__}: {e}")
+    print(f"{path}")
+    print(f"  translated {n_ok}, failed {n_fail}, import stubs {n_import}")
+    if warnings:
+        print("  warnings:")
+        for k, v in warnings.most_common():
+            print(f"    {v:>6}  {k}")
+    if failures:
+        print("  failures (first 20):")
+        for f in failures:
+            print(f"    {f}")
+
+
+def parse_short_import(data):
+    """Return (symbol, dll_ordinal_or_hint, name_type) for a short-import member."""
+    # IMPORT_OBJECT_HEADER: Sig1(2) Sig2(2) Version(2) Machine(2) TimeDate(4)
+    # SizeOfData(4) OrdinalOrHint(2) TypeBits(2); then symbol\0 dll\0
+    ordhint, typebits = struct.unpack_from("<HH", data, 16)
+    name_type = (typebits >> 2) & 0x7
+    strings = data[20:]
+    sym = strings.split(b"\0")[0].decode("ascii", "replace")
+    rest = strings[len(sym) + 1:]
+    dll = rest.split(b"\0")[0].decode("ascii", "replace")
+    return sym, dll, ordhint, name_type
+
+
+def cmd_archive(path, out_a, out_manifest):
+    import json
+    blob = open(path, "rb").read()
+    members = []
+    imports = []
+    seen = {}                           # unique member names
+    for member, longnames in read_archive(blob):
+        if member.name in ("/", "//"):
+            continue
+        if member.data[:2] != struct.pack("<H", IMAGE_FILE_MACHINE_POWERPCBE):
+            sym, dll, ordhint, nt = parse_short_import(member.data)
+            imports.append({"symbol": sym, "dll": dll, "ordinal_or_hint": ordhint,
+                            "name_type": nt})
+            continue
+        obj = CoffObject(member.data)
+        elf = coff_to_elf(obj, warn=lambda m: None)
+        base = member_name(member.name, longnames).replace("\\", "/").split("/")[-1]
+        base = base[:-4] if base.endswith(".obj") else base
+        n = seen.get(base, 0)
+        seen[base] = n + 1
+        uniq = f"{base}.{n}.o" if n else f"{base}.o"
+        members.append((uniq, elf, defined_globals(obj)))
+
+    nsyms = write_archive(members, out_a)
+    with open(out_manifest, "w") as f:
+        json.dump({"library": path, "objects": len(members),
+                   "index_symbols": nsyms, "imports": imports}, f, indent=2)
+    print(f"{out_a}: {len(members)} objects, {nsyms} indexed symbols")
+    print(f"{out_manifest}: {len(imports)} import stubs")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -590,6 +763,12 @@ def main():
     e.add_argument("lib")
     e.add_argument("member", help="substring of the member (object) name")
     e.add_argument("-o", "--out", default="out.o")
+    t = sub.add_parser("translate-all", help="translate every object, report problems")
+    t.add_argument("lib")
+    a = sub.add_parser("archive", help="translate a whole .lib to an ELF .a + import manifest")
+    a.add_argument("lib")
+    a.add_argument("-o", "--out", default="out.a")
+    a.add_argument("-m", "--manifest", default=None)
     args = ap.parse_args()
 
     if args.cmd == "dump":
@@ -598,6 +777,11 @@ def main():
         cmd_survey(args.libs)
     elif args.cmd == "emit":
         cmd_emit(args.lib, args.member, args.out)
+    elif args.cmd == "translate-all":
+        cmd_translate_all(args.lib)
+    elif args.cmd == "archive":
+        manifest = args.manifest or (args.out.rsplit(".", 1)[0] + ".imports.json")
+        cmd_archive(args.lib, args.out, manifest)
 
 
 if __name__ == "__main__":
