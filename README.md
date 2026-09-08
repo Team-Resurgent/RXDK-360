@@ -68,6 +68,38 @@ Three properties are universal and want the LLVM change (parameter homing area,
 volatile v20-v31, 64-bit-wide callee-saved GPRs). The rest is a generated thunk layer
 over ~99 signatures plus 16 CRT shims.
 
+## Testing
+
+Code from the patched toolchain executes correctly on a real PowerPC engine.
+`tools/gentests.py` compiles a C test with our clang, links it, and produces the
+`.bin`/`.map` pair xenia's PowerPC test runner needs -- replacing the custom
+binutils that `xb gentests` would otherwise require:
+
+```
+$ python tools/gentests.py tests/instr_rxdk_abi.c -o build/tests --run
+instr_rxdk_abi: 192 bytes at 0x80000000, 3 tests
+Total tests: 3   Passed: 3   Failed: 0
+```
+
+Registers are zeroed, `REGISTER_IN` values placed, the function runs to its
+`blr`, and `REGISTER_OUT` values checked -- so these confirm the argument
+convention end to end, not just that the right instructions were emitted.
+`tests/instr_rxdk_abi.c` includes the case that separates this ABI from the ELF
+one: with `(int, float, int, double, int)` the compiler emits
+
+```
+add 3, 5, 3     ; c arrives in r5, not r4
+add 3, 3, 7     ; e arrives in r7, not r5
+```
+
+Running a whole title under the emulator is not working yet. Xenia detects
+module format by magic bytes and has an `ElfModule`, and our linked ELF matches
+everything it validates (`ET_EXEC`, `EM_PPC`, `PT_LOAD` segments inside
+`0x80000000-0x9FFFFFFF`), but it crashes during load with nothing useful in the
+buffered log. The PowerPC test runner is the better harness regardless, so that
+is where correctness work should go until there is a reason to need the full
+emulator.
+
 ## Where it stands
 
 The patched clang builds and reproduces the platform compiler's ABI on every
