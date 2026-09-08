@@ -2,6 +2,10 @@
 rem Build the patched clang + lld for the Xbox 360 target.
 rem Only the PowerPC backend is built, which keeps the build to a fraction of a
 rem full LLVM.
+rem The checkout must include: llvm clang lld cmake third-party libc libunwind
+rem   git sparse-checkout set llvm clang lld cmake third-party libc libunwind
+rem libc is required by llvm/CMakeLists.txt even when the project is disabled,
+rem and libunwind supplies the mach-o headers lld's MachO backend includes.
 setlocal
 call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
 
