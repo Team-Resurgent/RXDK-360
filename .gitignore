@@ -1,0 +1,10 @@
+*.o
+*.obj
+*.dis
+*.s
+!spike/abi/*.c
+zig-cache/
+zig-out/
+.zig-cache/
+__pycache__/
+vendor/
