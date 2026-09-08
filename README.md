@@ -68,6 +68,31 @@ Three properties are universal and want the LLVM change (parameter homing area,
 volatile v20-v31, 64-bit-wide callee-saved GPRs). The rest is a generated thunk layer
 over ~99 signatures plus 16 CRT shims.
 
+## Where it stands
+
+The patched clang builds and reproduces the platform compiler's ABI on every
+rule the harness checks:
+
+```
+$ RXDK_CLANG=... python tools/verify_abi.py
+stack parameter slots      OK    cl=[84, 92, 100, 108]  clang=[84, 92, 100, 108]
+mixed int/float registers  OK    cl=[f1, f2, f3, r3, r5, r7]  clang=[f1, f2, f3, r3, r5, r7]
+vector argument registers  OK    cl=[1, 2]  clang=[1, 2]
+return address slot        OK    cl=[-8]  clang=[-8]
+
+4 agree, 0 differ, 0 skipped
+```
+
+The base target is `powerpc-unknown-xbox360`. An earlier attempt to build on the
+64-bit base failed for reasons worth reading: see
+[docs/base-target-correction.md](docs/base-target-correction.md).
+
+Not yet done: variadic functions are deliberately left to thunks, since the
+platform's varargs layout differs structurally from the 32-bit ELF one; struct
+passing still follows the ELF rules rather than the platform's; and nothing has
+run on hardware or in an emulator. There is no ELF-to-XEX packer yet, and no
+replacement CRT.
+
 ## The toolchain
 
 `vendor/llvm-project` (gitignored; clone it yourself) carries branch
