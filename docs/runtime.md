@@ -115,8 +115,35 @@ and the two `printf_*` probes -- uses picolibc, not libcMT. The `%S` probe print
 `--lib libcMT` for the translated MS CRT, though its `sprintf` still cannot link
 in isolation, so the printf tests need the modern runtime.)
 
-Next: the C++
-runtime.
+## C++ runtime + pre-main init
+
+`runtime/xbox/cxxrt.cpp` provides `operator new`/`delete` (over the console-pool
+malloc) and the Itanium-ABI helpers the compiler references without exceptions:
+`__cxa_pure_virtual`, `__cxa_atexit`/`__dso_handle` (a title powers off rather
+than returning, so destructors do not run), and the single-threaded
+`__cxa_guard_*` for function-static locals. `build_libc.py` compiles the `.cpp`
+glue with the C++ flag set (c++23, freestanding, `-fno-exceptions -fno-rtti`).
+
+**Pre-main init.** The linker script emits `.init_array` with
+`__init_array_start`/`__init_array_end`, and `_prelude/start.c` runs it before
+`title_main` -- the equivalent of the XDK's xapilib startup (XapiThreadStartup)
+running the CRT init before `main`. The `cppinit` corpus test proves it: a global
+object's constructor sets `g.v=1234` (0 if pre-main init never ran), `new`/`delete`
+round-trip, and a function-static local constructs on first use. 9/9 corpus green.
+
+Still to do: **exceptions** (libunwind + `__cxa_throw`/personality, plus the
+RXDK-Libs trick of recovering the `.eh_frame` length from the PE section table at
+runtime, since lld scatters archive `.eh_frame`), and -- because the unwinder
+needs a real stack -- running `main` on its own thread sized from the XEX header
+rather than on the kernel's small init thread (what xapilib's startup does).
+
+## Validate against an official XEX
+
+Build a title through the real XDK (`cl.exe` -> `link` -> `imagexex`) so it uses
+the genuine xapilib startup, and compare: header layout, the pre-main init path,
+and the DbgPrint output. That golden reference confirms our startup shim does the
+equivalent of `XapiThreadStartup` and that the modern runtime matches the CRT
+titles depend on.
 
 ## Open issues found during bring-up
 

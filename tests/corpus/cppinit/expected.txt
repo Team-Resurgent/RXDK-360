@@ -1,0 +1,4 @@
+ctor: g.v=1234
+new: *p=77
+delete ok
+static-local: v=1234

@@ -59,10 +59,19 @@ SUBDIRS = [
     "libc/stdio",
 ]
 
-# Extra (non-picolibc) glue compiled with the same flags.
+# Extra (non-picolibc) glue. The .c files compile with the picolibc flags; the
+# .cpp C++ runtime compiles with the C++ flag set below.
 XBOX_GLUE = [
     os.path.join(ROOT, "runtime", "xbox", "ms_printf.c"),   # MSVC %S/%C/%I64 rewrite
-    os.path.join(ROOT, "runtime", "xbox", "rt_support.c"), # 64-bit div + placeholder malloc
+    os.path.join(ROOT, "runtime", "xbox", "rt_support.c"),  # 64-bit div + console-pool malloc
+    os.path.join(ROOT, "runtime", "xbox", "cxxrt.cpp"),     # operator new/delete + __cxa_*
+]
+
+# C++ runtime glue: no picolibc config force-include; freestanding, no EH/RTTI yet.
+CPP_FLAGS = [
+    "--target=" + TRIPLE, "-std=c++23", "-O2", "-ffreestanding",
+    "-fno-exceptions", "-fno-rtti", "-fno-stack-protector",
+    "-fno-sanitize=all", "-fno-builtin", "-Wno-everything",
 ]
 
 # Files in the globbed subdirs we do not want.
@@ -110,7 +119,10 @@ def main():
     objs, failed = [], []
     for src in sources():
         obj = os.path.join(objdir, os.path.splitext(os.path.basename(src))[0] + ".o")
-        cmd = [CLANG] + FLAGS + INCLUDES + ["-c", src, "-o", obj]
+        if os.path.splitext(src)[1].lower() in (".cpp", ".cc", ".cxx"):
+            cmd = [CLANG] + CPP_FLAGS + ["-c", src, "-o", obj]
+        else:
+            cmd = [CLANG] + FLAGS + INCLUDES + ["-c", src, "-o", obj]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             failed.append((src, r.stderr.strip().splitlines()[-1:] or [""]))
