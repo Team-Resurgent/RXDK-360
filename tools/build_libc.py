@@ -62,9 +62,12 @@ SUBDIRS = [
 # Extra (non-picolibc) glue. The .c files compile with the picolibc flags; the
 # .cpp C++ runtime compiles with the C++ flag set below.
 XBOX_GLUE = [
-    os.path.join(ROOT, "runtime", "xbox", "ms_printf.c"),   # MSVC %S/%C/%I64 rewrite
-    os.path.join(ROOT, "runtime", "xbox", "rt_support.c"),  # 64-bit div + console-pool malloc
-    os.path.join(ROOT, "runtime", "xbox", "cxxrt.cpp"),     # operator new/delete + __cxa_*
+    os.path.join(ROOT, "runtime", "xbox", "ms_printf.c"),           # MSVC %S/%C/%I64 rewrite
+    os.path.join(ROOT, "runtime", "xbox", "rt_support.c"),          # 64-bit div + console-pool malloc
+    os.path.join(ROOT, "runtime", "xbox", "cxxrt.cpp"),             # operator new/delete + __cxa_*
+    os.path.join(ROOT, "runtime", "xbox", "libc_hooks.c"),          # stdin/output/exec hooks + POSIX backend
+    os.path.join(ROOT, "runtime", "xbox", "posix_stdio_streams.c"), # stdin/stdout/stderr FILE globals
+    os.path.join(ROOT, "runtime", "xbox", "locks.c"),              # single-thread no-op retargetable locks
 ]
 
 # C++ runtime glue: no picolibc config force-include; freestanding, no EH/RTTI yet.
@@ -89,6 +92,9 @@ EXCLUDE = set([
     # replaced by runtime/xbox/ms_printf.c, which translates the MSVC format
     # (%S/%C/%I64 ...) before formatting over the same vfprintf engine.
     "sprintf.c", "snprintf.c", "swprintf.c", "vsnprintf.c",
+    # picolibc's stdin/stdout/stderr use __weak_reference aliases lld does not
+    # apply; runtime/xbox/posix_stdio_streams.c provides strong FILE* globals.
+    "posixiob_stdin.c", "posixiob_stdout.c", "posixiob_stderr.c",
 ])
 
 

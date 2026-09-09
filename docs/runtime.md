@@ -145,6 +145,27 @@ and the DbgPrint output. That golden reference confirms our startup shim does th
 equivalent of `XapiThreadStartup` and that the modern runtime matches the CRT
 titles depend on.
 
+## libc I/O + process hooks, threading, alignment (the extras)
+
+Mirrored from RXDK-Libs (`runtime/xbox/`):
+
+- **I/O + process hooks** (`libc_hooks.h`): `rxdk_set_stdin_handler` /
+  `rxdk_set_output_handler` / `rxdk_set_exec_handler`. libc stays kernel-only, so
+  it routes `read(0)`, `write(1/2)` and `execve` through these callbacks; with
+  none set the defaults are EOF, `DbgPrint`, and `-1`. The `iohooks` corpus test
+  installs an output hook (captures what `write(1)` emits) and a stdin hook
+  (feeds `read(0)`) and confirms both fire -- the paths `printf`/`std::cout` and
+  `getchar`/`std::cin` sit on. The uncaught-exception "hook" is ordinary
+  `std::set_terminate` (standard libc++), so it arrives with the exception
+  runtime.
+- **Thread-safe** (`locks.c`): picolibc's retargetable locks are backed by kernel
+  `RTL_CRITICAL_SECTION`s (recursive, lazily initialised), not no-ops -- a title
+  that spawns threads gets real mutual exclusion around malloc/stdio/atexit.
+- **16-byte-aligned malloc** (`rt_support.c`): the 360 CRT and `ExAllocatePool`
+  only guarantee 8, but `__vector4`/XNAMath are `__declspec(align(16))` and `lvx`
+  needs 16, so the allocator over-aligns to 16 (verified by the `malloc` test's
+  `align16=1`); `calloc`/`realloc` track the request size in a small header.
+
 ## Open issues found during bring-up
 
 1. **FIXED -- MS-PPC return-address corruption (a compiler bug).** Non-leaf
@@ -161,6 +182,16 @@ titles depend on.
    still matches `cl.exe` 4/4. (`.rodata` is also on its own READONLY page now,
    so xenia's analyser no longer disassembles format strings as code -- that was
    only load-time noise, not the hang.)
+3. **`printf` over the POSIX bufio crashes xenia (WIP).** `sprintf` (a string
+   FILE) works, `write(1)` -> the output hook -> `DbgPrint` works, and the kernel
+   critical sections work -- each verified in isolation -- but a `printf` through
+   the buffered stdout FILE (`posix_stdio_streams.c` `FDEV_SETUP_POSIX`) faults in
+   xenia's host with "invalid parameter to a service" before any output, i.e. in
+   the bufio flush path. The `iohooks` test therefore drives the hooks through
+   `write`/`read` directly; formatted output uses `sprintf` + `DbgPrint` for now.
+   Next: debug the `__file_bufio` flush (likely a bad pointer/length reaching
+   `write`).
+
 2. **Prebuilt libs call the CRT -- register helpers supplied.** The translated
    XDK libs (xapilib/d3d9/xgraphics) reference, from the CRT, `memcpy`/`memmove`/
    `memset` (picolibc has these), the MS out-of-line register helpers
