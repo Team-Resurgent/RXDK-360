@@ -36,9 +36,22 @@ MODULE_NAMES = {
 }
 
 
+# Kernel exports the console has but the public XDK import libraries do not
+# expose (Microsoft did not ship import stubs for them). The ordinals are real
+# xboxkrnl.exe ordinals -- verified against xenia's export table -- so importing
+# them by ordinal resolves on both xenia and hardware. Used only as a fallback
+# when a symbol is missing from the XDK libs.
+SUPPLEMENTAL_ORDINALS = {
+    "KeTlsAlloc":    ("xboxkrnl.exe", 0x152),
+    "KeTlsFree":     ("xboxkrnl.exe", 0x153),
+    "KeTlsGetValue": ("xboxkrnl.exe", 0x154),
+    "KeTlsSetValue": ("xboxkrnl.exe", 0x155),
+}
+
+
 def build_ordinal_index(xdk_lib_dir):
     """name -> (module_name, ordinal) across the XDK import libraries."""
-    index = {}
+    index = dict(SUPPLEMENTAL_ORDINALS)
     for path in glob.glob(os.path.join(xdk_lib_dir, "*.lib")):
         base = os.path.splitext(os.path.basename(path))[0].lower()
         module = MODULE_NAMES.get(base)

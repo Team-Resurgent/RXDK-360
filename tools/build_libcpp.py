@@ -45,7 +45,7 @@ UNWIND_SRCS = [
     "src/UnwindRegistersSave.S", "src/UnwindRegistersRestore.S",
 ]
 UNWIND_FLAGS = COMMON + [
-    "-D_LIBUNWIND_IS_BAREMETAL=1", "-D_LIBUNWIND_HAS_NO_THREADS=1", "-D_LIBUNWIND_XBOX360_NO_EH_FRAME_HDR=1", "-DNDEBUG",
+    "-D_LIBUNWIND_IS_BAREMETAL=1", "-D_LIBUNWIND_HAS_NO_THREADS=1", "-D_LIBUNWIND_XBOX360=1", "-D_LIBUNWIND_XBOX360_NO_EH_FRAME_HDR=1", "-DNDEBUG",
     "-funwind-tables",
     "-I" + os.path.join(UNWIND_DIR, "include"),
     "-I" + os.path.join(UNWIND_DIR, "src"),
@@ -68,7 +68,7 @@ ABI_SRCS = [
 ABI_FLAGS = COMMON + [
     "-std=c++23", "-fexceptions", "-frtti",
     "-D_LIBCPP_BUILDING_LIBRARY", "-DLIBCXX_BUILDING_LIBCXXABI",
-    "-DLIBCXXABI_BUILDING_LIBCXXABI", "-D_LIBCPP_HAS_NO_THREADS",
+    "-DLIBCXXABI_BUILDING_LIBCXXABI", "-D_LIBCXXABI_XBOX360_TLS_KEY=1",
     "-include", "__config_site",
     "-I" + os.path.join(LLVM, "libcxx", "include"),
     "-I" + os.path.join(LLVM, "libcxx", "src"),

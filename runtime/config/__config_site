@@ -6,11 +6,12 @@
 // now, not the full STL, so this keeps the surface small.
 #define _LIBCPP_HAS_EXCEPTIONS 1
 #define _LIBCPP_LIBC_NEWLIB 1
-// EH storage is global for now (no thread-local exception state yet). The
-// predefined locks in locks.c still make the rest of the runtime thread-safe;
-// per-thread exception storage is a later refinement.
-#define _LIBCXXABI_HAS_NO_THREADS
-#define _LIBCPP_HAS_NO_THREADS 1
+// Threads on: the C11 <threads.h> backend (runtime/xbox/threads.c) over the
+// kernel. libc++abi's exception storage is then thread-local (each thread has
+// its own in-flight-exception state), backed by kernel TLS via tss_*.
+#define _LIBCPP_HAS_THREADS 1
+#define _LIBCPP_HAS_THREAD_API_C11 1
+#define _LIBCPP_HAS_MONOTONIC_CLOCK 1
 #define _LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS
 #define _LIBCPP_HARDENING_MODE _LIBCPP_HARDENING_MODE_NONE
 #define _LIBCPP_HARDENING_MODE_DEFAULT _LIBCPP_HARDENING_MODE_NONE
