@@ -1,0 +1,7 @@
+[submodule "vendor/picolibc"]
+	path = vendor/picolibc
+	url = https://github.com/picolibc/picolibc.git
+[submodule "vendor/llvm-project"]
+	path = vendor/llvm-project
+	url = https://github.com/Team-Resurgent/llvm-project.git
+	branch = xbox360-msppc
