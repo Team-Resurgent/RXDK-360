@@ -98,6 +98,7 @@ XBOX_GLUE = [
     os.path.join(ROOT, "runtime", "xbox", "threads.c"),            # C11 <threads.h> over the kernel (thrd/mtx/tss/once)
     os.path.join(ROOT, "runtime", "xbox", "crt_start.c"),          # standard main() CRT startup (_start)
     os.path.join(ROOT, "runtime", "xbox", "clock.c"),              # clock_gettime over KeQuerySystemTime (for <chrono>)
+    os.path.join(ROOT, "runtime", "xbox", "sysconf.c"),            # sysconf(_SC_NPROCESSORS_ONLN)=6 -> std::thread::hardware_concurrency
 ]
 
 # C++ runtime glue: no picolibc config force-include; freestanding, no EH/RTTI yet.

@@ -73,6 +73,10 @@ ABI_FLAGS = COMMON + [
     # Ask for it here so <locale>/<iostream> build (also exposes clock_gettime,
     # strerror_r ... but we still force-include the prereq for belt-and-braces).
     "-D_GNU_SOURCE",
+    # picolibc has no _SC_NPROCESSORS_ONLN, so std::thread::hardware_concurrency()
+    # would compile to "return 0". Give it the number runtime/xbox/sysconf.c
+    # answers (see there) so hardware_concurrency reports the Xenon's 6.
+    "-D_SC_NPROCESSORS_ONLN=200",
     "-D_LIBCPP_BUILDING_LIBRARY", "-DLIBCXX_BUILDING_LIBCXXABI",
     "-DLIBCXXABI_BUILDING_LIBCXXABI", "-D_LIBCXXABI_XBOX360_TLS_KEY=1",
     "-include", "__config_site", "-include", "rxdk_libcpp_prereq.h",
