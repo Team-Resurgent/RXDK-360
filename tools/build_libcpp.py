@@ -127,10 +127,20 @@ LIBCXX_SRCS = [
     "optional.cpp",
     "variant.cpp",
     "regex.cpp",
-    # NOTE: charconv.cpp (and thus <format>) deferred -- its float from_chars
-    # pulls llvm-libc's shared FPBits.h, which needs a _LIBCPP_VERBOSE_ABORT
-    # integration this snapshot doesn't wire up cleanly. See tests/stdlib/pending.
+    "charconv.cpp",    # to_chars/from_chars -- what <format> and float parsing need
+    "ryu/d2s.cpp",     # Ryu double/float -> shortest string, backs to_chars<float>
+    "ryu/f2s.cpp",
+    "ryu/d2fixed.cpp",
 ]
+
+# Per-file extra compile flags (appended after ABI_FLAGS). charconv.cpp's float
+# from_chars pulls llvm-libc's shared FPBits.h: it needs the llvm-libc include
+# root (shared/fp_bits.h) and, since that shared code routes LIBC_ASSERT through
+# _LIBCPP_ASSERT -> _LIBCPP_VERBOSE_ABORT, the <__verbose_abort> header that
+# defines that macro (from_chars_floating_point.h includes <__assert> but not it).
+LIBCXX_EXTRA = {
+    "charconv.cpp": ["-I" + os.path.join(LLVM, "libc"), "-include", "__verbose_abort"],
+}
 
 
 def compile_one(src, flags, objdir, tag):
@@ -165,7 +175,8 @@ def main():
         (objs if obj else failed).append(obj or err)
 
     for s in LIBCXX_SRCS:
-        obj, err = compile_one(os.path.join(LIBCXX_DIR, "src", s), ABI_FLAGS, objdir, "cxx")
+        flags = ABI_FLAGS + LIBCXX_EXTRA.get(s, [])
+        obj, err = compile_one(os.path.join(LIBCXX_DIR, "src", s), flags, objdir, "cxx")
         (objs if obj else failed).append(obj or err)
 
     if failed:
