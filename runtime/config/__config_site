@@ -22,6 +22,9 @@
 // (operator<<(ostream&,const char*), std::hex/dec, num_put/num_get) are all
 // gated on localization; enable it so the iostreams build.
 #define _LIBCPP_HAS_LOCALIZATION 1
+// wchar_t streams (std::wcout/wcin/wcerr) + the wide facets. picolibc provides
+// the <cwchar>/<cwctype> backing (wcslen/wmemcpy/wcrtomb/mbrtowc/...).
+#define _LIBCPP_HAS_WIDE_CHARACTERS 1
 // <fstream> is gated on filesystem in this libc++ (basic_filebuf::open takes a
 // filesystem::path), so file streams need <filesystem> enabled too. Its library
 // (operations/directory_iterator/path) sits on the POSIX dir ops in
