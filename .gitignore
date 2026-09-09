@@ -15,6 +15,7 @@ probe_*.ll
 *.obj
 build-log*.txt
 
-# Shipped Xbox 360 XDK installer payload -- kept locally, never committed.
-# A setup script will extract only what's needed from it when we get there.
-xdksetup/
+# Installer executables (e.g. the XDK setup payload dropped in xdksetup/) --
+# kept locally, never committed. A setup script will extract what the toolchain
+# needs from it when we get there. See xdksetup/README.md.
+*.exe
