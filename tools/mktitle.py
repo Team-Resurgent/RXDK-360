@@ -76,12 +76,15 @@ SECTIONS {{
 """)
 
 
-def compile_sources(sources, workdir, cc, clang):
+def compile_sources(sources, workdir, cc, clang, cflags):
     """Compile each source to an object; pass prebuilt .o through.
 
     cc == "zig"   -> zig cc, the PPC EABI (works for simple titles);
     cc == "clang" -> the patched clang targeting powerpc-unknown-xbox360, which
                      emits the real MS-PPC ABI the shipped libraries expect.
+
+    cflags are extra compile flags (include dirs, -fno-exceptions, ...) appended
+    to the C/C++ compile of every non-assembly source.
     """
     objects = []
     for src in sources:
@@ -94,11 +97,11 @@ def compile_sources(sources, workdir, cc, clang):
         if cc == "clang":
             cmd = [clang, "--target=" + MS_TRIPLE, "-c", src, "-o", obj]
             if not is_asm:
-                cmd[2:2] = ["-O2"]
+                cmd[2:2] = ["-O2"] + cflags
         elif is_asm:                                   # zig: assembly, no C-only flags
             cmd = [zig(), "cc", "-target", TARGET, "-c", src, "-o", obj]
         else:
-            cmd = [zig(), "cc"] + CFLAGS + ["-c", src, "-o", obj]
+            cmd = [zig(), "cc"] + CFLAGS + cflags + ["-c", src, "-o", obj]
         r = run(cmd)
         if r.returncode != 0:
             sys.exit(f"compile failed for {src}:\n{r.stderr}")
@@ -106,12 +109,13 @@ def compile_sources(sources, workdir, cc, clang):
     return objects
 
 
-def link(objects, libs, stubs, layout, out_elf, gc=True):
+def link(objects, libs, stubs, layout, out_elf, gc=True, ldflags=()):
     """Link objects (+ optional stubs .s + libs) into the ELF, return the result."""
     cmd = [zig(), "cc", "-target", TARGET, "-nostdlib",
            "-Wl,-T," + layout]
     if gc:
         cmd.append("-Wl,--gc-sections")
+    cmd += list(ldflags)
     cmd += objects
     if stubs:
         cmd.append(stubs)
@@ -160,6 +164,12 @@ def main():
                     help="compiler: zig (PPC EABI) or clang (patched MS-PPC ABI)")
     ap.add_argument("--clang", default=DEFAULT_CLANG,
                     help="patched clang path (for --cc clang)")
+    ap.add_argument("--cflag", action="append", default=[],
+                    help="extra compile flag (repeatable), e.g. --cflag -Iinc "
+                         "--cflag -fno-exceptions")
+    ap.add_argument("--ldflag", action="append", default=[],
+                    help="extra linker flag (repeatable), passed to the driver, "
+                         "e.g. --ldflag=-Wl,--allow-multiple-definition")
     ap.add_argument("--keep-elf", action="store_true",
                     help="keep the intermediate .elf next to the output")
     args = ap.parse_args()
@@ -178,7 +188,7 @@ def main():
         if not os.path.exists(lib):
             sys.exit(f"library not found: {lib}")
 
-    objects = compile_sources(args.sources, workdir, args.cc, args.clang)
+    objects = compile_sources(args.sources, workdir, args.cc, args.clang, args.cflag)
 
     layout = out_base + ".ld"
     write_layout(layout, args.base, page)
@@ -186,7 +196,7 @@ def main():
     elf = out_base + ".elf"
 
     # trial link (no stubs) to discover the undefined kernel imports
-    trial = link(objects, libs, None, layout, elf, gc=True)
+    trial = link(objects, libs, None, layout, elf, gc=True, ldflags=args.ldflag)
     undefined = undefined_from(trial) if trial.returncode != 0 else []
 
     manifest = None
@@ -207,7 +217,7 @@ def main():
             sys.exit(f"unresolved symbols (not kernel imports): {m.group(1).strip()}")
 
     # final link
-    final = link(objects, libs, stubs, layout, elf, gc=True)
+    final = link(objects, libs, stubs, layout, elf, gc=True, ldflags=args.ldflag)
     if final.returncode != 0:
         sys.exit(f"link failed:\n{final.stdout}{final.stderr}")
 

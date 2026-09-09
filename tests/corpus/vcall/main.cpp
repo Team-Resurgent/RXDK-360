@@ -1,0 +1,8 @@
+#include "rt.h"
+struct Base { virtual int val() const { return 1; } };
+struct Derived : Base { int val() const override { return 42; } };
+void title_main(void) {
+    Derived d;
+    Base* b = &d;
+    DbgPrint("vcall=%d\n", b->val());
+}

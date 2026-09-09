@@ -1,0 +1,2 @@
+--cflag=-fno-exceptions
+--cflag=-fno-rtti

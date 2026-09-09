@@ -197,7 +197,7 @@ ET_REL = 1
 EM_PPC = 20
 SHT_PROGBITS, SHT_SYMTAB, SHT_STRTAB, SHT_RELA, SHT_NOBITS = 1, 2, 3, 4, 8
 SHF_WRITE, SHF_ALLOC, SHF_EXECINSTR = 0x1, 0x2, 0x4
-STB_LOCAL, STB_GLOBAL = 0, 1
+STB_LOCAL, STB_GLOBAL, STB_WEAK = 0, 1, 2
 STT_NOTYPE, STT_OBJECT, STT_FUNC, STT_SECTION = 0, 1, 2, 3
 SHN_UNDEF, SHN_ABS = 0, 0xFFF1
 
@@ -208,6 +208,7 @@ R_PPC_ADDR32, R_PPC_ADDR16_LO, R_PPC_ADDR16_HI, R_PPC_ADDR16_HA, R_PPC_REL24 = \
 # COFF section characteristics
 IMAGE_SCN_CNT_CODE = 0x00000020
 IMAGE_SCN_CNT_UNINITIALIZED_DATA = 0x00000080
+IMAGE_SCN_LNK_COMDAT = 0x00001000
 IMAGE_SCN_MEM_WRITE = 0x80000000
 IMAGE_SCN_MEM_EXECUTE = 0x20000000
 
@@ -308,7 +309,14 @@ def coff_to_elf(obj, warn=print):
             elif sym.secnum in coff_to_elfshndx:
                 shndx = coff_to_elfshndx[sym.secnum]
                 value = sym.value
-                styp = STT_FUNC if (obj.sections[sym.secnum - 1].flags & IMAGE_SCN_MEM_EXECUTE) else STT_OBJECT
+                sflags = obj.sections[sym.secnum - 1].flags
+                styp = STT_FUNC if (sflags & IMAGE_SCN_MEM_EXECUTE) else STT_OBJECT
+                # a symbol defined in a COMDAT section (the MS ".text$"/".rdata$"
+                # groups the CRT is full of) must be weak: MS's linker keeps one
+                # definition by name, so many objects legally define the same
+                # symbol. Emit it STB_WEAK so lld dedups instead of erroring.
+                if is_global and (sflags & IMAGE_SCN_LNK_COMDAT):
+                    bind = STB_WEAK
             else:
                 # symbol in a dropped section (debug etc.) -- keep as a name only
                 shndx, value, styp = SHN_UNDEF, 0, STT_NOTYPE
@@ -316,8 +324,10 @@ def coff_to_elf(obj, warn=print):
             elf_syms.append((strtab.add(sym.name), value, 0, (bind << 4) | styp, 0, shndx))
             sym_name_off.append(0)
 
+    # .symtab sh_info must be the index of the first non-local symbol -- weak
+    # counts as non-local too, so test bind != LOCAL rather than == GLOBAL.
     first_global = next((i for i, s in enumerate(elf_syms)
-                         if (s[3] >> 4) == STB_GLOBAL), len(elf_syms))
+                         if (s[3] >> 4) != STB_LOCAL), len(elf_syms))
 
     # 3. relocations per kept section
     rela = {}                          # elf section index -> list of (off, sym, type, addend)

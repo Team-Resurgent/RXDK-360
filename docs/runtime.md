@@ -42,14 +42,44 @@ patches (picolibc, and any libcxx tweaks) are build-time patches under `patches/
 
 ## Bulk regression harness
 
-`tools/run_corpus.py` (planned): a corpus of small C/C++ programs under
-`tests/corpus/`, each with an expected-output file. For each program it builds
-through `mktitle.py`, runs it headless in xenia, captures the `DbgPrint` output and
-diffs it against the expected. Establish a **green baseline against the current
-translated CRT first**, then bring up the modern runtime piece by piece and keep the
-harness green -- that is what catches regressions as the runtime is swapped in.
+`tools/run_corpus.py` builds a corpus of small C/C++ programs under
+`tests/corpus/`, runs each headless in xenia and diffs the `DbgPrint` output
+against a golden `expected.txt`. Each program implements `title_main()`; the
+shared `_prelude/start.c` runs it, prints a completion sentinel, and powers off.
 
-Each corpus program `_start`s, exercises one feature (string ops, malloc/free,
-a container, a virtual call, a thrown exception), prints a deterministic line
-through `DbgPrint`, and returns via `HalReturnToFirmware`. The expected file is the
-line(s) it should print.
+```
+python tools/run_corpus.py            # run + report
+python tools/run_corpus.py --bless    # freeze current output as expected.txt
+python tools/run_corpus.py --only hello,vcall
+python tools/run_corpus.py --lib libcMT,xapilib
+```
+
+Robustness: the sentinel plus a retry absorb xenia's async-logger dropping the
+last line on a fast exit; a `pending` file marks a probe that is known-blocked on
+the current runtime (its build failure does not fail the run).
+
+**Baseline (current translated CRT): 6 pass, 2 pending.** hello, arith, data
+(writable globals), string (CRT strlen/memcpy/memcmp), malloc (CRT heap) and
+vcall (C++ virtual dispatch, `-fno-exceptions -fno-rtti`) all pass. The two
+`printf_*` probes are pending: MS's `sprintf` is not standalone -- it pulls in
+the whole CRT stdio/heap/locale/atexit machinery (`__pioinfo`, `__onexitbegin`,
+`GetProcessHeap`, `WriteFile`, ...) needing full CRT init, so it cannot link in
+isolation. picolibc's `sprintf` is self-contained, so these resolve once the
+modern runtime lands -- and they are exactly the tests that will catch printf
+divergences (`%S` = wide string on MSVC, etc.) when it does.
+
+Building the corpus surfaced a real translator gap: the MS CRT is full of COMDAT
+sections (`.text$`/`.rdata$`), and `coff2elf` emitted their symbols as strong
+globals, so pulling two CRT objects that both define, say, `_heap_init` or
+`__locale_changed` was a duplicate-symbol link error. Fixed by emitting a
+symbol defined in a COMDAT section as **weak** (MS's linker keeps one by name),
+which is what let string/malloc/vcall link the CRT at all.
+
+## Follow-ups noted
+
+- **C++ exceptions/unwinding.** The C++23 runtime will need `libunwind` plus the
+  same trick RXDK-Libs uses -- recover the `.eh_frame` length from the PE
+  section table at runtime, because lld scatters archive `.eh_frame` -- and a
+  catch-all/terminate path. Corpus probes (`throw`/`catch`) come with it.
+- Console CRT (`_getch` and friends) is out of scope for a headless corpus (no
+  input); those get linkage-only smoke tests.
