@@ -1,0 +1,19 @@
+#ifndef _LIBCPP___CONFIG_SITE
+#define _LIBCPP___CONFIG_SITE
+
+// Minimal libc++/libc++abi site config for the RXDK-360 modern runtime. We only
+// build the C++ exception machinery (libunwind + libc++abi's cxa_* core) for
+// now, not the full STL, so this keeps the surface small.
+#define _LIBCPP_HAS_EXCEPTIONS 1
+#define _LIBCPP_LIBC_NEWLIB 1
+// EH storage is global for now (no thread-local exception state yet). The
+// predefined locks in locks.c still make the rest of the runtime thread-safe;
+// per-thread exception storage is a later refinement.
+#define _LIBCXXABI_HAS_NO_THREADS
+#define _LIBCPP_HAS_NO_THREADS 1
+#define _LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS
+#define _LIBCPP_HARDENING_MODE _LIBCPP_HARDENING_MODE_NONE
+#define _LIBCPP_HARDENING_MODE_DEFAULT _LIBCPP_HARDENING_MODE_NONE
+#define _LIBCPP_ASSERTION_SEMANTIC_DEFAULT _LIBCPP_ASSERTION_SEMANTIC_IGNORE
+
+#endif

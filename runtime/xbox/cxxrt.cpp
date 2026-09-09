@@ -39,4 +39,12 @@ int __cxa_guard_acquire(long long *g) { return !*reinterpret_cast<char *>(g); }
 void __cxa_guard_release(long long *g) { *reinterpret_cast<char *>(g) = 1; }
 void __cxa_guard_abort(long long *) {}
 
+// The terminate/verbose-abort path in libc++abi tries to demangle the type name
+// for a nicer message. We do not ship the (large) demangler; report "can't
+// demangle" so it falls back to the raw mangled name. status: -2 = invalid name.
+char *__cxa_demangle(const char *, char *, size_t *, int *status) {
+    if (status) *status = -2;
+    return 0;
+}
+
 }  // extern "C"

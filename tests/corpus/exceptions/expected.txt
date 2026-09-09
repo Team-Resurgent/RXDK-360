@@ -1,0 +1,8 @@
+  throwing
+  ~Guard(outer)
+  caught code=42
+  inner caught code=7, rethrow
+  outer caught rethrown code=7
+  caught Derived as Base&
+  caught via ...
+  exceptions ok

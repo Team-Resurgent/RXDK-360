@@ -67,6 +67,22 @@ SECTIONS {{
                                         of the CODE page so xenia's code analyser
                                         does not disassemble format strings as code */
   .rodata : {{ *(.rodata*) }}
+  . = ALIGN(0x{page:X});             /* DWARF EH tables on their own read-only page:
+                                        libunwind recovers the section's true length
+                                        from the PE section table at runtime, so it
+                                        must be a distinct section (not merged with
+                                        .rodata) and its markers give the start. */
+  .eh_frame : {{
+    PROVIDE_HIDDEN(__eh_frame_start = .);
+    KEEP(*(.eh_frame))
+    KEEP(*(.eh_frame.*))
+    PROVIDE_HIDDEN(__eh_frame_end = .);
+    /* No .eh_frame_hdr (lld does not synthesise one for this PE target); give
+       libunwind's DWARF-index path empty start==end markers so it falls back to
+       a linear .eh_frame scan. */
+    PROVIDE_HIDDEN(__eh_frame_hdr_start = .);
+    PROVIDE_HIDDEN(__eh_frame_hdr_end = .);
+  }}
   .init_array : {{                   /* C++ static constructors, run pre-main by start.c */
     PROVIDE_HIDDEN(__init_array_start = .);
     KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*)))
@@ -95,7 +111,7 @@ SECTIONS {{
   . = ALIGN(0x{page:X});             /* writable region on its own page(s) */
   .data : {{ *(.data*) }}
   .bss  : {{ *(.bss*) *(COMMON) }}
-  /DISCARD/ : {{ *(.eh_frame*) *(.comment) *(.note*) }}
+  /DISCARD/ : {{ *(.comment) *(.note*) }}
 }}
 """)
 
