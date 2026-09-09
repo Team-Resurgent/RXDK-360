@@ -63,10 +63,13 @@ SECTIONS {{
   . = 0x{base:08X};
   . += 0x1000;                       /* room for the synthesised PE headers */
   .text   : {{ *(.text*) }}
+  . = ALIGN(0x{page:X});             /* read-only data on its own page: keeps it out
+                                        of the CODE page so xenia's code analyser
+                                        does not disassemble format strings as code */
   .rodata : {{ *(.rodata*) }}
   .kvars  : {{ KEEP(*(.kvars)) }}    /* import var records: keep past --gc-sections */
-  . = ALIGN(16);
-  . += 0x40;                         /* keep import thunks clear of the entry code */
+  . = ALIGN(0x{page:X});             /* import thunks on their own CODE page, clear
+                                        of both the entry code and the rodata */
   .kthunks : ALIGN(16) {{ KEEP(*(.kthunks)) }}
   . = ALIGN(0x{page:X});             /* writable region on its own page(s) */
   .data : {{ *(.data*) }}
