@@ -73,6 +73,14 @@ SECTIONS {{
     KEEP(*(.init_array))
     PROVIDE_HIDDEN(__init_array_end = .);
   }}
+  .fini_array : {{                   /* destructors -- gather here (writable) so they
+                                        do not land in the .kthunks CODE page and flip
+                                        it to a data page (which breaks bl <thunk>) */
+    PROVIDE_HIDDEN(__fini_array_start = .);
+    KEEP(*(SORT_BY_INIT_PRIORITY(.fini_array.*)))
+    KEEP(*(.fini_array))
+    PROVIDE_HIDDEN(__fini_array_end = .);
+  }}
   .CRT : {{                          /* MS CRT initializer table (.CRT$XCA..XCZ),
                                         how prebuilt MS libs register pre-main
                                         constructors; run by start.c via __xc_a/z */
