@@ -121,6 +121,15 @@ LIBCXX_SRCS = [
     "filesystem/filesystem_error.cpp",
     "filesystem/directory_entry.cpp",
     "filesystem/filesystem_clock.cpp",
+    # vocabulary-type out-of-line bits (bad_*_access / bad_any_cast vtables+what),
+    # <charconv> (to_chars, used by <format>), and <regex>.
+    "any.cpp",
+    "optional.cpp",
+    "variant.cpp",
+    "regex.cpp",
+    # NOTE: charconv.cpp (and thus <format>) deferred -- its float from_chars
+    # pulls llvm-libc's shared FPBits.h, which needs a _LIBCPP_VERBOSE_ABORT
+    # integration this snapshot doesn't wire up cleanly. See tests/stdlib/pending.
 ]
 
 

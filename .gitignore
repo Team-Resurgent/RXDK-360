@@ -20,3 +20,6 @@ build-log*.txt
 # needs from it when we get there. See xdksetup/README.md.
 *.exe
 .xdkdoc/
+
+# real hand-written asm sources (the *.s rule above is for generated files)
+!runtime/xbox/*.S
