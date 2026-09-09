@@ -163,10 +163,15 @@ def main():
             print("combined build FAILED:\n  " + "\n  ".join(tail))
             return 1
         actual, complete = run_once(out)
-        for _ in range(2):
+        for _ in range(4):
             if complete:
                 break
             actual, complete = run_once(out)
+        if args.bless and not complete:
+            # never freeze a truncated run as golden (a dropped section would
+            # bless empty and then falsely "pass" against itself)
+            print("run never completed (no sentinel) -- refusing to bless")
+            return 1
         sections = split_sections(actual, names)
         for name, srcdir, _ in runnable:
             got = sections[name]

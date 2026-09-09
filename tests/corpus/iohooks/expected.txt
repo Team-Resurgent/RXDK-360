@@ -1,0 +1,2 @@
+output hook captured: hooked output line
+stdin hook fed read: Xbox360
