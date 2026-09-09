@@ -119,6 +119,24 @@ static rxdk_ofd *get_fd(int fd) {
     return (fd < RXDK_FD_BASE || fd >= RXDK_FD_MAX) ? NULL : fd_table[fd];
 }
 
+/* Shared with dirio.c (directory ops live there but reuse this fd table): map an
+   fd to its kernel handle, and install a bare handle as a new file fd. */
+void *__rxdk_fd_handle(int fd) {
+    rxdk_ofd *o = get_fd(fd);
+    return o ? o->handle : (void *)0;
+}
+int __rxdk_fd_install(void *h) {
+    rxdk_ofd *o = (rxdk_ofd *)malloc(sizeof *o);
+    int fd;
+    if (!o) return -1;
+    o->handle = (HANDLE)h;
+    o->offset = 0;
+    o->append = 0;
+    fd = alloc_slot(o);
+    if (fd < 0) { free(o); return -1; }
+    return fd;
+}
+
 /* Translate '/' to '\' into a caller buffer; fully-qualified paths pass through
    unchanged (the 360 has no cwd/default drive). */
 #define RXDK_PATH_BUF 1024
@@ -299,17 +317,25 @@ int fstat(int fd, struct stat *st) {
 }
 
 int stat(const char *path, struct stat *st) {
-    ANSI_STRING name;
-    OBJECT_ATTRIBUTES obja;
+    HANDLE h;
+    IO_STATUS_BLOCK iosb;
     FILE_NETWORK_OPEN_INFORMATION info;
-    char buf[RXDK_PATH_BUF];
+    long long size = 0;
+    unsigned long attrs = 0;
     if (!st) { errno = EINVAL; return -1; }
-    RtlInitAnsiString(&name, fix_seps(path, buf, sizeof buf));
-    obja.RootDirectory = NULL;
-    obja.ObjectName = &name;
-    obja.Attributes = OBJ_CASE_INSENSITIVE;
-    if (!NT_SUCCESS(NtQueryFullAttributesFile(&obja, &info))) { errno = ENOENT; return -1; }
-    set_stat(st, info.EndOfFile.QuadPart, info.FileAttributes);
+    /* Open (access=0 -> just SYNCHRONIZE|READ_ATTRIBUTES from nt_open, which
+       opens files AND directories) and query the HANDLE. The path-based
+       NtQueryFullAttributesFile reports EndOfFile from the cached directory
+       entry, which is stale under xenia for a file just written through a
+       handle; the handle query returns the live size. */
+    if (!NT_SUCCESS(nt_open(path, 0, NT_FILE_OPEN, 0, &h))) { errno = ENOENT; return -1; }
+    if (NT_SUCCESS(NtQueryInformationFile(h, &iosb, &info, sizeof info,
+                                          FILE_NETWORK_OPEN_INFO))) {
+        size = info.EndOfFile.QuadPart;
+        attrs = info.FileAttributes;
+    }
+    NtClose(h);
+    set_stat(st, size, attrs);
     return 0;
 }
 

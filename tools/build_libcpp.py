@@ -114,6 +114,13 @@ LIBCXX_SRCS = [
     "ios.cpp",         # ios_base
     "ios.instantiations.cpp",  # basic_ios/basic_ostream/... explicit instantiations
     "locale.cpp",      # locale + facets (num_put/num_get, ctype, ...)
+    # <filesystem> -- also what <fstream> is gated behind in this libc++.
+    "filesystem/operations.cpp",
+    "filesystem/directory_iterator.cpp",
+    "filesystem/path.cpp",
+    "filesystem/filesystem_error.cpp",
+    "filesystem/directory_entry.cpp",
+    "filesystem/filesystem_clock.cpp",
 ]
 
 

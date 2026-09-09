@@ -22,6 +22,11 @@
 // (operator<<(ostream&,const char*), std::hex/dec, num_put/num_get) are all
 // gated on localization; enable it so the iostreams build.
 #define _LIBCPP_HAS_LOCALIZATION 1
+// <fstream> is gated on filesystem in this libc++ (basic_filebuf::open takes a
+// filesystem::path), so file streams need <filesystem> enabled too. Its library
+// (operations/directory_iterator/path) sits on the POSIX dir ops in
+// runtime/xbox/dirio.c.
+#define _LIBCPP_HAS_FILESYSTEM 1
 #define _LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS
 #define _LIBCPP_PSTL_BACKEND_SERIAL
 #define _LIBCPP_HARDENING_MODE _LIBCPP_HARDENING_MODE_NONE
