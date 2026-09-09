@@ -67,6 +67,12 @@ ABI_SRCS = [
 ]
 ABI_FLAGS = COMMON + [
     "-std=c++23", "-fexceptions", "-frtti",
+    # libc++'s localization support uses the POSIX/GNU extended-locale API
+    # (locale_t, uselocale/newlocale, the *_l ctype functions, LC_*_MASK), which
+    # picolibc gates behind POSIX/GNU visibility -- off under strict -std=c++23.
+    # Ask for it here so <locale>/<iostream> build (also exposes clock_gettime,
+    # strerror_r ... but we still force-include the prereq for belt-and-braces).
+    "-D_GNU_SOURCE",
     "-D_LIBCPP_BUILDING_LIBRARY", "-DLIBCXX_BUILDING_LIBCXXABI",
     "-DLIBCXXABI_BUILDING_LIBCXXABI", "-D_LIBCXXABI_XBOX360_TLS_KEY=1",
     "-include", "__config_site", "-include", "rxdk_libcpp_prereq.h",
@@ -94,9 +100,16 @@ LIBCXX_SRCS = [
     "exception.cpp",   # std::exception_ptr / rethrow_exception glue over libc++abi
     "error_category.cpp",  # base error_category virtuals + its typeinfo
     "functional.cpp",  # __hash_memory (std::hash for the error machinery)
+    "new_helpers.cpp", # __throw_bad_alloc + new-handler helpers (not operator new)
+    "call_once.cpp",   # std::__call_once (std::call_once, used by <locale>)
     "chrono.cpp",      # system_clock/steady_clock::now (over our clock_gettime)
     "hash.cpp",        # __next_prime -- unordered_map/set bucket sizing
     "algorithm.cpp",   # explicit __sort/__stable_sort instantiations std::sort uses
+    # <iostream>: the stream objects + locale/facet machinery.
+    "iostream.cpp",    # std::cout/cerr/cin/clog + ios_base::Init
+    "ios.cpp",         # ios_base
+    "ios.instantiations.cpp",  # basic_ios/basic_ostream/... explicit instantiations
+    "locale.cpp",      # locale + facets (num_put/num_get, ctype, ...)
 ]
 
 

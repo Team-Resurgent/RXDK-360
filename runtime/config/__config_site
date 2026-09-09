@@ -18,6 +18,10 @@
 // timespec_get or gettimeofday paths -- the steady_clock branch #errors without
 // one of these set.
 #define _LIBCPP_HAS_CLOCK_GETTIME 1
+// <iostream>/<ostream>/<istream> and the stream inserters/manipulators
+// (operator<<(ostream&,const char*), std::hex/dec, num_put/num_get) are all
+// gated on localization; enable it so the iostreams build.
+#define _LIBCPP_HAS_LOCALIZATION 1
 #define _LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS
 #define _LIBCPP_PSTL_BACKEND_SERIAL
 #define _LIBCPP_HARDENING_MODE _LIBCPP_HARDENING_MODE_NONE

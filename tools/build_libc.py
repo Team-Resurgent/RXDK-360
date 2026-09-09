@@ -58,6 +58,10 @@ SUBDIRS = [
     "libc/ctype",
     "libc/errno",
     "libc/stdio",
+    "libc/locale",   # setlocale/newlocale/uselocale/localeconv -- libc++ <locale>
+    "libc/time",     # strftime_l + time formatting the locale facets use
+    "libc/stdlib",   # abs/labs/getenv/strtol/div/mb<->wc ... (allocator + atexit
+                     # + abort + exit excluded below; our runtime provides those)
 ]
 
 # libm: full double + float math (libm/common + libm/math), the same wholesale
@@ -120,6 +124,16 @@ EXCLUDE = set([
     # picolibc's stdin/stdout/stderr use __weak_reference aliases lld does not
     # apply; runtime/xbox/posix_stdio_streams.c provides strong FILE* globals.
     "posixiob_stdin.c", "posixiob_stdout.c", "posixiob_stderr.c",
+    # libc/stdlib: our runtime already provides the allocator (rt_support.c over
+    # ExAllocatePool), abort, and atexit/__cxa_atexit + exit sequencing
+    # (cxxrt.cpp / crt_start.c), so drop picolibc's versions to avoid duplicate
+    # symbols. The rest of stdlib (abs/labs/getenv/strtol/div/mb<->wc/...) is kept.
+    "malloc.c", "free.c", "calloc.c", "realloc.c", "aligned_alloc.c",
+    "memalign.c", "posix-memalign.c", "valloc.c", "pvalloc.c",
+    "reallocarray.c", "reallocf.c", "mallinfo.c", "mallopt.c",
+    "malloc-error.c", "malloc-stats.c", "malloc-usable-size.c",
+    "abort.c", "assert_no_arg.c",
+    "atexit.c", "cxa-atexit.c", "onexit.c", "exitprocs.c", "exit.c", "_Exit.c",
 ])
 
 
@@ -208,7 +222,12 @@ def main():
 
     if os.path.exists(args.out):
         os.remove(args.out)
-    r = subprocess.run([AR, "rcs", args.out] + objs, capture_output=True, text=True)
+    # The object list is well past the Windows command-line length limit now, so
+    # pass it to llvm-ar through a response file (@file) rather than argv.
+    rsp = os.path.join(objdir, "ar.rsp")
+    with open(rsp, "w", newline="\n") as f:
+        f.write("\n".join('"%s"' % o.replace("\\", "/") for o in objs))
+    r = subprocess.run([AR, "rcs", args.out, "@" + rsp], capture_output=True, text=True)
     if r.returncode != 0:
         sys.exit("archive failed:\n" + r.stderr)
     print("wrote %s: %d objects" % (os.path.relpath(args.out, ROOT), len(objs)))
