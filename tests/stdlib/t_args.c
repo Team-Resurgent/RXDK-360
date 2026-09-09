@@ -39,10 +39,16 @@ int main(int argc, char **argv) {
     CHECK_STR(av[0], "spaced", "first token");
     CHECK_STR(av[1], "out", "second token");
 
-    /* plumbing: crt_start called main with a valid (argc, argv). */
+    /* plumbing: crt_start called main with a valid (argc, argv), parsed from the
+       kernel's loaded command line (ExLoadedCommandLine, a variable import). Some
+       launch paths pass none (argc 0); under xenia it is "default.xex" (argc 1).
+       Assert the shape either way and surface the actual argv[0]. */
     CHECK(argc >= 0, "main received argc");
-    CHECK(argc == 0 || argv[argc] == 0, "main's argv is NULL-terminated");
-    DbgPrint("[T] PASS main argc=%d (empty on a normal launch)\n", argc);
+    CHECK(argv != 0, "main received argv");
+    CHECK(argc == 0 || (argv[0] != 0 && argv[argc] == 0),
+          "argv[0] set and argv[argc] is the NULL terminator");
+    DbgPrint("[T] PASS main got argc=%d argv[0]=%s\n", argc,
+             (argc > 0 && argv[0]) ? argv[0] : "(none)");
     ++rxdk__pass; ++rxdk__total;
 
     CHECK_DONE("args");

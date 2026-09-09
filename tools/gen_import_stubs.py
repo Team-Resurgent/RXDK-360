@@ -50,13 +50,15 @@ SUPPLEMENTAL_ORDINALS = {
 
 
 def build_ordinal_index(xdk_lib_dir):
-    """name -> (module_name, ordinal) across the XDK import libraries.
+    """name -> (module_name, ordinal, is_var) across the XDK import libraries.
 
     The importing module is taken from each short-import's own DLL field (e.g.
     "xam.xex@21256.0+1861.0" -> xam.xex), not the containing .lib -- a single lib
     such as xapilib.lib carries stubs for several modules (xam.xex functions like
-    XGetLanguage live inside xapilib.lib, not a xam.lib)."""
-    index = dict(SUPPLEMENTAL_ORDINALS)
+    XGetLanguage live inside xapilib.lib, not a xam.lib). is_var is true for a
+    data export (a variable, e.g. ExLoadedCommandLine): it needs the variable
+    import form, not a call thunk."""
+    index = {name: (mod, ordv, False) for name, (mod, ordv) in SUPPLEMENTAL_ORDINALS.items()}
     for path in glob.glob(os.path.join(xdk_lib_dir, "*.lib")):
         base = os.path.splitext(os.path.basename(path))[0].lower()
         blob = open(path, "rb").read()
@@ -66,7 +68,7 @@ def build_ordinal_index(xdk_lib_dir):
             if member.data[:2] == struct.pack("<H", IMAGE_FILE_MACHINE_POWERPCBE):
                 continue
             try:
-                sym, dll, ordinal, _nt = parse_short_import(member.data)
+                sym, dll, ordinal, _nt, itype = parse_short_import(member.data)
             except Exception:
                 continue
             if not ordinal:
@@ -74,7 +76,8 @@ def build_ordinal_index(xdk_lib_dir):
             module = dll.split("@")[0].strip()      # "xam.xex@..." -> "xam.xex"
             module = module or MODULE_NAMES.get(base)
             if module:
-                index.setdefault(sym, (module, ordinal))
+                # IMPORT_OBJECT_DATA(1)/_CONST(2) => a variable, not a function.
+                index.setdefault(sym, (module, ordinal, itype in (1, 2)))
     return index
 
 
@@ -129,41 +132,71 @@ def main():
     else:
         ap.error("provide an object or --names")
 
-    resolved = {}                                      # module -> [(name, ordinal)]
+    resolved = {}                          # module -> [(name, ordinal, is_var)]
     unresolved = []
     for name in undefined:
         if name in index:
-            module, ordinal = index[name]
-            resolved.setdefault(module, []).append((name, ordinal))
+            module, ordinal, is_var = index[name]
+            resolved.setdefault(module, []).append((name, ordinal, is_var))
         else:
             unresolved.append(name)
 
-    # emit the stub assembly: thunks in their own section, away from entry code
+    # Emit the stub assembly. Two import forms, matching how xenia reads each
+    # import record's value (top byte selects the kind, xex_module.cc):
+    #
+    #   function -> a 16-byte call thunk in .kthunks whose first word is
+    #     0x010000<ord> (top byte 1 => xenia rewrites it to a syscall so `bl
+    #     <name>` calls the export) PLUS a 4-byte .kvars record __imp_<name> =
+    #     <ord> (top byte 0; for a function xenia parks 0xDEADC0DE there).
+    #
+    #   variable -> ONE 4-byte .kvars record = <ord> (top byte 0 => xenia writes
+    #     the export's address into it), with the base symbol <name> aliased onto
+    #     that same slot and NO .kthunks thunk -- so reading `<name>` as data
+    #     yields the pointer the loader patched in (e.g. char* ExLoadedCommandLine).
+    #     A thunk here would make xenia treat the export as a function.
     lines = ["# Generated import thunks -- do not edit.", "    .section .kthunks,\"ax\"", ""]
     for module, funcs in resolved.items():
-        for name, ordinal in funcs:
+        for name, ordinal, is_var in funcs:
+            if is_var:
+                continue
             lines += [f"    .globl {name}", f"{name}:",
                       f"    .long 0x{0x01000000 | ordinal:08X}, 0, 0, 0", ""]
     lines += ["    .section .kvars,\"a\"", ""]
     for module, funcs in resolved.items():
-        for name, ordinal in funcs:
-            lines += [f"    .globl __imp_{name}", f"__imp_{name}:",
-                      f"    .long 0x{ordinal:08X}", ""]
+        for name, ordinal, is_var in funcs:
+            lines += [f"    .globl __imp_{name}"]
+            if is_var:                     # base symbol reads the patched pointer
+                lines += [f"    .globl {name}", "    .p2align 2", f"{name}:"]
+            lines += [f"__imp_{name}:", f"    .long 0x{ordinal:08X}", ""]
     with open(args.out, "w", newline="\n") as f:
         f.write("\n".join(lines))
 
+    # Manifest: one entry per import record address, exactly once (xenia patches
+    # a slot the first time it sees it; a second listing would re-read the patched
+    # value as a bogus record). A function has two records (var slot + thunk); a
+    # variable has one (the shared slot).
+    def records_for(funcs):
+        out = []
+        for name, _o, is_var in funcs:
+            out.append(f"__imp_{name}")
+            if not is_var:
+                out.append(name)
+        return out
+
     manifest_path = args.manifest or (args.out.rsplit(".", 1)[0] + ".imports.json")
     manifest = {"libraries": [
-        {"module": module,
-         "records": [rec for name, _ in funcs for rec in (f"__imp_{name}", name)]}
+        {"module": module, "records": records_for(funcs)}
         for module, funcs in resolved.items()]}
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2)
 
     total = sum(len(v) for v in resolved.values())
-    print(f"{args.out}: {total} imports across {len(resolved)} module(s)")
+    nvar = sum(1 for v in resolved.values() for _n, _o, iv in v if iv)
+    print(f"{args.out}: {total} imports across {len(resolved)} module(s)"
+          + (f" ({nvar} variable)" if nvar else ""))
     for module, funcs in resolved.items():
-        print(f"  {module}: " + ", ".join(f"{n}(0x{o:X})" for n, o in funcs))
+        print(f"  {module}: " + ", ".join(
+            f"{n}(0x{o:X}{'/var' if iv else ''})" for n, o, iv in funcs))
     if unresolved:
         print(f"  unresolved (not kernel imports): {', '.join(unresolved)}")
 
