@@ -3,6 +3,7 @@
    digit separators, enums with a fixed underlying type, and #embed. */
 #include "rxdk_test.h"
 #include <stddef.h>
+#include <stdlib.h>
 
 /* #embed pulls in tests/stdlib/t_c23lang.data (bytes 10,20,30,40). The runner
    puts tests/stdlib on the quote-include path, so this resolves in both the
@@ -57,6 +58,13 @@ int main(void) {
     /* #embed */
     CHECK_EQI((long)sizeof(embedded), 4, "#embed byte count");
     CHECK(embedded[0] == 10 && embedded[3] == 40, "#embed file contents");
+
+    /* C23 sized deallocation (7.24.3.3/4): both forward to free() here. */
+    void *m = malloc(64);
+    free_sized(m, 64);
+    void *am = aligned_alloc(32, 128);
+    free_aligned_sized(am, 32, 128);
+    CHECK(m != nullptr && am != nullptr, "free_sized/free_aligned_sized link and run");
 
     CHECK_DONE("c23lang");
     return 0;

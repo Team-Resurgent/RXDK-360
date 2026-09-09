@@ -9,9 +9,13 @@ Layout: one subdirectory per submodule tree the patch targets.
 
 ```
 patches/
-  picolibc/    -> applied in vendor/picolibc
   libcxx/      -> applied in vendor/llvm-project (the C++ runtime sources)
 ```
+
+picolibc is **not** patched here any more: `vendor/picolibc` now points at the
+`Team-Resurgent/picolibc` fork's `xbox360` branch, so its handful of Xbox 360
+changes live as commits on that branch (the same model as the MS-PPC clang fork).
+Updating upstream is a fetch + rebase of `xbox360`, then re-pin the submodule.
 
 The apply step is **idempotent**: for each `*.patch` it first runs
 `git apply --reverse --check`; if that succeeds the patch is already applied and is
