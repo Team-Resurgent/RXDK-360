@@ -258,6 +258,75 @@ def build_basefile_format(image_size, zero_size):
     return info
 
 
+def read_elf_symbol_addrs(blob):
+    """Map global/defined symbol name -> virtual address, from the ELF symtab."""
+    (e_shoff,) = struct.unpack_from(">I", blob, 0x20)
+    e_shentsize, e_shnum, e_shstrndx = struct.unpack_from(">HHH", blob, 0x2E)
+
+    def sh(i):
+        return struct.unpack_from(">IIIIIIIIII", blob, e_shoff + i * e_shentsize)
+
+    symtab = strtab = None
+    for i in range(e_shnum):
+        typ = sh(i)[1]
+        if typ == 2:                                # SHT_SYMTAB
+            symtab = sh(i)
+            strtab = sh(symtab[6])                  # sh_link -> strtab
+    out = {}
+    if not symtab:
+        return out
+    off, size, entsize = symtab[4], symtab[5], symtab[9]
+    stroff = strtab[4]
+    for k in range(size // entsize):
+        o = off + k * entsize
+        st_name, st_value = struct.unpack_from(">II", blob, o)
+        if st_name and st_value:
+            end = blob.index(b"\0", stroff + st_name)
+            out[blob[stroff + st_name:end].decode("utf-8", "replace")] = st_value
+    return out
+
+
+def build_import_libraries(imports):
+    """Build the IMPORT_LIBRARIES optional-header block.
+
+    `imports` is a list of (library_name, [record_virtual_address, ...]). Each
+    record VA points at an import slot (a 4-byte variable record) or a 16-byte
+    thunk already placed in the image; the record's own bytes encode its type
+    and ordinal, which the loader reads and rewrites.
+
+    Layout (xex2_opt_import_libraries): total size, then a string table
+    (size, count, padded names), then one xex2_import_library per library.
+    """
+    names = [name for name, _ in imports]
+    name_data = b""
+    name_index = {}
+    for name in names:
+        name_index[name] = len(name_index)
+        name_data += name.encode("ascii") + b"\0"
+        if len(name_data) % 4:
+            name_data += b"\0" * (4 - (len(name_data) % 4))
+
+    libs = b""
+    for name, records in imports:
+        count = len(records)
+        lib = struct.pack(">I", 0x28 + count * 4)     # size
+        lib += b"\0" * 0x14                            # next_import_digest
+        lib += struct.pack(">I", 0)                    # id
+        lib += struct.pack(">I", 0)                    # version_value
+        lib += struct.pack(">I", 0)                    # version_min_value
+        lib += struct.pack(">H", name_index[name])     # name_index
+        lib += struct.pack(">H", count)                # count
+        for rec in records:
+            lib += struct.pack(">I", rec)              # import_table[]
+        libs += lib
+
+    total = 12 + len(name_data) + len(libs)
+    out = struct.pack(">III", total, len(name_data), len(names))
+    out += name_data
+    out += libs
+    return out
+
+
 def build_security_info(image_size, load_address, sections):
     """XexSecurityInfo + section table. Hashes are left zero (a dev kit with an
     unsigned image does not check them; they can be filled in later)."""
@@ -290,12 +359,27 @@ def build_security_info(image_size, load_address, sections):
     return out
 
 
-def pack(elf_path, out_path, base_override=None):
+def pack(elf_path, out_path, base_override=None, imports=None):
     blob = open(elf_path, "rb").read()
     load_base, sections, entry = read_elf_sections(blob)
     if base_override is not None and base_override != load_base:
         sys.exit(f"ELF is linked at 0x{load_base:08X}, not 0x{base_override:08X}; "
                  f"link it at the target base instead of overriding here")
+
+    # resolve any import records: each is a library plus ELF symbol names whose
+    # addresses become the import table (the records themselves live in the image)
+    import_block = None
+    if imports:
+        syms = read_elf_symbol_addrs(blob)
+        resolved = []
+        for libname, symnames in imports:
+            vas = []
+            for s in symnames:
+                if s not in syms:
+                    sys.exit(f"import symbol {s!r} not found in {elf_path}")
+                vas.append(syms[s])
+            resolved.append((libname, vas))
+        import_block = build_import_libraries(resolved)
 
     load_base, image, entry, image_size = build_pe_basefile(load_base, sections, entry)
 
@@ -324,23 +408,30 @@ def pack(elf_path, out_path, base_override=None):
         # main thread with a zero stack
         (KEY_STACK_SIZE, DEFAULT_STACK_SIZE),
     ]
-    offset_entries = [KEY_BASEFILE_FORMAT]            # data appended after headers
+    # (key, data) blocks placed after the security info; the directory records
+    # the file offset of each.
+    offset_blocks = [(KEY_BASEFILE_FORMAT, basefile_format)]
+    if import_block is not None:
+        offset_blocks.append((KEY_IMPORT_LIBRARIES, import_block))
 
-    n_entries = len(inline) + len(offset_entries)
+    n_entries = len(inline) + len(offset_blocks)
     header_size = 0x18 + n_entries * 8
 
-    # layout: image header, directory, then security info, then the
-    # offset-entry data blocks, all before the basefile.
+    # layout: image header, directory, then security info, then each offset
+    # block, all before the page-aligned basefile.
     sec_off = header_size
-    fmt_off = sec_off + len(security)
-    headers_end = fmt_off + len(basefile_format)
-    # the basefile starts page-aligned after all headers
-    basefile_off = (headers_end + PAGE - 1) & ~(PAGE - 1)
+    block_offsets = {}
+    cur = sec_off + len(security)
+    for key, data in offset_blocks:
+        block_offsets[key] = cur
+        cur += len(data)
+    basefile_off = (cur + PAGE - 1) & ~(PAGE - 1)
 
     directory = b""
     for key, val in inline:
         directory += struct.pack(">II", key, val)
-    directory += struct.pack(">II", KEY_BASEFILE_FORMAT, fmt_off)
+    for key, _ in offset_blocks:
+        directory += struct.pack(">II", key, block_offsets[key])
 
     image_header = struct.pack(">4sIiiiI", b"XEX2",
                                MODULEFLAG_TITLE_MODULE,
@@ -354,8 +445,9 @@ def pack(elf_path, out_path, base_override=None):
     out += directory
     assert len(out) == sec_off
     out += security
-    assert len(out) == fmt_off
-    out += basefile_format
+    for key, data in offset_blocks:
+        assert len(out) == block_offsets[key]
+        out += data
     out += b"\0" * (basefile_off - len(out))
     out += image
 
@@ -372,8 +464,16 @@ def main():
     ap.add_argument("-o", "--out", default="out.xex")
     ap.add_argument("--base", type=lambda s: int(s, 0), default=None,
                     help="assert the ELF's load base (does not relocate)")
+    ap.add_argument("--import", dest="imports", action="append", default=[],
+                    metavar="LIB:sym1,sym2,...",
+                    help="add an import library; syms name the import records "
+                         "(variable then thunk per function) as ELF symbols")
     args = ap.parse_args()
-    pack(args.elf, args.out, args.base)
+    imports = []
+    for spec in args.imports:
+        lib, _, symlist = spec.partition(":")
+        imports.append((lib, [s for s in symlist.split(",") if s]))
+    pack(args.elf, args.out, args.base, imports)
 
 
 if __name__ == "__main__":
