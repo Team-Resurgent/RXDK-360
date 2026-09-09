@@ -1,0 +1,2 @@
+d=-5 u=5 x=ff s=hi c=Z pct=%
+getchar=90
