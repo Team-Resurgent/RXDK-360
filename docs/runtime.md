@@ -100,9 +100,10 @@ their loops as the idiom is infinite self-recursion) and `-ffreestanding`.
   uppercase pair means the opposite width of the function), `%I64`/`%I32`, the
   `w` length modifier, and `%s`/`%c` following the function's own width in the
   wide family. `runtime/xbox/rt_support.c` supplies the 64-bit division helpers
-  the compiler emits (`__udivdi3` etc., picolibc formats integers 64-bit) and a
-  placeholder bump allocator for `malloc`/`free` (the real one will come from the
-  console heap).
+  the compiler emits (`__udivdi3` etc., picolibc formats integers 64-bit) and
+  `malloc`/`free` on the console pool -- `ExAllocatePool`/`ExFreePool`, the
+  xboxkrnl exports the retail CRT's heap sits on, resolved as imports, so there
+  is no static heap and titles stay small.
 - **Titles compile C23 / C++23** now (`mktitle`, `-std=c23` / `-std=c++23`);
   picolibc itself stays at c17 (its own sources are c11/c17 -- the *runtime it
   provides* is what is C23/C++23-capable).
@@ -114,7 +115,7 @@ and the two `printf_*` probes -- uses picolibc, not libcMT. The `%S` probe print
 `--lib libcMT` for the translated MS CRT, though its `sprintf` still cannot link
 in isolation, so the printf tests need the modern runtime.)
 
-Next: malloc from the console heap (replace the bump allocator); then the C++
+Next: the C++
 runtime.
 
 ## Open issues found during bring-up

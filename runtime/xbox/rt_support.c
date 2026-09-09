@@ -54,20 +54,21 @@ long long __moddi3(long long a, long long b) {
     return a < 0 ? -(long long)r : (long long)r;
 }
 
-/* ---- placeholder allocator ----------------------------------------------- */
+/* ---- allocator: the console pool ----------------------------------------- */
 
-static char g_heap[512 * 1024];
-static size_t g_used;
+/*
+ * malloc/free on the kernel pool (xboxkrnl ExAllocatePool/ExFreePool, resolved
+ * as imports by mktitle) -- the same allocator the retail CRT's heap sits on,
+ * so there is no static reservation and pointers get the pool's alignment.
+ */
+extern void *ExAllocatePool(unsigned size);
+extern void ExFreePool(void *base);
 
 void *malloc(size_t n) {
-    n = (n + 15) & ~(size_t)15;
-    if (g_used + n > sizeof(g_heap))
-        return NULL;
-    void *p = g_heap + g_used;
-    g_used += n;
-    return p;
+    return ExAllocatePool(n ? (unsigned)n : 1u);
 }
 
 void free(void *p) {
-    (void)p;                       /* bump allocator: no reclaim yet */
+    if (p)
+        ExFreePool(p);
 }
