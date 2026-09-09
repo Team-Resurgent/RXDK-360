@@ -67,7 +67,8 @@ XBOX_GLUE = [
     os.path.join(ROOT, "runtime", "xbox", "cxxrt.cpp"),             # operator new/delete + __cxa_*
     os.path.join(ROOT, "runtime", "xbox", "libc_hooks.c"),          # stdin/output/exec hooks + POSIX backend
     os.path.join(ROOT, "runtime", "xbox", "posix_stdio_streams.c"), # stdin/stdout/stderr FILE globals
-    os.path.join(ROOT, "runtime", "xbox", "locks.c"),              # single-thread no-op retargetable locks
+    os.path.join(ROOT, "runtime", "xbox", "locks.c"),              # kernel critical-section retargetable locks
+    os.path.join(ROOT, "runtime", "xbox", "threads.c"),            # C11 <threads.h> over the kernel (thrd/mtx/tss/once)
 ]
 
 # C++ runtime glue: no picolibc config force-include; freestanding, no EH/RTTI yet.
