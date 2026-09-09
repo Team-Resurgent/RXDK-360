@@ -275,10 +275,35 @@ cleanly. The same object linked *without* the alignment packs as one forced
 `CODE` page (the packer prints a note) and its main thread dies instead of
 printing -- confirming the read-write mapping is what the descriptors buy.
 
+## One-command builds (mktitle.py)
+
+`tools/mktitle.py` folds the whole flow into one step so building a title is not
+a manual compile / gen_import_stubs / link-with-a-hand-written-layout / elf2xex
+dance:
+
+```
+python tools/mktitle.py build/ctitle/apidata.c -o build/ctitle/apidata.xex
+python tools/mktitle.py build/ctitle/apititle.c -o build/ctitle/apititle.xex \
+    --lib xapilib,libcMT
+```
+
+It compiles each source, writes the linker script (PE-header room, the import
+thunks past a gap, the writable region aligned to its own page), **trial-links**
+to discover the still-undefined symbols -- which, after the libraries resolve,
+are exactly the kernel imports -- resolves their ordinals from the XDK import
+libraries (`--xdk`, default `C:\Program Files (x86)\Microsoft Xbox 360 SDK\lib\
+xbox`), emits the thunks + manifest, links the final ELF and packs the XEX. A
+bare `--lib` name resolves to `<coff-dir>/<name>.a` (the coff2elf archives).
+
+Proven both ways: the freestanding `apidata` (writes `.data`/`.bss`) packs
+`1xCODE + 1xRWDATA` and runs; the library title links the translated `xapilib.a`
++ `libcMT.a`, the trial-link narrows the undefined set to just
+`RtlInitAnsiString` + `HalReturnToFirmware`, and it packs and runs.
+
 ## Next
 
-- fold the linker-script layout into a reusable link step, and eventually build
-  the patched clang so C/C++ compiles with the MS ABI (not zig's PPC EABI)
+- build the patched clang so C/C++ compiles with the MS ABI (not zig's PPC
+  EABI), and move packing into XexTool (see below)
 
 ## Production home
 
