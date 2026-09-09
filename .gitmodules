@@ -5,3 +5,6 @@
 	path = vendor/llvm-project
 	url = https://github.com/Team-Resurgent/llvm-project.git
 	branch = xbox360-msppc
+[submodule "vendor/xextool"]
+	path = vendor/xextool
+	url = https://github.com/Team-Resurgent/XexTool.git
