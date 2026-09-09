@@ -272,14 +272,20 @@ def main():
     os.makedirs(workdir, exist_ok=True)
     page = page_size_for(args.base)
 
-    # The default runtime, matching what the official 360 SDK auto-links for a
-    # title (libcMT.lib + xapilib.lib + xboxkrnl.lib): our modern CRT is
-    # libc.a (+ libcpp.a for C++), xapilib.a is the XAPI import lib, and the
-    # xboxkrnl imports are synthesised by the import-stub step below -- so they
-    # need no static lib. Auto-linked for clang titles unless --no-default-libs
-    # (used to link libcMT instead, or to manage the set by hand). User --lib
-    # entries go first, the runtime after, so a title's own libs resolve against
-    # it -- the same order as the official link (objects/title libs, then CRT).
+    # The low-level "just works" default for a clang title: our modern CRT --
+    # libc.a (the libcMT replacement, auto-linked like the XDK's /MT) plus
+    # libcpp.a for C++ -- and xapilib.a, the one XDK component always present in
+    # every official configuration and already translated. xboxkrnl's imports are
+    # synthesised by the import-stub step below, so it needs no static lib.
+    #
+    # This is deliberately minimal: the official XDK links a much larger default
+    # set that varies per solution configuration (d3d9/xgraphics/xnet/xaudio2/
+    # xact3/x3daudio/xmcore/vcomp/xbdm, with debug/profile/ltcg suffixes). That
+    # full per-config list is the project template's job once those components are
+    # brought up for the modern toolchain; a title needing them adds them via
+    # --lib in the meantime. --no-default-libs opts out entirely (to link libcMT
+    # instead, or to manage the set by hand). User --lib entries go first, the
+    # runtime after, matching the official link order (title libs, then CRT).
     has_cpp = any(os.path.splitext(s)[1].lower() in (".cpp", ".cc", ".cxx", ".c++")
                   for s in args.sources)
     default_libs = []
