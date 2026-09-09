@@ -95,7 +95,11 @@ def compile_sources(sources, workdir, cc, clang, cflags):
         if ext == ".o":
             objects.append(src)
             continue
-        obj = os.path.join(workdir, os.path.splitext(os.path.basename(src))[0] + ".o")
+        # unique object name: many titles have several sources all called main.c
+        # (one per test dir), so qualify the object with its parent directory.
+        stem = os.path.splitext(os.path.basename(src))[0]
+        parent = os.path.basename(os.path.dirname(os.path.abspath(src)))
+        obj = os.path.join(workdir, (parent + "_" + stem if parent else stem) + ".o")
         is_asm = ext in (".s", ".asm")
         is_cpp = ext in (".cpp", ".cc", ".cxx", ".c++")
         if cc == "clang":

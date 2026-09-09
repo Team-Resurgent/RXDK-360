@@ -1,5 +1,5 @@
 #include "rt.h"
-void title_main(void) {
+void t_string(void) {
     char buf[32], buf2[32];
     strcpy(buf, "abcdef");
     DbgPrint("len=%d\n", (int)strlen(buf));

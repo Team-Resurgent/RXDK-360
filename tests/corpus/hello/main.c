@@ -1,2 +1,2 @@
 #include "rt.h"
-void title_main(void) { DbgPrint("hello from the corpus\n"); }
+void t_hello(void) { DbgPrint("hello from the corpus\n"); }
