@@ -19,3 +19,4 @@ build-log*.txt
 # kept locally, never committed. A setup script will extract what the toolchain
 # needs from it when we get there. See xdksetup/README.md.
 *.exe
+.xdkdoc/
