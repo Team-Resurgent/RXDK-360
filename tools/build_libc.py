@@ -10,7 +10,8 @@ build/libc/libc.a.
 Brought up piece by piece, keeping the corpus (tools/run_corpus.py) green:
   * string / mem / ctype / errno  -- done
   * stdio (self-contained sprintf, incl. the MSVC %S rewrite) -- next
-  * malloc, C++ runtime           -- later
+  * malloc (console pool ExAllocatePool)  -- done
+  * C++ runtime                    -- later
 
 Usage:
     python tools/build_libc.py [-o build/libc/libc.a]
