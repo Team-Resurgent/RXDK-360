@@ -114,12 +114,40 @@ modal dialog, have `HostExceptionReport::DisplayExceptionMessage` also write
 llvm-symbolizer --obj=xenia_canary.exe <ImageBase + RVA>   # ImageBase 0x140000000
 ```
 
+## Kernel imports: a title that prints through DbgPrint
+
+`elf2xex.py --import LIB:sym1,sym2,...` builds the IMPORT_LIBRARIES header. Each
+function import is two records already placed in the image and named as ELF
+symbols: a 4-byte **variable** record (`0x00000000 | ordinal`) and a 16-byte
+**thunk** (`0x01000000 | ordinal` in its first word). At load the kernel reads
+the record bytes, rewrites each thunk to `sc 2` (a syscall), and resolves the
+ordinal; a title calls `bl <thunk>` to reach the kernel function.
+
+Proven end to end with a hand-written PPC title (`build/import/hello_import.s`)
+that calls `xboxkrnl` DbgPrint (ordinal 3) and HalReturnToFirmware (0x28):
+
+```
+(DbgPrint) RXDK-360: hello from our own toolchain via DbgPrint
+HalReturnToFirmware(00000000)
+Game requested a hard poweroff via HalReturnToFirmware
+```
+
+xenia loads it with **100% import resolution**, runs our entry, prints our
+message through the kernel, and exits cleanly. The whole pipeline -- translate
+the MS libraries, link, pack, load, run, call the kernel, see output -- works
+with our own tools.
+
+**Layout gotcha:** an import thunk must not sit immediately after the entry
+code. xenia declares each thunk as its own (extern) function; if one abuts the
+entry's basic block, the entry-function analysis collides with it and the entry
+is treated as an "undefined extern call" and never runs. A small gap between
+the entry code and the thunks avoids it.
+
 ## Next
 
-- wire kernel imports (the import manifest from `coff2elf.py`) into an
-  IMPORT_LIBRARIES optional header so title code can call `xboxkrnl`
-- a real entry that calls a debug-print import, to close the boot-and-print loop
-  (with `kernel_debug_monitor = true`)
+- generate the import records + thunks from *undefined ELF symbols* (from the
+  `coff2elf` manifest) automatically, instead of hand-written asm, so compiled
+  C can call the kernel
 - emit per-section page descriptors (CODE / DATA / READONLY) instead of one CODE
   span, so writable data is mapped read-write for real titles
 
