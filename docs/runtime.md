@@ -176,14 +176,27 @@ titles depend on.
 
 ## Other libraries hooking pre-main (the MS CRT init table)
 
-Our own C++ static constructors run through the ELF `.init_array` (above). But a
-prebuilt MS library registers its pre-main initializers in `.CRT$XC*` sections
-and expects the CRT to walk them between the `__C1_11886`/`__C2_11886` sentinels
-via `_initterm` -- a different mechanism. To let prebuilt libs hook pre-main the
-way they do on a real title, the linker script must gather `.CRT$XC*` and define
-those sentinels, and `start.c` must call `_initterm(__C1, __C2)` alongside the
-`.init_array` walk. (This is the 360 equivalent of the OG Xbox path; both are
-just "run an array of initializers before main".)
+Our own C++ static constructors run through the ELF `.init_array`. A prebuilt MS
+library instead registers its pre-main initializers in `.CRT$XC*` sections (the
+XDK CRT walks them between `__xc_a`/`__xc_z` via `_initterm`) -- a different
+mechanism. Both are now bridged:
+
+- `coff2elf` **keeps** the `.CRT$XC*` sections (it used to drop everything CRT),
+  so a prebuilt lib's initializer pointers survive translation.
+- the title's linker script gathers `*(SORT_BY_NAME(.CRT$XC*))` between
+  `__xc_a`/`__xc_z`.
+- `_prelude/start.c` walks that table (skipping the null XCA/XCZ markers, like
+  `_initterm`) right after the `.init_array` walk, before `title_main`.
+
+The `msinit` corpus test proves it: a constructor placed in `.CRT$XCU` (via a
+section attribute, exactly how MS code registers one) sets `g_ms=4321` before
+`title_main` runs -- through the MS path, not `.init_array`. So a prebuilt lib
+can hook pre-main the way it does on a real title.
+
+`__C1_11886`/`__C2_11886`, by contrast, turned out **not** to be init-table
+bounds: no relocation uses them, and every object (even data-only ones) references
+them -- they are MSVC's compiler-version consistency guards, defined by the
+matching CRT. `rt_support.c` defines them as dummies so prebuilt objects link.
 
 ## Follow-ups noted
 

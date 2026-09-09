@@ -1,0 +1,1 @@
+MS pre-main init: g_ms=4321

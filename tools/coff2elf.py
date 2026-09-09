@@ -226,10 +226,15 @@ def _keep_section(name):
     """Sections carried into the ELF, and the name they take there."""
     if name == ".rdata" or name.startswith(".rdata$"):
         return ".rodata"
+    # MS CRT initializer/terminator tables (.CRT$XCA..XCZ etc.) carry the pre-main
+    # constructor pointers of prebuilt libs. Keep the grouped name so the title's
+    # linker script can gather them in $-suffix order between __xc_a/__xc_z.
+    if name.startswith(".CRT$"):
+        return name
     base = name.split("$")[0]
     if base in (".text", ".data", ".bss", ".pdata", ".xdata"):
         return base
-    return None                       # debug, drectve, XBLD, idata, CRT -> dropped
+    return None                       # debug, drectve, XBLD, idata -> dropped
 
 
 class StrTab:
