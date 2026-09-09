@@ -327,6 +327,78 @@ def build_import_libraries(imports):
     return out
 
 
+def build_page_descriptors(base, sections, image_size, page_size):
+    """Partition the image's pages into (page_count, info) descriptors by the
+    protection each page needs.
+
+    xenia (with writable_code_segments=false, the default) maps CODE and
+    READONLY_DATA pages read-only and DATA pages read-write, so a title that
+    writes a global faults unless its writable sections land in DATA pages.
+    One descriptor spanning the whole image as CODE (the first cut) made
+    everything read-only; this walks the sections and marks each page CODE,
+    DATA or READONLY_DATA from the sections that occupy it.
+
+    Page granularity is coarse (64KB below 0x90000000), so a writable section
+    that shares a page with code cannot be mapped writable without making the
+    code page writable too. The linker script must align the writable region
+    (.data/.bss) to the page size so it occupies its own page(s); if it does
+    not, the shared page falls back to CODE (read-only) and a note is printed.
+    """
+    num_pages = image_size // page_size
+    kinds = []
+    shared_code_write = False
+    for p in range(num_pages):
+        lo, hi = p * page_size, (p + 1) * page_size
+        has_exec = has_write = has_ro = False
+        for s in sections:
+            s_lo = s.vaddr - base
+            s_hi = s_lo + s.memsize
+            if s_hi <= lo or s_lo >= hi:
+                continue
+            if s.flags & SHF_EXECINSTR:
+                has_exec = True
+            elif s.flags & SHF_WRITE:
+                has_write = True
+            else:
+                has_ro = True
+        if p == 0:
+            has_ro = True                              # PE headers: read-only metadata
+        if has_write and has_exec:
+            shared_code_write = True
+        if has_write:
+            info = SECTIONINFO_DATA
+        elif has_exec:
+            info = SECTIONINFO_CODE
+        else:
+            info = SECTIONINFO_READONLY
+        kinds.append(info)
+
+    # xenia's per-title code hash scans for a CODE page and reads a wild range
+    # if it finds none; guarantee at least one. Prefer the header/code page.
+    forced = False
+    if SECTIONINFO_CODE not in kinds and kinds:
+        kinds[0] = SECTIONINFO_CODE
+        forced = True
+
+    descriptors = []                                   # [page_count, info] runs
+    for info in kinds:
+        if descriptors and descriptors[-1][1] == info:
+            descriptors[-1][0] += 1
+        else:
+            descriptors.append([1, info])
+    descriptors = [(count, info) for count, info in descriptors]
+
+    notes = []
+    if shared_code_write:
+        notes.append("a writable section shares a page with code; align the "
+                     "writable region (.data/.bss) to the page size to map it "
+                     "read-write")
+    if forced:
+        notes.append("no page held only code, so page 0 was forced CODE for the "
+                     "code hash; writable data on that page stays read-only")
+    return descriptors, notes
+
+
 def build_security_info(image_size, load_address, sections):
     """XexSecurityInfo + section table. Hashes are left zero (a dev kit with an
     unsigned image does not check them; they can be filled in later)."""
@@ -390,13 +462,13 @@ def pack(elf_path, out_path, base_override=None, imports=None):
     pages = image_size // page_size_for(load_base)
 
     basefile_format = build_basefile_format(len(image), zero_size)
-    # one section spanning the whole image, read/write data
-    # At least one page descriptor must be marked CODE: xenia's per-title hash
-    # (user_module.cc) scans for the first and last CODE page, and if it finds
-    # none it computes an out-of-bounds range (page index UINT32_MAX) and reads
-    # wild memory. Mark the image CODE so that scan succeeds.
-    security = build_security_info(image_size, load_base,
-                                   [(pages, SECTIONINFO_CODE)])
+    # per-section page descriptors: code/read-only pages stay read-only, writable
+    # pages (.data/.bss) map read-write, and at least one page is CODE for
+    # xenia's per-title code hash (see build_page_descriptors).
+    descriptors, desc_notes = build_page_descriptors(
+        load_base, sections, image_size, page_size_for(load_base))
+    assert sum(c for c, _ in descriptors) == pages, (descriptors, pages)
+    security = build_security_info(image_size, load_base, descriptors)
 
     # optional-header directory: inline-value keys (low byte 0x00/0x01) carry
     # their value directly; others carry a file offset to their data.
@@ -455,6 +527,11 @@ def pack(elf_path, out_path, base_override=None, imports=None):
         f.write(out)
     print(f"wrote {out_path}: base 0x{load_base:08X} entry 0x{entry:08X} "
           f"image {len(image)} bytes ({pages} pages), file {len(out)} bytes")
+    names = {SECTIONINFO_CODE: "CODE", SECTIONINFO_DATA: "RWDATA",
+             SECTIONINFO_READONLY: "RODATA"}
+    print("  pages: " + ", ".join(f"{c}x{names[info]}" for c, info in descriptors))
+    for note in desc_notes:
+        print(f"  note: {note}")
 
 
 def main():
