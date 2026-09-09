@@ -48,6 +48,7 @@ INCLUDES = [
     "-I" + os.path.join(PICO, "libc", "stdio"),
     "-I" + os.path.join(PICO, "libc", "locale"),   # locale_private.h, internal
     "-I" + os.path.join(PICO, "libc", "ctype"),    # ctype local.h, internal
+    "-I" + os.path.join(PICO, "libm", "common"),   # math_config.h / fdlibm internals
 ]
 
 # Source subdirectories globbed wholesale (with per-file excludes below). Grows
@@ -58,6 +59,27 @@ SUBDIRS = [
     "libc/errno",
     "libc/stdio",
 ]
+
+# libm: full double + float math (libm/common + libm/math), the same wholesale
+# glob RXDK-Libs uses on the original Xbox. The C++ STL needs it (<cmath>, and
+# libc++'s hash table sizing calls ceilf). Only the soft long-double helpers
+# (sl_* prefix) are skipped; the l-suffixed long-double entry points are kept, as
+# on the original Xbox. Object files are parent-qualified (in main) so the two
+# dirs' same-named members (and any libc clashes) don't collide in the flat objdir.
+LIBM_SUBDIRS = [
+    "libm/common",
+    "libm/math",
+]
+
+# Mirrors RXDK-Libs' libm excludes. In libm/common the transcendental *f and
+# double cores duplicate the authoritative implementations in libm/math, so drop
+# the common copies; gamma has no standalone TU.
+LIBM_EXCLUDE = set([
+    "cosf.c", "sinf.c", "sincosf.c",
+    "exp.c", "exp2.c", "log.c", "log2.c", "pow.c", "s_log2.c",
+    "sf_exp.c", "sf_exp2.c", "sf_log.c", "sf_log2.c", "sf_pow.c",
+    "s_gamma.c", "sf_gamma.c",
+])
 
 # Extra (non-picolibc) glue. The .c files compile with the picolibc flags; the
 # .cpp C++ runtime compiles with the C++ flag set below.
@@ -108,6 +130,12 @@ def sources():
             if os.path.basename(f) in EXCLUDE:
                 continue
             out.append(f)
+    for sub in LIBM_SUBDIRS:
+        for f in sorted(glob.glob(os.path.join(PICO, sub, "*.c"))):
+            b = os.path.basename(f)
+            if b in LIBM_EXCLUDE or b.startswith("sl_"):
+                continue
+            out.append(f)
     out += XBOX_GLUE
     return out
 
@@ -153,7 +181,11 @@ def main():
 
     objs, failed = [], []
     for src in sources():
-        obj = os.path.join(objdir, os.path.splitext(os.path.basename(src))[0] + ".o")
+        # Qualify the object with its parent directory: several picolibc trees
+        # (libm/common vs libm/math especially) carry same-named members that
+        # would otherwise overwrite each other in the flat objdir.
+        parent = os.path.basename(os.path.dirname(os.path.abspath(src)))
+        obj = os.path.join(objdir, parent + "_" + os.path.splitext(os.path.basename(src))[0] + ".o")
         if os.path.splitext(src)[1].lower() in (".cpp", ".cc", ".cxx"):
             cmd = [CLANG] + CPP_FLAGS + ["-c", src, "-o", obj]
         else:

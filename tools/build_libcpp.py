@@ -95,6 +95,8 @@ LIBCXX_SRCS = [
     "error_category.cpp",  # base error_category virtuals + its typeinfo
     "functional.cpp",  # __hash_memory (std::hash for the error machinery)
     "chrono.cpp",      # system_clock/steady_clock::now (over our clock_gettime)
+    "hash.cpp",        # __next_prime -- unordered_map/set bucket sizing
+    "algorithm.cpp",   # explicit __sort/__stable_sort instantiations std::sort uses
 ]
 
 
