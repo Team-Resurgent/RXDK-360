@@ -468,11 +468,18 @@ def main():
                     metavar="LIB:sym1,sym2,...",
                     help="add an import library; syms name the import records "
                          "(variable then thunk per function) as ELF symbols")
+    ap.add_argument("--import-manifest", default=None,
+                    help="JSON from gen_import_stubs.py listing the import records")
     args = ap.parse_args()
     imports = []
     for spec in args.imports:
         lib, _, symlist = spec.partition(":")
         imports.append((lib, [s for s in symlist.split(",") if s]))
+    if args.import_manifest:
+        import json
+        m = json.load(open(args.import_manifest))
+        for lib in m["libraries"]:
+            imports.append((lib["module"], lib["records"]))
     pack(args.elf, args.out, args.base, imports)
 
 
