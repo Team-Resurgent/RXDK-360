@@ -55,10 +55,30 @@ SUBDIRS = [
     "libc/string",
     "libc/ctype",
     "libc/errno",
+    "libc/stdio",
 ]
 
-# Files in the globbed subdirs we do not want (see the notes).
+# Extra (non-picolibc) glue compiled with the same flags.
+XBOX_GLUE = [
+    os.path.join(ROOT, "runtime", "xbox", "ms_printf.c"),   # MSVC %S/%C/%I64 rewrite
+    os.path.join(ROOT, "runtime", "xbox", "rt_support.c"), # 64-bit div + placeholder malloc
+]
+
+# Files in the globbed subdirs we do not want.
 EXCLUDE = set([
+    # tinystdio's vfprintf.c #includes these split parts, so they are not
+    # standalone translation units.
+    "conv_flt.c", "ultoa_invert.c",
+    "vfprintf_char.c", "vfprintf_float.c", "vfprintf_int.c",
+    "vfprintf_n.c", "vfprintf_str.c",
+    # the Ryu float<->string engines duplicate the classic dtoa/ftoa engines
+    # (which back the double printf variant), so keep only the classic ones.
+    "ftoa_ryu.c", "dtoa_ryu.c", "atod_ryu.c", "atof_ryu.c",
+    "ryu_divpow2.c", "ryu_log10.c", "ryu_log2pow5.c", "ryu_pow5bits.c",
+    "ryu_table.c", "ryu_umul128.c",
+    # replaced by runtime/xbox/ms_printf.c, which translates the MSVC format
+    # (%S/%C/%I64 ...) before formatting over the same vfprintf engine.
+    "sprintf.c", "snprintf.c", "swprintf.c", "vsnprintf.c",
 ])
 
 
@@ -69,6 +89,7 @@ def sources():
             if os.path.basename(f) in EXCLUDE:
                 continue
             out.append(f)
+    out += XBOX_GLUE
     return out
 
 

@@ -130,8 +130,10 @@ def main():
     ap.add_argument("--bless", action="store_true",
                     help="write each expected.txt from this run instead of diffing")
     ap.add_argument("--only", default="", help="comma-separated test names")
-    ap.add_argument("--lib", default="libcMT",
-                    help="comma-separated runtime libraries to link (default libcMT)")
+    ap.add_argument("--lib", default=os.path.join(ROOT, "build", "libc", "libc.a"),
+                    help="comma-separated runtime libraries to link (default: the "
+                         "modern picolibc build/libc/libc.a; pass libcMT for the "
+                         "translated MS CRT)")
     args = ap.parse_args()
 
     only = set(n for n in args.only.split(",") if n)

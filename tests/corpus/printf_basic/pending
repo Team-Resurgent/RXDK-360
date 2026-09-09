@@ -1,1 +1,0 @@
-MS CRT sprintf needs full CRT init (stdio/heap/locale/atexit + Win32 kernel imports); resolves once the modern picolibc runtime lands. Tests %S / printf MSVC divergences.

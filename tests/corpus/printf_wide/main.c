@@ -1,5 +1,5 @@
 #include "rt.h"
-void title_main(void) {
+void t_printf_wide(void) {
     char b[128];
     sprintf(b, "S=[%S]", L"WideStr");
     DbgPrint("%s\n", b);
