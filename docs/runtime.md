@@ -88,19 +88,34 @@ included), and the flags mirror RXDK-Libs' `picolibcFlags` -- notably
 `-fno-builtin` (picolibc's `memcpy`/`strlen` *are* the builtins, so recognising
 their loops as the idiom is infinite self-recursion) and `-ffreestanding`.
 
-- **string / ctype / errno build (187 objects).** picolibc is far more portable
-  than the MS CRT -- these compiled for the PPC target essentially unchanged.
-- **Proven:** the `string` corpus probe, linked against `libc.a` **alone** (no
-  libcMT), prints the exact golden output (`len=6`, `cmp=0`, `copy=abcdef`) --
-  picolibc's `strlen`/`memcpy`/`memcmp`/`strcpy` are drop-in and the compiler
-  did not even need the `__savegprlr` helpers for this code.
+- **string / ctype / errno / stdio build (372 objects).** picolibc is far more
+  portable than the MS CRT -- these compiled for the PPC target essentially
+  unchanged. tinystdio's `vfprintf.c` #includes its split parts
+  (`vfprintf_float.c` etc.), so those are excluded from the glob; the Ryu float
+  engines are excluded in favour of the classic dtoa/ftoa; the float requirement
+  comes from `__IO_DEFAULT 'd'` in the config.
+- **Self-contained `sprintf` with MSVC compatibility.** `runtime/xbox/ms_printf.c`
+  (ported from RXDK-Libs) provides `sprintf`/`snprintf`/`swprintf`/`vsnprintf`
+  over picolibc's `vfprintf`, rewriting the MSVC format first: `%S`/`%C` (the
+  uppercase pair means the opposite width of the function), `%I64`/`%I32`, the
+  `w` length modifier, and `%s`/`%c` following the function's own width in the
+  wide family. `runtime/xbox/rt_support.c` supplies the 64-bit division helpers
+  the compiler emits (`__udivdi3` etc., picolibc formats integers 64-bit) and a
+  placeholder bump allocator for `malloc`/`free` (the real one will come from the
+  console heap).
 - **Titles compile C23 / C++23** now (`mktitle`, `-std=c23` / `-std=c++23`);
   picolibc itself stays at c17 (its own sources are c11/c17 -- the *runtime it
   provides* is what is C23/C++23-capable).
 
-Next: the self-contained `sprintf` (tinystdio + the `%S`->`%ls` MSVC rewrite from
-`ms_printf.c`), which turns the two `printf_*` probes green; then malloc; then
-the C++ runtime.
+**The whole corpus runs on the modern runtime: 8/8, ~2 s.** `run_corpus.py`
+defaults to linking `build/libc/libc.a` now, so every test -- string/mem, malloc,
+and the two `printf_*` probes -- uses picolibc, not libcMT. The `%S` probe prints
+`S=[WideStr]` / `ls=[WideLS]`: the MSVC wide-string divergence is handled. (Pass
+`--lib libcMT` for the translated MS CRT, though its `sprintf` still cannot link
+in isolation, so the printf tests need the modern runtime.)
+
+Next: malloc from the console heap (replace the bump allocator); then the C++
+runtime.
 
 ## Open issues found during bring-up
 

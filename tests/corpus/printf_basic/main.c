@@ -1,5 +1,5 @@
 #include "rt.h"
-void title_main(void) {
+void t_printf_basic(void) {
     char b[160];
     sprintf(b, "d=%d u=%u x=%x X=%08X o=%o", -5, 5u, 255, 255, 8);
     DbgPrint("%s\n", b);
