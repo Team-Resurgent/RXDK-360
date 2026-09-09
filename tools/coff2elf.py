@@ -726,16 +726,20 @@ def cmd_translate_all(path):
 
 
 def parse_short_import(data):
-    """Return (symbol, dll_ordinal_or_hint, name_type) for a short-import member."""
+    """Return (symbol, dll_ordinal_or_hint, name_type, import_type) for a
+    short-import member. import_type is IMPORT_OBJECT_CODE=0, _DATA=1, _CONST=2
+    (winnt.h) -- DATA/CONST mark a data export (a variable), not a callable."""
     # IMPORT_OBJECT_HEADER: Sig1(2) Sig2(2) Version(2) Machine(2) TimeDate(4)
     # SizeOfData(4) OrdinalOrHint(2) TypeBits(2); then symbol\0 dll\0
+    # TypeBits: bits 0-1 = ImportType, bits 2-4 = NameType.
     ordhint, typebits = struct.unpack_from("<HH", data, 16)
+    import_type = typebits & 0x3
     name_type = (typebits >> 2) & 0x7
     strings = data[20:]
     sym = strings.split(b"\0")[0].decode("ascii", "replace")
     rest = strings[len(sym) + 1:]
     dll = rest.split(b"\0")[0].decode("ascii", "replace")
-    return sym, dll, ordhint, name_type
+    return sym, dll, ordhint, name_type, import_type
 
 
 def cmd_archive(path, out_a, out_manifest):
@@ -748,9 +752,9 @@ def cmd_archive(path, out_a, out_manifest):
         if member.name in ("/", "//"):
             continue
         if member.data[:2] != struct.pack("<H", IMAGE_FILE_MACHINE_POWERPCBE):
-            sym, dll, ordhint, nt = parse_short_import(member.data)
+            sym, dll, ordhint, nt, it = parse_short_import(member.data)
             imports.append({"symbol": sym, "dll": dll, "ordinal_or_hint": ordhint,
-                            "name_type": nt})
+                            "name_type": nt, "import_type": it})
             continue
         obj = CoffObject(member.data)
         elf = coff_to_elf(obj, warn=lambda m: None)

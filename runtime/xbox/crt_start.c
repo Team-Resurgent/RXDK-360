@@ -33,6 +33,15 @@ extern init_fn __fini_array_end[];
 extern int main(int argc, char **argv);
 extern void __rxdk_run_atexit(void);  /* C++ static dtors + atexit handlers */
 
+/* The loader's command line: xboxkrnl exports ExLoadedCommandLine (ordinal
+   0x1AE) as a *data* variable -- a char* to the launch command line (empty on a
+   normal disc/xex launch, non-empty when a debugger / Remote Reboot / a title
+   relaunch passes one). It is imported as a variable (tools/gen_import_stubs.py
+   emits it as a .kvars slot the loader patches with the pointer), so reading it
+   yields the string, with no xapi initialisation required. NULL if unresolved --
+   the tokeniser handles that. */
+extern char *ExLoadedCommandLine;
+
 #define RXDK_ARG_MAX     32
 #define RXDK_CMDLINE_MAX 256
 static char  g_cmdline[RXDK_CMDLINE_MAX];
@@ -69,19 +78,12 @@ int __rxdk_parse_cmdline(const char *cl, char *buf, int bufsz,
     return argc;
 }
 
-/* Build argv for main(). The live command line comes from the kernel's
-   ExLoadedCommandLine export, but that is a *variable* (data) import, which the
-   current import packer (tools/gen_import_stubs.py) emits only as a code thunk --
-   so its value is not yet reachable from a title -- and xapilib's GetCommandLineA
-   needs xapi state this minimal CRT does not initialise. Until variable imports
-   land, hand main a well-formed empty argv (argc 0, argv[0] == NULL): the normal
-   console-launch case, where no command line is passed, anyway. __rxdk_parse_cmdline
-   above is the part that carries the logic, and it is exercised directly (with
-   known inputs) by tests/stdlib/t_args.c, independent of a live command line. */
+/* Build argv from the kernel's loaded command line for main(). Empty on a normal
+   launch -> argc 0, argv[0] == NULL. __rxdk_parse_cmdline is also exercised
+   directly (with known inputs) by tests/stdlib/t_args.c. */
 static int build_args(void) {
-    (void)g_cmdline;                 /* reserved for the ExLoadedCommandLine path */
-    g_argv[0] = (char *)0;
-    return 0;
+    return __rxdk_parse_cmdline(ExLoadedCommandLine, g_cmdline, RXDK_CMDLINE_MAX,
+                                g_argv, RXDK_ARG_MAX + 1);
 }
 
 static void run_init(void) {
