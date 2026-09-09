@@ -42,10 +42,14 @@ patches (picolibc, and any libcxx tweaks) are build-time patches under `patches/
 
 ## Bulk regression harness
 
-`tools/run_corpus.py` builds a corpus of small C/C++ programs under
-`tests/corpus/`, runs each headless in xenia and diffs the `DbgPrint` output
-against a golden `expected.txt`. Each program implements `title_main()`; the
-shared `_prelude/start.c` runs it, prints a completion sentinel, and powers off.
+`tools/run_corpus.py` builds ALL the tests under `tests/corpus/` into **one**
+sample and runs it **once** in xenia, then splits the `DbgPrint` output on
+`== <name> ==` markers and diffs each section against its golden `expected.txt`.
+Each test defines `void t_<name>(void)` (C++ tests mark it extern "C"); a
+generated driver calls each behind its marker, linked with the shared
+`_prelude/start.c` (which prints a completion sentinel and powers off). One build
+and one xenia launch exercise every feature in a single address space, like a
+real title -- the whole corpus runs in a few seconds.
 
 ```
 python tools/run_corpus.py            # run + report
@@ -100,17 +104,20 @@ the C++ runtime.
 
 ## Open issues found during bring-up
 
-1. **`_start`->`title_main`->return titles hang after printing** (not picolibc:
-   reproduces on libcMT and on no-libc `arith` equally; trivial `hello` is fine).
-   All output is correct, then the guest never reaches the post-return sentinel /
-   `HalReturnToFirmware`. The epilogue is ABI-correct (`lwz r0,-8(r1); mtlr; blr`
-   after restoring `r1`). Suspects to chase: xenia's analyzer disassembling the
-   `.rodata` format strings as code (they share the CODE page -- "Invalid
-   instruction 8200108C 25640A00" is the bytes of `"%d\n"`), and the syscall
-   thunk vs the MS LR-at-(sp-8) slot. The corpus harness masks it via output-
-   match + sentinel-retry, which is also why runs are slow (retries on the
-   missing sentinel). Fixing it (or marking `.rodata` READONLY on its own page)
-   makes the harness fast and the titles actually terminate.
+1. **FIXED -- MS-PPC return-address corruption (a compiler bug).** Non-leaf
+   titles printed correct output then hung on return. Root cause was in the
+   patched clang, not picolibc: the Xbox 360 ABI saves LR at `CallerSP-8`
+   (`getReturnSaveOffset`), inside the negative callee-saved region, but
+   `processFunctionBeforeFrameFinalized` packs the callee-saved GPRs from
+   `CallerSP` downward with the second slot at `-8` -- so a saved GPR (r30)
+   landed on top of the return address and `blr` jumped to garbage. SVR4 escapes
+   this because its LR offset is positive (in the caller's frame). Fixed on the
+   `xbox360-msppc` fork by reserving the LR doubleword before packing the CSR
+   areas; `arith`/`string` now save r30 at `0x50` (LR at `0x58`) and power off
+   cleanly. The corpus dropped from ~2 min of hang-retries to ~3 s, and the ABI
+   still matches `cl.exe` 4/4. (`.rodata` is also on its own READONLY page now,
+   so xenia's analyser no longer disassembles format strings as code -- that was
+   only load-time noise, not the hang.)
 2. **Prebuilt libs call the CRT.** The translated XDK libs (xapilib/d3d9/
    xgraphics) call `memcpy`/`malloc`/the printf trap path/`__savegprlr`
    internally; swapping libcMT -> picolibc must keep those working. Needs a
