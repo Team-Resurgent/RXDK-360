@@ -143,13 +143,37 @@ entry's basic block, the entry-function analysis collides with it and the entry
 is treated as an "undefined extern call" and never runs. A small gap between
 the entry code and the thunks avoids it.
 
+## Compiled C calling the kernel
+
+`gen_import_stubs.py` closes the loop from hand-written asm to compiled C. It
+reads the undefined symbols from a compiled title object, resolves each ordinal
+from the XDK import libraries (`xboxkrnl.lib` etc., whose short-import members
+carry the real console ordinals), and emits the linkable thunks plus a manifest
+for `elf2xex --import-manifest`. A title written in C:
+
+```c
+extern int  DbgPrint(const char* format, ...);
+extern void HalReturnToFirmware(unsigned int routine);
+void _start(void) {
+    DbgPrint("RXDK-360: compiled C calling the kernel via DbgPrint\n");
+    HalReturnToFirmware(0);
+    for (;;) {}
+}
+```
+
+compiles, links against the generated stubs, packs, and runs -- xenia logs
+`(DbgPrint) RXDK-360: compiled C calling the kernel via DbgPrint` and exits.
+
+A linker script gives the layout the packer needs: sections start at base +
+0x1000 (leaving room for the PE headers) and the import thunks sit in their own
+`.kthunks` section past a small gap, so no thunk abuts the entry's basic block.
+
 ## Next
 
-- generate the import records + thunks from *undefined ELF symbols* (from the
-  `coff2elf` manifest) automatically, instead of hand-written asm, so compiled
-  C can call the kernel
 - emit per-section page descriptors (CODE / DATA / READONLY) instead of one CODE
   span, so writable data is mapped read-write for real titles
+- fold the linker-script layout into a reusable link step, and eventually build
+  the patched clang so C/C++ compiles with the MS ABI (not zig's PPC EABI)
 
 ## Production home
 
