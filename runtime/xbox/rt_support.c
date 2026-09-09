@@ -55,6 +55,37 @@ long long __moddi3(long long a, long long b) {
     return a < 0 ? -(long long)r : (long long)r;
 }
 
+/* ---- 64-bit integer -> double (compiler-rt equivalents) ------------------ */
+
+/*
+ * clang lowers a 64-bit int -> double conversion to a libcall on this 32-bit
+ * PPC target (the picolibc/libc++ math paths need it). The Xenon core is a
+ * 64-bit CPU, so we do the conversion in one hardware instruction, fcfid (Float
+ * Convert From Integer Doubleword): load the raw 64-bit pattern into an FPR and
+ * let fcfid read it as a signed doubleword. There is no unsigned fcfidu on this
+ * ISA, so __floatundidf halves the value first when the top bit is set (the half
+ * always fits in the signed range) and doubles the result back.
+ */
+static inline double cvt_i64_to_f64(long long a) {
+    union { long long i; double d; } u;
+    u.i = a;
+    double f = u.d;                 /* raw 8-byte load into an FPR (lfd) */
+    __asm__("fcfid %0, %1" : "=f"(f) : "f"(f));
+    return f;
+}
+
+double __floatdidf(long long a) {
+    return cvt_i64_to_f64(a);
+}
+
+double __floatundidf(unsigned long long a) {
+    if (a < 0x8000000000000000ULL)
+        return cvt_i64_to_f64((long long)a);
+    /* top bit set: a = 2*(a>>1) + (a&1); (a>>1) is always in signed range. */
+    double half = cvt_i64_to_f64((long long)(a >> 1));
+    return half * 2.0 + (double)(int)(a & 1u);
+}
+
 /* ---- allocator: 16-byte-aligned over the console pool -------------------- */
 
 /*

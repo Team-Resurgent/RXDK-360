@@ -83,15 +83,23 @@ static void ms_map_conv(const char *mod, unsigned conv, int wide, char *out)
             arg_is_wide = wide;
         }
         break;
-    default:
+    default: {
         /* Not a string or character conversion, so only MSVC's 'w' modifier
-         * needs respelling. */
+         * needs respelling -- except: on this target long double == double (the
+         * MSVC/XDK ABI), so the C 'L' length modifier on a floating conversion
+         * denotes no distinct type. picolibc's formatter is built without
+         * long-double IO, so pass "%f" not "%Lf" (the arg is double-sized). */
+        int is_float = (conv == 'f' || conv == 'F' || conv == 'e' || conv == 'E' ||
+                        conv == 'g' || conv == 'G' || conv == 'a' || conv == 'A');
         for (; *mod; mod++) {
+            if (is_float && *mod == 'L')
+                continue;
             out[i++] = (*mod == 'w') ? 'l' : *mod;
         }
         out[i++] = (char)conv;
         out[i] = '\0';
         return;
+    }
     }
 
     if (arg_is_wide) {
