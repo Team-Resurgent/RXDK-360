@@ -70,6 +70,7 @@ XBOX_GLUE = [
     os.path.join(ROOT, "runtime", "xbox", "locks.c"),              # kernel critical-section retargetable locks
     os.path.join(ROOT, "runtime", "xbox", "threads.c"),            # C11 <threads.h> over the kernel (thrd/mtx/tss/once)
     os.path.join(ROOT, "runtime", "xbox", "crt_start.c"),          # standard main() CRT startup (_start)
+    os.path.join(ROOT, "runtime", "xbox", "clock.c"),              # clock_gettime over KeQuerySystemTime (for <chrono>)
 ]
 
 # C++ runtime glue: no picolibc config force-include; freestanding, no EH/RTTI yet.

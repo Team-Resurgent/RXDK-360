@@ -13,4 +13,24 @@ char *strerror_r(int, char *, unsigned long);
 }
 #endif
 
+/* <chrono> uses clock_gettime + CLOCK_MONOTONIC/CLOCK_REALTIME (our runtime
+   implements clock_gettime in runtime/xbox/clock.c). picolibc gates those on
+   POSIX/GNU visibility, off under strict -std=c++23, so declare the minimum.
+   struct timespec is still visible from <time.h>; forward-declare it here since
+   this header is force-included ahead of it (a pointer decl needs no definition). */
+#ifndef CLOCK_REALTIME
+#  define CLOCK_REALTIME 1
+#endif
+#ifndef CLOCK_MONOTONIC
+#  define CLOCK_MONOTONIC 4
+#endif
+struct timespec;
+#ifdef __cplusplus
+extern "C" {
+#endif
+int clock_gettime(int, struct timespec *);
+#ifdef __cplusplus
+}
+#endif
+
 #endif

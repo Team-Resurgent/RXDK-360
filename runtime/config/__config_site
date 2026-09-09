@@ -12,6 +12,12 @@
 #define _LIBCPP_HAS_THREADS 1
 #define _LIBCPP_HAS_THREAD_API_C11 1
 #define _LIBCPP_HAS_MONOTONIC_CLOCK 1
+// <chrono> clock backend: our runtime provides clock_gettime (runtime/xbox/
+// clock.c over KeQuerySystemTime), so steady_clock/system_clock use
+// clock_gettime(CLOCK_MONOTONIC/CLOCK_REALTIME) rather than the (unimplemented)
+// timespec_get or gettimeofday paths -- the steady_clock branch #errors without
+// one of these set.
+#define _LIBCPP_HAS_CLOCK_GETTIME 1
 #define _LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS
 #define _LIBCPP_PSTL_BACKEND_SERIAL
 #define _LIBCPP_HARDENING_MODE _LIBCPP_HARDENING_MODE_NONE
