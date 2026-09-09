@@ -161,17 +161,39 @@ titles depend on.
    still matches `cl.exe` 4/4. (`.rodata` is also on its own READONLY page now,
    so xenia's analyser no longer disassembles format strings as code -- that was
    only load-time noise, not the hang.)
-2. **Prebuilt libs call the CRT.** The translated XDK libs (xapilib/d3d9/
-   xgraphics) call `memcpy`/`malloc`/the printf trap path/`__savegprlr`
-   internally; swapping libcMT -> picolibc must keep those working. Needs a
-   corpus category that links a prebuilt lib against the modern runtime and
-   checks a prebuilt-lib->CRT call path still behaves.
+2. **Prebuilt libs call the CRT -- register helpers supplied.** The translated
+   XDK libs (xapilib/d3d9/xgraphics) reference, from the CRT, `memcpy`/`memmove`/
+   `memset` (picolibc has these), the MS out-of-line register helpers
+   `__savegprlr_14..29`/`__restgprlr_*`/`__savefpr_*`/`__restfpr_*` and `_blkmov`
+   (picolibc does not -- our own clang inlines its saves), plus `__C1_11886`/
+   `__C2_11886` (the MS CRT initializer-table sentinels) and `__C_specific_handler`
+   (SEH). `build_libc.py` now pulls the verified `crtgpr.o`/`crtfpr.o` register
+   helpers from the translated libcMT into `libc.a`, so MS-compiled code links
+   against the modern runtime. The `apilib` corpus test calls xapilib's
+   `OutputDebugStringA` linked against `libc.a` + `xapilib.a` and confirms it runs
+   and returns. Still to wire: `_blkmov` (a `memmove` alias) and the CRT init
+   table below.
+
+## Other libraries hooking pre-main (the MS CRT init table)
+
+Our own C++ static constructors run through the ELF `.init_array` (above). But a
+prebuilt MS library registers its pre-main initializers in `.CRT$XC*` sections
+and expects the CRT to walk them between the `__C1_11886`/`__C2_11886` sentinels
+via `_initterm` -- a different mechanism. To let prebuilt libs hook pre-main the
+way they do on a real title, the linker script must gather `.CRT$XC*` and define
+those sentinels, and `start.c` must call `_initterm(__C1, __C2)` alongside the
+`.init_array` walk. (This is the 360 equivalent of the OG Xbox path; both are
+just "run an array of initializers before main".)
 
 ## Follow-ups noted
 
 - **C++ exceptions/unwinding.** The C++23 runtime will need `libunwind` plus the
   same trick RXDK-Libs uses -- recover the `.eh_frame` length from the PE
   section table at runtime, because lld scatters archive `.eh_frame` -- and a
-  catch-all/terminate path. Corpus probes (`throw`/`catch`) come with it.
+  catch-all/terminate path (`__C_specific_handler` for the MS libs). Because the
+  unwinder needs a real stack, `main` should also run on its own thread sized
+  from the XEX header rather than the kernel's small init thread -- what
+  xapilib's startup does. Corpus probes (`throw`/`catch`) come with it.
+- **Validate against an official XEX** built through `cl.exe`/`imagexex` (above).
 - Console CRT (`_getch` and friends) is out of scope for a headless corpus (no
   input); those get linkage-only smoke tests.

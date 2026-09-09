@@ -103,6 +103,32 @@ def sources():
     return out
 
 
+# The MS out-of-line register save/restore helpers (__savegprlr_N/__restgprlr_N,
+# __savefpr_N/__restfpr_N) are pure ABI glue that every MS-compiled prebuilt lib
+# calls and that picolibc does not provide (our own clang inlines its saves).
+# Pull the verified objects from the translated libcMT rather than hand-writing
+# the sequences -- reusing the shipped glue, like the rest of the toolchain.
+LIBCMT = os.path.join(ROOT, "build", "coff", "libcMT.a")
+MS_GLUE_MEMBERS = ("crtgpr.o", "crtfpr.o")
+
+
+def extract_ms_glue(objdir):
+    if not os.path.exists(LIBCMT):
+        print("  note: %s not built, MS register helpers not bundled" % LIBCMT)
+        return []
+    sys.path.insert(0, HERE)
+    from coff2elf import read_archive
+    out = []
+    for member, _ln in read_archive(open(LIBCMT, "rb").read()):
+        base = member.name.rstrip("/")
+        if base in MS_GLUE_MEMBERS:
+            p = os.path.join(objdir, "msglue_" + base)
+            with open(p, "wb") as f:
+                f.write(member.data)
+            out.append(p)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -136,6 +162,8 @@ def main():
         for src, why in failed:
             print("  %s: %s" % (os.path.relpath(src, ROOT), why[0] if why else ""))
         sys.exit(1)
+
+    objs += extract_ms_glue(objdir)
 
     if os.path.exists(args.out):
         os.remove(args.out)
