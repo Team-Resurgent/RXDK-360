@@ -126,6 +126,33 @@ SECTIONS {{
 """)
 
 
+def auto_clang_flags(is_cpp):
+    """The standard modern-runtime compile environment injected for clang titles,
+    so a C or C++ title -- including one using the STL / <iostream> -- builds
+    without spelling out the include set. Returned flags are placed BEFORE the
+    user's --cflag entries, so those still win on any conflict (e.g. -O0,
+    -fno-exceptions).
+
+    C sources get the picolibc environment. C++ sources additionally get the
+    exception/RTTI flags, the libc++/libc++abi headers (BEFORE picolibc so
+    <cstdlib> etc. resolve to libc++'s wrappers, matching build_libcpp.py), the
+    __config_site + prereq force-includes, and -D_GNU_SOURCE -- picolibc gates
+    the POSIX/GNU locale API (locale_t, uselocale ...) that libc++'s <locale> /
+    <iostream> need behind it, off under strict -std. """
+    cfg = os.path.join(ROOT, "runtime", "config")
+    pico = os.path.join(ROOT, "vendor", "picolibc", "libc", "include")
+    if not is_cpp:
+        return ["-D__Picolibc__", "-I" + cfg, "-I" + pico,
+                "-include", "picolibc.h"]
+    lx = os.path.join(ROOT, "vendor", "llvm-project", "libcxx", "include")
+    la = os.path.join(ROOT, "vendor", "llvm-project", "libcxxabi", "include")
+    return ["-fexceptions", "-funwind-tables", "-frtti",
+            "-D__Picolibc__", "-D_GNU_SOURCE",
+            "-I" + lx, "-I" + la, "-I" + cfg,
+            "-include", "__config_site", "-include", "rxdk_libcpp_prereq.h",
+            "-I" + pico, "-include", "picolibc.h"]
+
+
 def compile_sources(sources, workdir, cc, clang, cflags):
     """Compile each source to an object; pass prebuilt .o through.
 
@@ -155,7 +182,7 @@ def compile_sources(sources, workdir, cc, clang, cflags):
                 # titles get the modern standard the runtime targets (C23/C++23);
                 # picolibc itself is built separately at c17 (build_libc.py).
                 std = "-std=c++23" if is_cpp else "-std=c23"
-                cmd[2:2] = ["-O2", std] + cflags
+                cmd[2:2] = ["-O2", std] + auto_clang_flags(is_cpp) + cflags
         elif is_asm:                                   # zig: assembly, no C-only flags
             cmd = [zig(), "cc", "-target", TARGET, "-c", src, "-o", obj]
         else:
