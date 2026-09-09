@@ -182,15 +182,24 @@ Mirrored from RXDK-Libs (`runtime/xbox/`):
    still matches `cl.exe` 4/4. (`.rodata` is also on its own READONLY page now,
    so xenia's analyser no longer disassembles format strings as code -- that was
    only load-time noise, not the hang.)
-3. **`printf` over the POSIX bufio crashes xenia (WIP).** `sprintf` (a string
-   FILE) works, `write(1)` -> the output hook -> `DbgPrint` works, and the kernel
-   critical sections work -- each verified in isolation -- but a `printf` through
-   the buffered stdout FILE (`posix_stdio_streams.c` `FDEV_SETUP_POSIX`) faults in
-   xenia's host with "invalid parameter to a service" before any output, i.e. in
-   the bufio flush path. The `iohooks` test therefore drives the hooks through
-   `write`/`read` directly; formatted output uses `sprintf` + `DbgPrint` for now.
-   Next: debug the `__file_bufio` flush (likely a bad pointer/length reaching
-   `write`).
+3. **`printf` crash -- root cause found and fixed (a layout bug).** A printf-
+   linked title crashed xenia's JIT (`X64Emitter::Call(function=null)`,
+   symbolised from `xenia_canary.exe+50FE50`): xenia was emitting a `bl` to the
+   import thunks but couldn't resolve them as a function, because the writable
+   `.fini_array` (the destructor `posix_stdio_streams.c` registers) landed in the
+   `.kthunks` page and `build_page_descriptors` marked that page RWDATA, not CODE
+   -- so `bl DbgPrint` targeted a non-CODE page. `sprintf` (string FILE),
+   `write(1)`, and the critical sections all worked because they don't sit past
+   the thunks. Fixed by giving `.fini_array` its own place in the linker script
+   (mktitle) so the thunks stay on a pure CODE page; a standalone printf title now
+   runs (`printf line` prints, execution continues). This layout bug hit any title
+   with a writable `.fini_array` -- i.e. C++ static destructors or stdio -- not
+   just printf.
+
+   Remaining: in the *combined* corpus sample, `printf` + `getchar` together still
+   don't complete (a stdin-bufio interaction -- reading stdin flushes stdout). The
+   `iohooks` test drives the hooks through `write`/`read` directly meanwhile;
+   standalone printf is fine.
 
 2. **Prebuilt libs call the CRT -- register helpers supplied.** The translated
    XDK libs (xapilib/d3d9/xgraphics) reference, from the CRT, `memcpy`/`memmove`/

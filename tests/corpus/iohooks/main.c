@@ -1,10 +1,10 @@
 #include "rt.h"
 
-/* The libc I/O hooks (RXDK extra). write(1/2) routes through the output hook,
-   read(0) through the stdin hook -- exactly the paths printf/std::cout and
-   getchar/std::cin sit on. Exercised here through write()/read() directly (the
-   full printf-over-bufio path is a separate WIP; see docs/runtime.md). Declared
-   locally to avoid pulling picolibc's <sys/types.h> into a corpus test. */
+/* The libc I/O hooks (RXDK extra): write(1/2) routes through the output hook,
+   read(0) through the stdin hook -- the paths printf/std::cout and getchar/
+   std::cin sit on. Exercised here through write()/read() directly (printf over
+   the bufio works standalone but has a combined-sample interaction, see
+   docs/runtime.md). Declared locally to avoid <sys/types.h> in a test. */
 typedef long     rxdk_ssize;
 typedef unsigned rxdk_usize;
 extern void rxdk_set_output_handler(rxdk_ssize (*)(int, const void *, rxdk_usize));
@@ -27,15 +27,14 @@ static rxdk_ssize feed_input(void *buf, rxdk_usize n) {
     rxdk_usize i = 0;
     char *out = (char *)buf;
     while (i < n && line[pos]) out[i++] = line[pos++];
-    return (rxdk_ssize)i;                 /* 0 = EOF */
+    return (rxdk_ssize)i;
 }
 
 void t_iohooks(void) {
     rxdk_set_output_handler(grab_output);
-    write(1, "hooked output line\n", 19);        /* -> grab_output */
+    write(1, "hooked output line\n", 19);
     rxdk_set_output_handler(0);
-    DbgPrint("output hook captured: %s", cap);    /* cap ends in \n */
-
+    DbgPrint("output hook captured: %s", cap);
     rxdk_set_stdin_handler(feed_input);
     char in[8];
     int n = 0;
