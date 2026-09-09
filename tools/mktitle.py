@@ -73,6 +73,13 @@ SECTIONS {{
     KEEP(*(.init_array))
     PROVIDE_HIDDEN(__init_array_end = .);
   }}
+  .CRT : {{                          /* MS CRT initializer table (.CRT$XCA..XCZ),
+                                        how prebuilt MS libs register pre-main
+                                        constructors; run by start.c via __xc_a/z */
+    PROVIDE_HIDDEN(__xc_a = .);
+    KEEP(*(SORT_BY_NAME(.CRT$XC*)))
+    PROVIDE_HIDDEN(__xc_z = .);
+  }}
   .kvars  : {{ KEEP(*(.kvars)) }}    /* import var records: keep past --gc-sections */
   . = ALIGN(0x{page:X});             /* import thunks on their own CODE page, clear
                                         of both the entry code and the rodata */

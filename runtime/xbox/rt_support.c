@@ -72,3 +72,14 @@ void free(void *p) {
     if (p)
         ExFreePool(p);
 }
+
+/* ---- MSVC compiler-version guards ---------------------------------------- */
+
+/*
+ * Every object the XDK's cl.exe (build 11886) emits references __C1_11886 and
+ * __C2_11886 -- a link-time check that all objects came from the same compiler,
+ * defined by the matching CRT. They carry no runtime meaning (no relocation uses
+ * them), so a dummy definition is all a prebuilt object needs to link.
+ */
+int __C1_11886 = 0;
+int __C2_11886 = 0;
