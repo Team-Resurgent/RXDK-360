@@ -123,23 +123,6 @@ EXCLUDE = set([
 ])
 
 
-# Files our patched clang miscompiles at -O2 with the MachineFunction
-# PeepholeOptimizer enabled -- compiled with -mllvm -disable-peephole (still -O2
-# otherwise). Root-caused by bisecting the backend passes: the float-conversion
-# branch of vfprintf.c came out writing nothing past the conversion (%f/%g/%e/%Lf
-# -> snprintf("A%fB",3.5) == "A", with the length still counted, so the output
-# FILE's put() had stopped landing characters). peephole's optimizeCompareInstr
-# rewrites are each individually correct (RLWINM+CMPLWI -> ANDI_rec; "x<1" ->
-# "x<=0"), but they turn plain compares into record-form (dot) instructions with
-# physical $cr0 def + COPY $cr0 chains, and a later -O2 pass mishandles that
-# $cr0 density here. -disable-peephole removes the trigger; the double float
-# engine, FP varargs and %d/%s are all fine without it. TODO: chase the downstream
-# physical-$cr0 codegen bug and drop this.
-NO_PEEPHOLE = set([
-    "vfprintf.c",
-])
-
-
 def sources():
     out = []
     for sub in SUBDIRS:
@@ -206,10 +189,7 @@ def main():
         if os.path.splitext(src)[1].lower() in (".cpp", ".cc", ".cxx"):
             cmd = [CLANG] + CPP_FLAGS + ["-c", src, "-o", obj]
         else:
-            flags = FLAGS
-            if os.path.basename(src) in NO_PEEPHOLE:
-                flags = FLAGS + ["-mllvm", "-disable-peephole"]
-            cmd = [CLANG] + flags + INCLUDES + ["-c", src, "-o", obj]
+            cmd = [CLANG] + FLAGS + INCLUDES + ["-c", src, "-o", obj]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             failed.append((src, r.stderr.strip().splitlines()[-1:] or [""]))
