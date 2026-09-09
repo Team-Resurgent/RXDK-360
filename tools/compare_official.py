@@ -63,12 +63,13 @@ def build_official(body):
 
 
 def build_ours(body):
+    # Same main() entry as the official side; libc's crt_start.c supplies _start.
     main = os.path.join(OUT, "our_main.cpp")
     open(main, "w").write('extern "C" void rxdk_body(void);\n'
-                          'extern "C" void title_main(void){ rxdk_body(); }\n')
+                          'int main(void){ rxdk_body(); return 0; }\n')
     xex = os.path.join(OUT, "ours.xex")
     r = sh([sys.executable, os.path.join(HERE, "mktitle.py"),
-            body, main, os.path.join(ROOT, "tests", "corpus", "_prelude", "start.c"),
+            body, main,
             "-o", xex, "--cc", "clang",
             "--lib", os.path.join(ROOT, "build", "libc", "libcpp.a"),
             "--lib", os.path.join(ROOT, "build", "libc", "libc.a"),

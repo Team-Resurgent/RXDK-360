@@ -19,6 +19,15 @@ void operator delete[](void *p) noexcept { free(p); }
 void operator delete(void *p, size_t) noexcept { free(p); }
 void operator delete[](void *p, size_t) noexcept { free(p); }
 
+// ---- atexit / static-destructor table (file scope, internal linkage) -------
+
+namespace {
+struct AtExitEntry { void (*fn)(void *); void *arg; };
+constexpr int kMaxAtExit = 256;
+AtExitEntry g_atexit[kMaxAtExit];
+int g_atexit_count = 0;
+}  // namespace
+
 // ---- Itanium C++ ABI helpers ----------------------------------------------
 
 extern "C" {
@@ -27,11 +36,32 @@ extern "C" {
 void __cxa_pure_virtual(void) { for (;;) {} }
 void __cxa_deleted_virtual(void) { for (;;) {} }
 
-// Static-object destructor registration. A title powers off rather than
-// returning from main, so destructors never run -- record nothing.
+// Static-object destructor registration. Record the callbacks and run them in
+// reverse order at title exit (crt_start.c calls __rxdk_run_atexit after main),
+// so C++ static-object destructors and atexit handlers run like the console CRT.
+// Registration is almost entirely pre-main static init (single-threaded); a few
+// slots suffice for typical titles.
 void *__dso_handle = 0;
-int __cxa_atexit(void (*)(void *), void *, void *) { return 0; }
-int atexit(void (*)(void)) { return 0; }
+
+int __cxa_atexit(void (*fn)(void *), void *arg, void *) {
+    if (g_atexit_count >= kMaxAtExit) return -1;
+    g_atexit[g_atexit_count].fn = fn;
+    g_atexit[g_atexit_count].arg = arg;
+    ++g_atexit_count;
+    return 0;
+}
+
+int atexit(void (*fn)(void)) {
+    return __cxa_atexit(reinterpret_cast<void (*)(void *)>(fn), 0, 0);
+}
+
+// Called by the CRT startup after main returns.
+void __rxdk_run_atexit(void) {
+    while (g_atexit_count > 0) {
+        AtExitEntry e = g_atexit[--g_atexit_count];
+        if (e.fn) e.fn(e.arg);
+    }
+}
 
 // Thread-safe-static guards. Single-threaded here: the guard's first byte is the
 // "initialised" flag; acquire tells the caller to run the init once.
