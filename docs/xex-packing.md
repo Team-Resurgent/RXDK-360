@@ -231,10 +231,52 @@ then can't find `__imp_RtlInitAnsiString` in the ELF. Wrap the import sections
 in `KEEP()` in the linker script (`.kvars : { KEEP(*(.kvars)) }`,
 `.kthunks : ALIGN(16) { KEEP(*(.kthunks)) }`) so GC retains them.
 
+## Per-section page descriptors (writable data)
+
+The first cut marked the whole image with one `CODE` page descriptor. xenia
+(and the console) protect memory from the descriptors: with the default
+`writable_code_segments=false`, `CODE` and `READONLY_DATA` pages map **read-only**
+and only `DATA` pages map **read-write** (`xex_module.cc`, "Setup memory
+protection"). So under one `CODE` span every page was read-only and a title that
+wrote a global faulted.
+
+`build_page_descriptors` now walks the image a page at a time and marks each page
+from the sections that occupy it: a page with a writable section -> `DATA`
+(read-write), else a page with executable code -> `CODE`, else `READONLY_DATA`.
+At least one page is kept `CODE` for xenia's per-title code hash
+(`user_module.cc` `find_code_section_page` reads a wild range if it finds none).
+
+Page granularity is coarse (64KB below 0x90000000), so the writable region must
+start on its own page or it shares a `CODE` page and stays read-only. The linker
+script aligns it:
+
+```
+  . = ALIGN(0x10000);          /* writable region on its own 64KB page */
+  .data : { *(.data*) }
+  .bss  : { *(.bss*) *(COMMON) }
+```
+
+**Proven.** A title that writes `.data` and `.bss` (`build/ctitle/apidata.c`),
+packed with the aligned layout, produces two descriptors and runs:
+
+```
+wrote apidata.xex: image 131072 bytes (2 pages)
+  pages: 1xCODE, 1xRWDATA
+...
+Sections:
+    0 CODE      1 pages    82000000 - 82010000
+    1 RWDATA    1 pages    82010000 - 82020000
+(DbgPrint) RXDK-360: wrote g_counter=42 g_bss[0]=4200 (writable data works)
+Game requested a hard poweroff via HalReturnToFirmware
+```
+
+The writes land (g_counter 41 -> 42, g_bss[0] = 4200) and the title exits
+cleanly. The same object linked *without* the alignment packs as one forced
+`CODE` page (the packer prints a note) and its main thread dies instead of
+printing -- confirming the read-write mapping is what the descriptors buy.
+
 ## Next
 
-- emit per-section page descriptors (CODE / DATA / READONLY) instead of one CODE
-  span, so writable data is mapped read-write for real titles
 - fold the linker-script layout into a reusable link step, and eventually build
   the patched clang so C/C++ compiles with the MS ABI (not zig's PPC EABI)
 
