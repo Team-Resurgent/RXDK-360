@@ -77,8 +77,11 @@ def gen_driver(names):
 
 
 def mktitle(sources, out, libs, extra):
+    # The harness manages the lib set explicitly (the --lib default is the modern
+    # runtime, but --lib libcMT,... selects the translated MS CRT instead), so opt
+    # out of mktitle's default runtime auto-link to avoid pulling both.
     cmd = [sys.executable, os.path.join(HERE, "mktitle.py")] + sources + \
-          ["-o", out, "--cc", "clang", "--cflag=-I" + PRELUDE] + extra
+          ["-o", out, "--cc", "clang", "--no-default-libs", "--cflag=-I" + PRELUDE] + extra
     for lib in libs:
         cmd += ["--lib", lib]
     return subprocess.run(cmd, capture_output=True, text=True)

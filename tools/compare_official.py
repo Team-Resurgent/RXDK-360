@@ -70,7 +70,7 @@ def build_ours(body):
     xex = os.path.join(OUT, "ours.xex")
     r = sh([sys.executable, os.path.join(HERE, "mktitle.py"),
             body, main,
-            "-o", xex, "--cc", "clang",
+            "-o", xex, "--cc", "clang", "--no-default-libs",
             "--lib", os.path.join(ROOT, "build", "libc", "libcpp.a"),
             "--lib", os.path.join(ROOT, "build", "libc", "libc.a"),
             "--lib", os.path.join(ROOT, "build", "coff", "xapilib.a")])
