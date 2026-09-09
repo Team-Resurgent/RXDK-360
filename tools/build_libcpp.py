@@ -94,6 +94,7 @@ LIBCXX_SRCS = [
     "exception.cpp",   # std::exception_ptr / rethrow_exception glue over libc++abi
     "error_category.cpp",  # base error_category virtuals + its typeinfo
     "functional.cpp",  # __hash_memory (std::hash for the error machinery)
+    "chrono.cpp",      # system_clock/steady_clock::now (over our clock_gettime)
 ]
 
 

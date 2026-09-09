@@ -149,7 +149,20 @@ void   thrd_yield(void)               { }
 _Noreturn void thrd_exit(int res)     { run_tss_dtors(); ExTerminateThread((unsigned)res); for (;;) {} }
 
 int thrd_sleep(const struct timespec *duration, struct timespec *remaining) {
-    (void)duration; (void)remaining;
+    (void)remaining;
+    if (!duration) return 0;
+    /* Relative kernel timeout in 100ns units (negative = relative). */
+    long long rel = (long long)duration->tv_sec * 10000000LL +
+                    (long long)duration->tv_nsec / 100LL;
+    if (rel <= 0) { thrd_yield(); return 0; }
+    rel = ((rel + 9999) / 10000) * 10000;   /* ceil to whole ms (kernel truncates) */
+    long long timeout = -rel;
+    /* Wait on a private auto-reset event that is never signalled: the wait can
+       only end by timing out, giving a plain sleep without a dedicated kernel
+       delay import. */
+    unsigned char ev[16];
+    KeInitializeEvent(ev, 1 /*Synchronization*/, 0 /*unsignalled*/);
+    KeWaitForSingleObject(ev, 0, 0, 0, &timeout);
     return 0;
 }
 
@@ -269,6 +282,11 @@ int cnd_timedwait(cnd_t *__restrict cond, mtx_t *__restrict mtx,
         (unsigned long long)ts->tv_sec * 10000000ULL + (unsigned long long)ts->tv_nsec / 100ULL;
     long long rel = (long long)(deadline - now);
     if (rel <= 0) return thrd_timedout;
+    /* The kernel (and xenia) round a relative wait DOWN to whole milliseconds,
+       so a sub-ms remainder would wake us up to ~1ms early -- which libc++'s
+       wait_for reads as a (spurious) no_timeout. Round the request UP to the
+       next whole millisecond so the wait is never shorter than asked. */
+    rel = ((rel + 9999) / 10000) * 10000;
     long long timeout = -rel;     /* negative = relative, in 100ns units */
     c->waiters++;
     mtx_unlock(mtx);
