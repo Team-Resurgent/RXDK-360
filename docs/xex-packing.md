@@ -168,6 +168,69 @@ A linker script gives the layout the packer needs: sections start at base +
 0x1000 (leaving room for the PE headers) and the import thunks sit in their own
 `.kthunks` section past a small gap, so no thunk abuts the entry's basic block.
 
+## Linking against the translated Microsoft libraries
+
+The final rung: a C title that calls a **real XDK library function**, linked
+against the libraries we translated from the shipped `.lib`s, not against
+hand-written asm. `coff2elf.py` turns `xapilib.lib` -> `xapilib.a` and (the
+CRT) `libcMT.lib` -> `libcMT.a` (687 objects: `__savegprlr_*`, `_blkmov`,
+`memcpy`, `malloc`, ...). A title:
+
+```c
+extern void OutputDebugStringA(const char* str);
+extern void HalReturnToFirmware(unsigned int routine);
+void _start(void) {
+    OutputDebugStringA("RXDK-360: calling xapilib OutputDebugStringA from C\n");
+    HalReturnToFirmware(0);
+    for (;;) {}
+}
+```
+
+links `apititle.o + xapilib.a + libcMT.a` with only **two** symbols left
+undefined -- `RtlInitAnsiString` and `HalReturnToFirmware`, the actual kernel
+imports; everything else (`OutputDebugStringA`, `RtlOutputDebugString`, the CRT
+startup helpers) is satisfied from the translated archives. `gen_import_stubs.py
+--names RtlInitAnsiString,HalReturnToFirmware` generates the thunks + manifest,
+the link completes, and the pack + load under xenia resolves both imports and
+runs. xenia logs the clean exit through `HalReturnToFirmware`:
+
+```
+xboxkrnl.exe - 4 imports      (F ... 12C  RtlInitAnsiString, 028  HalReturnToFirmware)
+i> F8000008 HalReturnToFirmware(00000000)
+!> F8000008 Game requested a hard poweroff via HalReturnToFirmware
+```
+
+So the translated MS libraries link and execute: the guest ran real retail
+xapilib code and returned to the kernel through a real kernel import.
+
+**Why the OutputDebugStringA text does not appear in xenia (and why that is
+correct).** Disassembling the translated `RtlOutputDebugString` (what
+`OutputDebugStringA` tail-calls) shows a faithful copy of the retail routine:
+
+```
+lhz  r4, 0(r3)      ; ANSI_STRING.Length
+lwz  r3, 4(r3)      ; ANSI_STRING.Buffer
+b    +8
+tw   31, r0, r0
+twi  31, r0, 0x14   ; 0x0FE00014 -- the 360 hypervisor debug-print trap
+blr
+```
+
+Retail `OutputDebugString` emits through the `twi 31,r0,0x14` debug trap, not
+through a kernel export. xenia JITs that instruction via the generic
+`InstrEmit_trap` path (`ppc_emit_control.cc`) -- it is a plain guest trap to
+xenia, never decoded as "print this string." So the byte-for-byte-correct
+retail code runs, but its output surfaces only on a console/debug monitor that
+decodes the trap. To see debug text **in xenia**, call the `DbgPrint` export
+(proven above); the trap route is a xenia display gap, not a translation bug.
+
+**Gotcha -- `--gc-sections` drops the import records.** The `__imp_<name>`
+variable records in `.kvars` have no code referencing them (only the thunk is
+reached, via `bl`), so `--gc-sections` garbage-collects `.kvars` and the packer
+then can't find `__imp_RtlInitAnsiString` in the ELF. Wrap the import sections
+in `KEEP()` in the linker script (`.kvars : { KEEP(*(.kvars)) }`,
+`.kthunks : ALIGN(16) { KEEP(*(.kthunks)) }`) so GC retains them.
+
 ## Next
 
 - emit per-section page descriptors (CODE / DATA / READONLY) instead of one CODE
