@@ -34,7 +34,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
 TARGET = "powerpc-freestanding-none"
+MS_TRIPLE = "powerpc-unknown-xbox360"                  # the patched-clang MS-ABI target
 DEFAULT_XDK = r"C:\Program Files (x86)\Microsoft Xbox 360 SDK\lib\xbox"
+DEFAULT_CLANG = os.environ.get("RXDK_CLANG",
+                               os.path.join(ROOT, "build", "llvm", "bin", "clang.exe"))
 DEFAULT_BASE = 0x82000000
 CFLAGS = ["-target", TARGET, "-O2", "-fno-sanitize=all"]
 
@@ -73,8 +76,13 @@ SECTIONS {{
 """)
 
 
-def compile_sources(sources, workdir):
-    """Compile each source to an object; pass prebuilt .o through."""
+def compile_sources(sources, workdir, cc, clang):
+    """Compile each source to an object; pass prebuilt .o through.
+
+    cc == "zig"   -> zig cc, the PPC EABI (works for simple titles);
+    cc == "clang" -> the patched clang targeting powerpc-unknown-xbox360, which
+                     emits the real MS-PPC ABI the shipped libraries expect.
+    """
     objects = []
     for src in sources:
         ext = os.path.splitext(src)[1].lower()
@@ -82,9 +90,15 @@ def compile_sources(sources, workdir):
             objects.append(src)
             continue
         obj = os.path.join(workdir, os.path.splitext(os.path.basename(src))[0] + ".o")
-        cmd = [zig(), "cc"] + CFLAGS + ["-c", src, "-o", obj]
-        if ext in (".s", ".asm"):                      # assembly: no C-only flags
+        is_asm = ext in (".s", ".asm")
+        if cc == "clang":
+            cmd = [clang, "--target=" + MS_TRIPLE, "-c", src, "-o", obj]
+            if not is_asm:
+                cmd[2:2] = ["-O2"]
+        elif is_asm:                                   # zig: assembly, no C-only flags
             cmd = [zig(), "cc", "-target", TARGET, "-c", src, "-o", obj]
+        else:
+            cmd = [zig(), "cc"] + CFLAGS + ["-c", src, "-o", obj]
         r = run(cmd)
         if r.returncode != 0:
             sys.exit(f"compile failed for {src}:\n{r.stderr}")
@@ -142,9 +156,16 @@ def main():
     ap.add_argument("--coff-dir", default=os.path.join(ROOT, "build", "coff"),
                     help="where bare --lib names resolve (coff2elf archives)")
     ap.add_argument("--xdk", default=DEFAULT_XDK, help="XDK lib\\xbox directory")
+    ap.add_argument("--cc", choices=("zig", "clang"), default="zig",
+                    help="compiler: zig (PPC EABI) or clang (patched MS-PPC ABI)")
+    ap.add_argument("--clang", default=DEFAULT_CLANG,
+                    help="patched clang path (for --cc clang)")
     ap.add_argument("--keep-elf", action="store_true",
                     help="keep the intermediate .elf next to the output")
     args = ap.parse_args()
+
+    if args.cc == "clang" and not os.path.exists(args.clang):
+        sys.exit(f"patched clang not found: {args.clang} (build tools/build-llvm.bat)")
 
     out_base = os.path.splitext(args.out)[0]
     workdir = os.path.dirname(os.path.abspath(args.out)) or "."
@@ -157,7 +178,7 @@ def main():
         if not os.path.exists(lib):
             sys.exit(f"library not found: {lib}")
 
-    objects = compile_sources(args.sources, workdir)
+    objects = compile_sources(args.sources, workdir, args.cc, args.clang)
 
     layout = out_base + ".ld"
     write_layout(layout, args.base, page)

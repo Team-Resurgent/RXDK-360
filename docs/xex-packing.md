@@ -300,10 +300,13 @@ Proven both ways: the freestanding `apidata` (writes `.data`/`.bss`) packs
 + `libcMT.a`, the trial-link narrows the undefined set to just
 `RtlInitAnsiString` + `HalReturnToFirmware`, and it packs and runs.
 
+The MS-ABI compiler is available too: `mktitle.py --cc clang` compiles with the
+patched clang (`powerpc-unknown-xbox360`, the real MS-PPC ABI) instead of zig's
+PPC EABI. See `docs/llvm-patch-design.md`.
+
 ## Next
 
-- build the patched clang so C/C++ compiles with the MS ABI (not zig's PPC
-  EABI), and move packing into XexTool (see below)
+- move ELF-input packing into XexTool (the C++ production home, see below)
 
 ## Production home
 
