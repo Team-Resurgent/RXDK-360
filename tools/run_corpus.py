@@ -131,7 +131,8 @@ def main():
                     help="write each expected.txt from this run instead of diffing")
     ap.add_argument("--only", default="", help="comma-separated test names")
     ap.add_argument("--lib",
-                    default=os.path.join(ROOT, "build", "libc", "libc.a") + "," +
+                    default=os.path.join(ROOT, "build", "libc", "libcpp.a") + "," +
+                            os.path.join(ROOT, "build", "libc", "libc.a") + "," +
                             os.path.join(ROOT, "build", "coff", "xapilib.a"),
                     help="comma-separated runtime libraries to link (default: the "
                          "modern picolibc build/libc/libc.a; pass libcMT for the "
@@ -153,9 +154,10 @@ def main():
         names = [n for n, _, _ in runnable]
         driver = gen_driver(names)
         sources = [s for _, _, s in runnable] + [os.path.join(PRELUDE, "start.c"), driver]
-        # -fno-exceptions/-rtti so the C++ tests link without the (not-yet-built)
-        # C++ runtime; harmless for the C tests.
-        extra = ["--cflag=-fno-exceptions", "--cflag=-fno-rtti"]
+        # C++ exceptions on: DWARF EH via libunwind + libc++abi (build/libc/
+        # libcpp.a). -funwind-tables so every frame has an FDE for the unwinder;
+        # harmless for the C tests.
+        extra = ["--cflag=-fexceptions", "--cflag=-funwind-tables"]
         out = os.path.join(BUILD, "corpus.xex")
         br = mktitle(sources, out, libs, extra)
         if br.returncode != 0 or not os.path.exists(out):

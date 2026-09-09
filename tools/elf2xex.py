@@ -88,10 +88,11 @@ def read_elf_sections(blob):
         return blob[strtab_off + off:end].decode("utf-8", "replace")
 
     # Metadata sections that are SHF_ALLOC in the ELF but not part of the
-    # runtime image we want in the XEX. lld places .eh_frame right after the
-    # ELF headers at tiny RVAs that collide with the PE headers, so they must
-    # not be carried across. (No unwinder on a freestanding target needs them.)
-    SKIP_PREFIXES = (".eh_frame", ".comment", ".note", ".ARM.")
+    # runtime image we want in the XEX. NOTE: .eh_frame / .eh_frame_hdr ARE now
+    # carried across -- the C++ exception runtime (libunwind) reads .eh_frame at
+    # runtime, and the linker script (mktitle.py) puts it on its own page well
+    # past the PE headers, so the old tiny-RVA collision no longer applies.
+    SKIP_PREFIXES = (".comment", ".note", ".ARM.")
 
     out = []
     for i in range(e_shnum):

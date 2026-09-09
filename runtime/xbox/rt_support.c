@@ -143,3 +143,27 @@ void *realloc(void *p, size_t n) {
  */
 int __C1_11886 = 0;
 int __C2_11886 = 0;
+
+/* ---- process/abort + aligned_alloc + assert ------------------------------ */
+
+extern void HalReturnToFirmware(unsigned);
+
+/* No process to signal on the console: a fatal fault powers the box off, the
+   same end state a real title reaches. */
+void abort(void) {
+    HalReturnToFirmware(0);
+    for (;;) {}
+}
+
+/* C11 aligned_alloc. malloc already returns 16-byte-aligned blocks (see above),
+   which covers every alignment the C++ exception runtime asks for (the unwind
+   exception header is 8/16-aligned). Larger alignments are not needed yet. */
+void *aligned_alloc(size_t alignment, size_t size) {
+    (void)alignment;
+    return malloc(size);
+}
+
+/* picolibc's assert() (no-message form) lands here on failure. */
+void __assert_no_args(void) {
+    abort();
+}

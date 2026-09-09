@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""Build the C++ exception runtime for the Xbox 360 target into build/libc/libcpp.a.
+
+DWARF/Itanium EH, the same shape RXDK-Libs uses on the original Xbox:
+  * libunwind        -- the DWARF unwinder (+ our PE .eh_frame-length recovery
+                        patch in AddressSpace.hpp, since lld scatters archive
+                        FDEs and the __eh_frame_start/_end markers under-bracket).
+  * libc++abi (core) -- __cxa_throw / __cxa_begin_catch / the personality routine
+                        / type_info matching / std::terminate handlers.
+
+Only the exception machinery is built, not the full libc++/STL. Titles that use
+exceptions link this alongside libc.a; the linker script (mktitle.py) gathers
+.eh_frame into one section bracketed by __eh_frame_start/__eh_frame_end.
+"""
+import argparse
+import os
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+LLVM = os.path.join(ROOT, "vendor", "llvm-project")
+PICO = os.path.join(ROOT, "vendor", "picolibc")
+CONFIG = os.path.join(ROOT, "runtime", "config")
+
+CLANG = os.environ.get("RXDK_CLANG", os.path.join(ROOT, "build", "llvm", "bin", "clang.exe"))
+AR = os.environ.get("RXDK_AR", r"C:\Program Files\LLVM\bin\llvm-ar.exe")
+TRIPLE = "powerpc-unknown-xbox360"
+
+# NOTE: the picolibc C-header include must come AFTER the C++ header dirs, or
+# libc++'s <cstdlib> grabs picolibc's <stdlib.h> instead of libc++'s wrapper.
+# So COMMON carries no include paths; each flag set orders its own.
+COMMON = [
+    "--target=" + TRIPLE, "-O2", "-ffreestanding",
+    "-fno-stack-protector", "-fno-sanitize=all", "-fno-builtin", "-Wno-everything",
+    "-D__Picolibc__", "-include", "picolibc.h",
+    "-I" + CONFIG,
+]
+PICO_INC = ["-I" + os.path.join(PICO, "libc", "include")]
+
+# libunwind: the DWARF unwinder. Baremetal DWARF branch (our PE .eh_frame patch).
+UNWIND_DIR = os.path.join(LLVM, "libunwind")
+UNWIND_SRCS = [
+    "src/libunwind.cpp", "src/UnwindLevel1.c", "src/UnwindLevel1-gcc-ext.c",
+    "src/UnwindRegistersSave.S", "src/UnwindRegistersRestore.S",
+]
+UNWIND_FLAGS = COMMON + [
+    "-D_LIBUNWIND_IS_BAREMETAL=1", "-D_LIBUNWIND_HAS_NO_THREADS=1", "-D_LIBUNWIND_XBOX360_NO_EH_FRAME_HDR=1", "-DNDEBUG",
+    "-funwind-tables",
+    "-I" + os.path.join(UNWIND_DIR, "include"),
+    "-I" + os.path.join(UNWIND_DIR, "src"),
+] + PICO_INC
+UNWIND_CXX = ["-std=c++23", "-fno-exceptions", "-fno-rtti"]
+
+# libc++abi: the exception ABI core (type_info matching needs -frtti; all -fexceptions).
+ABI_DIR = os.path.join(LLVM, "libcxxabi")
+ABI_SRCS = [
+    "cxa_exception.cpp", "cxa_personality.cpp", "cxa_exception_storage.cpp",
+    "cxa_handlers.cpp", "cxa_default_handlers.cpp", "cxa_aux_runtime.cpp",
+    # cxa_virtual (__cxa_pure_virtual/__cxa_deleted_virtual) and cxa_guard,
+    # operator new/delete (stdlib_new_delete) are all provided by cxxrt.cpp in
+    # libc.a, which every title links -- so they are omitted here to avoid
+    # duplicate-symbol clashes.
+    "private_typeinfo.cpp", "fallback_malloc.cpp",
+    "stdlib_exception.cpp", "stdlib_stdexcept.cpp", "stdlib_typeinfo.cpp",
+    "abort_message.cpp",
+]
+ABI_FLAGS = COMMON + [
+    "-std=c++23", "-fexceptions", "-frtti",
+    "-D_LIBCPP_BUILDING_LIBRARY", "-DLIBCXX_BUILDING_LIBCXXABI",
+    "-DLIBCXXABI_BUILDING_LIBCXXABI", "-D_LIBCPP_HAS_NO_THREADS",
+    "-include", "__config_site",
+    "-I" + os.path.join(LLVM, "libcxx", "include"),
+    "-I" + os.path.join(LLVM, "libcxx", "src"),
+    "-I" + os.path.join(ABI_DIR, "include"),
+    "-I" + os.path.join(ABI_DIR, "src"),
+] + PICO_INC
+
+
+def compile_one(src, flags, objdir, tag):
+    obj = os.path.join(objdir, tag + "_" + os.path.splitext(os.path.basename(src))[0] + ".o")
+    cmd = [CLANG] + flags + ["-c", src, "-o", obj]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        errs = [l for l in r.stderr.splitlines() if "error:" in l]
+        return None, (src, errs[:3] or r.stderr.strip().splitlines()[-1:] or [""])
+    return obj, None
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("-o", "--out", default=os.path.join(ROOT, "build", "libc", "libcpp.a"))
+    args = ap.parse_args()
+    if not os.path.exists(CLANG):
+        sys.exit("patched clang not found: %s" % CLANG)
+
+    objdir = os.path.join(os.path.dirname(args.out), "obj_cpp")
+    os.makedirs(objdir, exist_ok=True)
+    objs, failed = [], []
+
+    for s in UNWIND_SRCS:
+        src = os.path.join(UNWIND_DIR, s)
+        flags = UNWIND_FLAGS + (UNWIND_CXX if src.endswith(".cpp") else [])
+        obj, err = compile_one(src, flags, objdir, "uw")
+        (objs if obj else failed).append(obj or err)
+
+    for s in ABI_SRCS:
+        obj, err = compile_one(os.path.join(ABI_DIR, "src", s), ABI_FLAGS, objdir, "abi")
+        (objs if obj else failed).append(obj or err)
+
+    if failed:
+        print("%d source(s) failed:" % len(failed))
+        for src, why in failed:
+            print("  %s:" % os.path.relpath(src, ROOT))
+            for line in (why or []):
+                print("      " + line)
+        sys.exit(1)
+
+    if os.path.exists(args.out):
+        os.remove(args.out)
+    r = subprocess.run([AR, "rcs", args.out] + objs, capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.exit("archive failed:\n" + r.stderr)
+    print("wrote %s: %d objects" % (os.path.relpath(args.out, ROOT), len(objs)))
+
+
+if __name__ == "__main__":
+    main()
