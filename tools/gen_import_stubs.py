@@ -50,13 +50,15 @@ SUPPLEMENTAL_ORDINALS = {
 
 
 def build_ordinal_index(xdk_lib_dir):
-    """name -> (module_name, ordinal) across the XDK import libraries."""
+    """name -> (module_name, ordinal) across the XDK import libraries.
+
+    The importing module is taken from each short-import's own DLL field (e.g.
+    "xam.xex@21256.0+1861.0" -> xam.xex), not the containing .lib -- a single lib
+    such as xapilib.lib carries stubs for several modules (xam.xex functions like
+    XGetLanguage live inside xapilib.lib, not a xam.lib)."""
     index = dict(SUPPLEMENTAL_ORDINALS)
     for path in glob.glob(os.path.join(xdk_lib_dir, "*.lib")):
         base = os.path.splitext(os.path.basename(path))[0].lower()
-        module = MODULE_NAMES.get(base)
-        if module is None:
-            continue
         blob = open(path, "rb").read()
         for member, _longnames in read_archive(blob):
             if member.name in ("/", "//"):
@@ -64,10 +66,14 @@ def build_ordinal_index(xdk_lib_dir):
             if member.data[:2] == struct.pack("<H", IMAGE_FILE_MACHINE_POWERPCBE):
                 continue
             try:
-                sym, _dll, ordinal, _nt = parse_short_import(member.data)
+                sym, dll, ordinal, _nt = parse_short_import(member.data)
             except Exception:
                 continue
-            if ordinal:
+            if not ordinal:
+                continue
+            module = dll.split("@")[0].strip()      # "xam.xex@..." -> "xam.xex"
+            module = module or MODULE_NAMES.get(base)
+            if module:
                 index.setdefault(sym, (module, ordinal))
     return index
 
