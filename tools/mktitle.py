@@ -66,7 +66,17 @@ SECTIONS {{
   . = ALIGN(0x{page:X});             /* read-only data on its own page: keeps it out
                                         of the CODE page so xenia's code analyser
                                         does not disassemble format strings as code */
-  .rodata : {{ *(.rodata*) }}
+  .rodata : {{
+    *(.rodata*)
+    /* Merge the per-function LSDA sections (-fexceptions emits one
+       .gcc_except_table.<mangled> per function). Without an explicit rule lld
+       leaves each as its own orphan section -- a C++/EH-heavy title (e.g. one
+       using <iostream>) then has hundreds of sections, and the synthesised PE
+       header outgrows the headroom below the first section. Gathering them here
+       (read-only, addressed by the FDE, so any loaded section works) keeps the
+       section count -- and the header -- small for every title, automatically. */
+    *(.gcc_except_table .gcc_except_table.*)
+  }}
   . = ALIGN(0x{page:X});             /* DWARF EH tables on their own read-only page:
                                         libunwind recovers the section's true length
                                         from the PE section table at runtime, so it

@@ -1,36 +1,18 @@
 #ifndef RXDK_LIBCPP_PREREQ_H
 #define RXDK_LIBCPP_PREREQ_H
 
-/* Force-included ahead of the libc++/libc++abi sources. picolibc only declares
-   strerror_r under _POSIX_C_SOURCE >= 200112 / _GNU_SOURCE, which would widen
-   header visibility across the whole build; instead declare just the one symbol
-   <system_error> needs. picolibc provides the GNU (char*) variant. */
-#ifdef __cplusplus
-extern "C" {
-#endif
-char *strerror_r(int, char *, unsigned long);
-#ifdef __cplusplus
-}
-#endif
-
-/* <chrono> uses clock_gettime + CLOCK_MONOTONIC/CLOCK_REALTIME (our runtime
-   implements clock_gettime in runtime/xbox/clock.c). picolibc gates those on
-   POSIX/GNU visibility, off under strict -std=c++23, so declare the minimum.
-   struct timespec is still visible from <time.h>; forward-declare it here since
-   this header is force-included ahead of it (a pointer decl needs no definition). */
-#ifndef CLOCK_REALTIME
-#  define CLOCK_REALTIME 1
-#endif
-#ifndef CLOCK_MONOTONIC
-#  define CLOCK_MONOTONIC 4
-#endif
-struct timespec;
-#ifdef __cplusplus
-extern "C" {
-#endif
-int clock_gettime(int, struct timespec *);
-#ifdef __cplusplus
-}
-#endif
+/* Force-included ahead of the libc++/libc++abi sources.
+ *
+ * This used to hand-declare the few POSIX symbols libc++ needs that picolibc
+ * hides under strict -std (strerror_r for <system_error>, clock_gettime +
+ * CLOCK_* for <chrono>). Now that the C++ build compiles with -D_GNU_SOURCE
+ * (see build_libcpp.py) picolibc exposes the whole POSIX/GNU surface -- locale_t
+ * and uselocale/newlocale for <locale>/<iostream> included -- so those manual
+ * declarations are gone (and would conflict with picolibc's real prototypes).
+ *
+ * The header is kept as a (now empty) force-include so the build/test command
+ * lines that reference it stay valid; add narrowly-scoped prerequisites here if
+ * a future source needs one.
+ */
 
 #endif
