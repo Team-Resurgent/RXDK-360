@@ -84,18 +84,36 @@ lowering with a Lv2-style 32-bit-pointer data layout, and override five things".
 
 ## Status
 
-Branch `xbox360-msppc`, three commits:
+Branch `xbox360-msppc`, six commits building on the design above:
 
 | commit | contents |
 |---|---|
 | `9165ac8` | `Triple::Xbox360` + `"xbox360"` name, Lv2-style 32-bit-pointer data layout, `isXbox360ABI()`, linkage area 0x10 |
 | `ff9ed46` | vector arg registers from v1, no callee-saved vectors (v20-v31 volatile), LR at -8, parameter area always present |
 | `8557024` | no function descriptors, r2 reserved |
+| `dfd12ff` | clang `powerpc-unknown-xbox360` target info |
+| `7e67c1c` | do not infer register width from pointer width (ILP32 with 64-bit GPRs) |
+| `2600644` | the 32-bit-base Xbox 360 argument convention |
 
-**None of it is compiled yet.** The LLVM on this machine has no PowerPC backend and
-zig's target parser will not accept the triple, so building the patched toolchain is the
-next prerequisite - and it is also what allows each override to be checked against
-`cl.exe` output using the existing probe harness in `spike/`.
+**Built and verified.** `tools/build-llvm.bat` builds clang + lld + llc for the
+PowerPC target only (`build/llvm/bin/clang.exe`). `tools/verify_abi.py` compiles
+the `spike/` probes with both this clang (`--target=powerpc-unknown-xbox360`) and
+the XDK `cl.exe` and compares, rule by rule:
+
+```
+stack parameter slots      OK   cl=[84,92,100,108]  clang=[84,92,100,108]
+mixed int/float registers  OK   ...
+vector argument registers  OK   cl=[1,2]  clang=[1,2]
+return address slot        OK   cl=[-8]  clang=[-8]
+4 agree, 0 differ, 0 skipped
+```
+
+**Wired into the toolchain.** `mktitle.py --cc clang` compiles a title with this
+compiler (the `_start` frame reserves the 0x50 homing area, where zig's EABI
+reserves 8), links it against the translated MS libraries and packs it. Both a
+freestanding title (writes `.data`/`.bss`) and one linking `xapilib.a` + the
+`libcMT.a` CRT build and run in xenia -- MS-ABI title code calling MS-ABI
+library code with matching conventions.
 
 ## Target triple
 
