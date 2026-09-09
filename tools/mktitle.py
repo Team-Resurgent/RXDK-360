@@ -240,8 +240,13 @@ def main():
     ap.add_argument("--base", type=lambda s: int(s, 0), default=DEFAULT_BASE,
                     help="load base address (default 0x82000000)")
     ap.add_argument("--lib", action="append", default=[],
-                    help="library archive(s), comma-separated; a bare name -> "
-                         "<coff-dir>/<name>.a")
+                    help="extra library archive(s), comma-separated; a bare name "
+                         "-> <coff-dir>/<name>.a. Added on TOP of the default "
+                         "runtime libs (see --no-default-libs)")
+    ap.add_argument("--no-default-libs", action="store_true",
+                    help="do not auto-link the modern runtime (libc.a, xapilib.a, "
+                         "and libcpp.a for C++). Use when linking libcMT instead, "
+                         "or managing the lib set by hand")
     ap.add_argument("--coff-dir", default=os.path.join(ROOT, "build", "coff"),
                     help="where bare --lib names resolve (coff2elf archives)")
     ap.add_argument("--xdk", default=DEFAULT_XDK, help="XDK lib\\xbox directory")
@@ -267,8 +272,26 @@ def main():
     os.makedirs(workdir, exist_ok=True)
     page = page_size_for(args.base)
 
+    # The default runtime, matching what the official 360 SDK auto-links for a
+    # title (libcMT.lib + xapilib.lib + xboxkrnl.lib): our modern CRT is
+    # libc.a (+ libcpp.a for C++), xapilib.a is the XAPI import lib, and the
+    # xboxkrnl imports are synthesised by the import-stub step below -- so they
+    # need no static lib. Auto-linked for clang titles unless --no-default-libs
+    # (used to link libcMT instead, or to manage the set by hand). User --lib
+    # entries go first, the runtime after, so a title's own libs resolve against
+    # it -- the same order as the official link (objects/title libs, then CRT).
+    has_cpp = any(os.path.splitext(s)[1].lower() in (".cpp", ".cc", ".cxx", ".c++")
+                  for s in args.sources)
+    default_libs = []
+    if args.cc == "clang" and not args.no_default_libs:
+        libc_dir = os.path.join(ROOT, "build", "libc")
+        if has_cpp:
+            default_libs.append(os.path.join(libc_dir, "libcpp.a"))
+        default_libs.append(os.path.join(libc_dir, "libc.a"))
+        default_libs.append(os.path.join(args.coff_dir, "xapilib.a"))
+
     libnames = [n for spec in args.lib for n in spec.split(",") if n]
-    libs = resolve_libs(libnames, args.coff_dir)
+    libs = resolve_libs(libnames, args.coff_dir) + default_libs
     for lib in libs:
         if not os.path.exists(lib):
             sys.exit(f"library not found: {lib}")
