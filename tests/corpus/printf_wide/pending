@@ -1,0 +1,1 @@
+MS CRT wide printf (%S=wide string) needs full CRT init; resolves with the modern runtime. The flagship MSVC printf divergence probe.
