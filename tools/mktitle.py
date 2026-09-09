@@ -94,10 +94,14 @@ def compile_sources(sources, workdir, cc, clang, cflags):
             continue
         obj = os.path.join(workdir, os.path.splitext(os.path.basename(src))[0] + ".o")
         is_asm = ext in (".s", ".asm")
+        is_cpp = ext in (".cpp", ".cc", ".cxx", ".c++")
         if cc == "clang":
             cmd = [clang, "--target=" + MS_TRIPLE, "-c", src, "-o", obj]
             if not is_asm:
-                cmd[2:2] = ["-O2"] + cflags
+                # titles get the modern standard the runtime targets (C23/C++23);
+                # picolibc itself is built separately at c17 (build_libc.py).
+                std = "-std=c++23" if is_cpp else "-std=c23"
+                cmd[2:2] = ["-O2", std] + cflags
         elif is_asm:                                   # zig: assembly, no C-only flags
             cmd = [zig(), "cc", "-target", TARGET, "-c", src, "-o", obj]
         else:

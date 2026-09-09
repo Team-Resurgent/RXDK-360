@@ -75,6 +75,48 @@ globals, so pulling two CRT objects that both define, say, `_heap_init` or
 symbol defined in a COMDAT section as **weak** (MS's linker keeps one by name),
 which is what let string/malloc/vcall link the CRT at all.
 
+## picolibc bring-up: status
+
+`tools/build_libc.py` compiles picolibc from `vendor/picolibc` with the patched
+clang (`powerpc-unknown-xbox360`, MS ABI) straight to PPC ELF and archives it
+into `build/libc/libc.a`. The config is `runtime/config/picolibc.h` (force-
+included), and the flags mirror RXDK-Libs' `picolibcFlags` -- notably
+`-fno-builtin` (picolibc's `memcpy`/`strlen` *are* the builtins, so recognising
+their loops as the idiom is infinite self-recursion) and `-ffreestanding`.
+
+- **string / ctype / errno build (187 objects).** picolibc is far more portable
+  than the MS CRT -- these compiled for the PPC target essentially unchanged.
+- **Proven:** the `string` corpus probe, linked against `libc.a` **alone** (no
+  libcMT), prints the exact golden output (`len=6`, `cmp=0`, `copy=abcdef`) --
+  picolibc's `strlen`/`memcpy`/`memcmp`/`strcpy` are drop-in and the compiler
+  did not even need the `__savegprlr` helpers for this code.
+- **Titles compile C23 / C++23** now (`mktitle`, `-std=c23` / `-std=c++23`);
+  picolibc itself stays at c17 (its own sources are c11/c17 -- the *runtime it
+  provides* is what is C23/C++23-capable).
+
+Next: the self-contained `sprintf` (tinystdio + the `%S`->`%ls` MSVC rewrite from
+`ms_printf.c`), which turns the two `printf_*` probes green; then malloc; then
+the C++ runtime.
+
+## Open issues found during bring-up
+
+1. **`_start`->`title_main`->return titles hang after printing** (not picolibc:
+   reproduces on libcMT and on no-libc `arith` equally; trivial `hello` is fine).
+   All output is correct, then the guest never reaches the post-return sentinel /
+   `HalReturnToFirmware`. The epilogue is ABI-correct (`lwz r0,-8(r1); mtlr; blr`
+   after restoring `r1`). Suspects to chase: xenia's analyzer disassembling the
+   `.rodata` format strings as code (they share the CODE page -- "Invalid
+   instruction 8200108C 25640A00" is the bytes of `"%d\n"`), and the syscall
+   thunk vs the MS LR-at-(sp-8) slot. The corpus harness masks it via output-
+   match + sentinel-retry, which is also why runs are slow (retries on the
+   missing sentinel). Fixing it (or marking `.rodata` READONLY on its own page)
+   makes the harness fast and the titles actually terminate.
+2. **Prebuilt libs call the CRT.** The translated XDK libs (xapilib/d3d9/
+   xgraphics) call `memcpy`/`malloc`/the printf trap path/`__savegprlr`
+   internally; swapping libcMT -> picolibc must keep those working. Needs a
+   corpus category that links a prebuilt lib against the modern runtime and
+   checks a prebuilt-lib->CRT call path still behaves.
+
 ## Follow-ups noted
 
 - **C++ exceptions/unwinding.** The C++23 runtime will need `libunwind` plus the
