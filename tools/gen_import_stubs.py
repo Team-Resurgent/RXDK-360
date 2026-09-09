@@ -92,14 +92,23 @@ def main():
     import json
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("obj", help="compiled title object (.o) with undefined kernel symbols")
+    ap.add_argument("obj", nargs="?",
+                    help="compiled title object (.o) with undefined kernel symbols")
     ap.add_argument("--xdk", required=True, help="XDK lib\\xbox directory")
+    ap.add_argument("--names", default=None,
+                    help="comma-separated import names instead of reading an object "
+                         "(e.g. the undefined symbols a full link reports)")
     ap.add_argument("-o", "--out", default="stubs.s")
     ap.add_argument("--manifest", default=None)
     args = ap.parse_args()
 
     index = build_ordinal_index(args.xdk)
-    undefined = read_undefined_symbols(open(args.obj, "rb").read())
+    if args.names:
+        undefined = [n for n in args.names.split(",") if n]
+    elif args.obj:
+        undefined = read_undefined_symbols(open(args.obj, "rb").read())
+    else:
+        ap.error("provide an object or --names")
 
     resolved = {}                                      # module -> [(name, ordinal)]
     unresolved = []
