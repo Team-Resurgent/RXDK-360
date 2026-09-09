@@ -123,13 +123,19 @@ EXCLUDE = set([
 ])
 
 
-# Files our patched clang miscompiles at -O2 -- built one notch down instead.
-# vfprintf.c: at -O2 the float-conversion branch clobbers the output-stream
-# pointer, so %f/%g/%e emit nothing past the conversion (the length is still
-# counted) -- snprintf("A%fB",3.5) yields "A". -O1 (and below) is correct; the
-# double float engine, FP varargs and %d/%s are all fine, so it is isolated to
-# that branch's -O2 codegen. TODO: root-cause the offending PPC -O2 pass.
-REDUCED_OPT = set([
+# Files our patched clang miscompiles at -O2 with the MachineFunction
+# PeepholeOptimizer enabled -- compiled with -mllvm -disable-peephole (still -O2
+# otherwise). Root-caused by bisecting the backend passes: the float-conversion
+# branch of vfprintf.c came out writing nothing past the conversion (%f/%g/%e/%Lf
+# -> snprintf("A%fB",3.5) == "A", with the length still counted, so the output
+# FILE's put() had stopped landing characters). peephole's optimizeCompareInstr
+# rewrites are each individually correct (RLWINM+CMPLWI -> ANDI_rec; "x<1" ->
+# "x<=0"), but they turn plain compares into record-form (dot) instructions with
+# physical $cr0 def + COPY $cr0 chains, and a later -O2 pass mishandles that
+# $cr0 density here. -disable-peephole removes the trigger; the double float
+# engine, FP varargs and %d/%s are all fine without it. TODO: chase the downstream
+# physical-$cr0 codegen bug and drop this.
+NO_PEEPHOLE = set([
     "vfprintf.c",
 ])
 
@@ -201,8 +207,8 @@ def main():
             cmd = [CLANG] + CPP_FLAGS + ["-c", src, "-o", obj]
         else:
             flags = FLAGS
-            if os.path.basename(src) in REDUCED_OPT:
-                flags = ["-O1" if f == "-O2" else f for f in FLAGS]
+            if os.path.basename(src) in NO_PEEPHOLE:
+                flags = FLAGS + ["-mllvm", "-disable-peephole"]
             cmd = [CLANG] + flags + INCLUDES + ["-c", src, "-o", obj]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
