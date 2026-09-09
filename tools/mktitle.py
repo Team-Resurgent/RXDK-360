@@ -67,6 +67,12 @@ SECTIONS {{
                                         of the CODE page so xenia's code analyser
                                         does not disassemble format strings as code */
   .rodata : {{ *(.rodata*) }}
+  .init_array : {{                   /* C++ static constructors, run pre-main by start.c */
+    PROVIDE_HIDDEN(__init_array_start = .);
+    KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*)))
+    KEEP(*(.init_array))
+    PROVIDE_HIDDEN(__init_array_end = .);
+  }}
   .kvars  : {{ KEEP(*(.kvars)) }}    /* import var records: keep past --gc-sections */
   . = ALIGN(0x{page:X});             /* import thunks on their own CODE page, clear
                                         of both the entry code and the rodata */
