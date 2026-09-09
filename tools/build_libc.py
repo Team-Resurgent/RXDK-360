@@ -123,6 +123,17 @@ EXCLUDE = set([
 ])
 
 
+# Files our patched clang miscompiles at -O2 -- built one notch down instead.
+# vfprintf.c: at -O2 the float-conversion branch clobbers the output-stream
+# pointer, so %f/%g/%e emit nothing past the conversion (the length is still
+# counted) -- snprintf("A%fB",3.5) yields "A". -O1 (and below) is correct; the
+# double float engine, FP varargs and %d/%s are all fine, so it is isolated to
+# that branch's -O2 codegen. TODO: root-cause the offending PPC -O2 pass.
+REDUCED_OPT = set([
+    "vfprintf.c",
+])
+
+
 def sources():
     out = []
     for sub in SUBDIRS:
@@ -189,7 +200,10 @@ def main():
         if os.path.splitext(src)[1].lower() in (".cpp", ".cc", ".cxx"):
             cmd = [CLANG] + CPP_FLAGS + ["-c", src, "-o", obj]
         else:
-            cmd = [CLANG] + FLAGS + INCLUDES + ["-c", src, "-o", obj]
+            flags = FLAGS
+            if os.path.basename(src) in REDUCED_OPT:
+                flags = ["-O1" if f == "-O2" else f for f in FLAGS]
+            cmd = [CLANG] + flags + INCLUDES + ["-c", src, "-o", obj]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             failed.append((src, r.stderr.strip().splitlines()[-1:] or [""]))
