@@ -35,6 +35,11 @@ unsigned KeTlsSetValue(unsigned index, void *value);
 void     RtlInitializeCriticalSection(void *cs);
 void     RtlEnterCriticalSection(void *cs);
 void     RtlLeaveCriticalSection(void *cs);
+void     KeInitializeEvent(void *ev, unsigned type, unsigned state);
+unsigned KeSetEvent(void *ev, int increment, unsigned wait);
+unsigned KeWaitForSingleObject(void *obj, unsigned reason, unsigned mode,
+                               unsigned alertable, void *timeout);  /* timeout: LARGE_INTEGER*, NULL=infinite */
+void     KeQuerySystemTime(unsigned long long *out);  /* 100ns ticks since 1601 */
 
 #define RXDK_THREAD_STACK 0x40000u   /* 256KB, matches the title default */
 
@@ -150,18 +155,46 @@ int thrd_sleep(const struct timespec *duration, struct timespec *remaining) {
 
 /* ---- mutexes (RTL_CRITICAL_SECTION, recursive) --------------------------- */
 
+/*
+ * libc++'s std::mutex is constexpr-constructed to all-zeros (its
+ * _LIBCPP_MUTEX_INITIALIZER is `{}`) and its lock path calls mtx_lock directly,
+ * never mtx_init -- it assumes a statically-zeroed mutex is usable, the way
+ * PTHREAD_MUTEX_INITIALIZER is. An RTL_CRITICAL_SECTION is NOT valid zeroed, so
+ * we treat mtx_t as { RTL_CRITICAL_SECTION cs; int inited; } and lazily
+ * RtlInitializeCriticalSection on first use (double-checked under the table
+ * lock, exactly like cnd_ensure). The 64-byte mtx_t easily holds the ~32-byte
+ * critical section plus the flag word at the end.
+ */
+struct rxdk_mtx {
+    unsigned char cs[56];   /* RTL_CRITICAL_SECTION */
+    volatile int  inited;
+};
+
+static void mtx_ensure(struct rxdk_mtx *m) {
+    if (!m->inited) {
+        reg_lock();
+        if (!m->inited) {
+            RtlInitializeCriticalSection(m->cs);
+            m->inited = 1;
+        }
+        reg_unlock();
+    }
+}
+
 int mtx_init(mtx_t *mtx, int type) {
     (void)type;  /* RTL critical sections are always recursive */
     if (!mtx) return thrd_error;
-    RtlInitializeCriticalSection(mtx);
+    struct rxdk_mtx *m = (struct rxdk_mtx *)mtx;
+    RtlInitializeCriticalSection(m->cs);
+    m->inited = 1;
     return thrd_success;
 }
-int  mtx_lock(mtx_t *mtx)    { RtlEnterCriticalSection(mtx); return thrd_success; }
-int  mtx_unlock(mtx_t *mtx)  { RtlLeaveCriticalSection(mtx); return thrd_success; }
-int  mtx_trylock(mtx_t *mtx) { RtlEnterCriticalSection(mtx); return thrd_success; }
+int  mtx_lock(mtx_t *mtx)    { struct rxdk_mtx *m = (struct rxdk_mtx *)mtx; mtx_ensure(m); RtlEnterCriticalSection(m->cs); return thrd_success; }
+int  mtx_unlock(mtx_t *mtx)  { struct rxdk_mtx *m = (struct rxdk_mtx *)mtx; mtx_ensure(m); RtlLeaveCriticalSection(m->cs); return thrd_success; }
+int  mtx_trylock(mtx_t *mtx) { struct rxdk_mtx *m = (struct rxdk_mtx *)mtx; mtx_ensure(m); RtlEnterCriticalSection(m->cs); return thrd_success; }
 void mtx_destroy(mtx_t *mtx) { (void)mtx; }  /* no RtlDeleteCriticalSection on the 360 */
 int  mtx_timedlock(mtx_t *__restrict m, const struct timespec *__restrict t) {
-    (void)t; RtlEnterCriticalSection(m); return thrd_success;
+    (void)t; mtx_lock(m); return thrd_success;
 }
 
 /* ---- call_once ----------------------------------------------------------- */
@@ -176,12 +209,89 @@ void call_once(once_flag *flag, void (*func)(void)) {
     RtlLeaveCriticalSection(&g_once_cs);
 }
 
-/* ---- condition variables (not built yet) --------------------------------- */
+/* ---- condition variables (KEVENT auto-reset + waiter count) -------------- */
 
-int  cnd_init(cnd_t *c)                              { (void)c; return thrd_error; }
-int  cnd_signal(cnd_t *c)                            { (void)c; return thrd_error; }
-int  cnd_broadcast(cnd_t *c)                         { (void)c; return thrd_error; }
-int  cnd_wait(cnd_t *c, mtx_t *m)                    { (void)c; (void)m; return thrd_error; }
-int  cnd_timedwait(cnd_t *__restrict c, mtx_t *__restrict m,
-                   const struct timespec *__restrict t) { (void)c; (void)m; (void)t; return thrd_error; }
-void cnd_destroy(cnd_t *c)                           { (void)c; }
+struct rxdk_cnd {
+    unsigned char ev[16];   /* X_KEVENT (DISPATCHER_HEADER) */
+    volatile int  inited;
+    volatile int  waiters;
+};
+
+/* std::condition_variable is constexpr-constructed (zeroed), never cnd_init'd,
+   so lazily initialise the KEVENT on first use, under the table lock. */
+static void cnd_ensure(struct rxdk_cnd *c) {
+    if (!c->inited) {
+        reg_lock();
+        if (!c->inited) {
+            KeInitializeEvent(c->ev, 1 /*Synchronization: auto-reset*/, 0);
+            c->waiters = 0;
+            c->inited = 1;
+        }
+        reg_unlock();
+    }
+}
+
+int cnd_init(cnd_t *cond) {
+    struct rxdk_cnd *c = (struct rxdk_cnd *)cond;
+    if (!c) return thrd_error;
+    KeInitializeEvent(c->ev, 1, 0);
+    c->waiters = 0;
+    c->inited = 1;
+    return thrd_success;
+}
+
+int cnd_wait(cnd_t *cond, mtx_t *mtx) {
+    struct rxdk_cnd *c = (struct rxdk_cnd *)cond;
+    if (!c || !mtx) return thrd_error;
+    cnd_ensure(c);
+    c->waiters++;                 /* caller holds mtx */
+    mtx_unlock(mtx);
+    KeWaitForSingleObject(c->ev, 0, 0, 0, 0);
+    mtx_lock(mtx);
+    c->waiters--;
+    return thrd_success;
+}
+
+/* 1601->1970 epoch offset in 100ns units. */
+#define RXDK_EPOCH_100NS 116444736000000000ULL
+
+int cnd_timedwait(cnd_t *__restrict cond, mtx_t *__restrict mtx,
+                  const struct timespec *__restrict ts) {
+    struct rxdk_cnd *c = (struct rxdk_cnd *)cond;
+    if (!c || !mtx) return thrd_error;
+    if (!ts) return cnd_wait(cond, mtx);
+    cnd_ensure(c);
+    /* Convert the absolute (TIME_UTC) deadline to a relative kernel timeout. */
+    unsigned long long now100;
+    KeQuerySystemTime(&now100);
+    unsigned long long now = now100 - RXDK_EPOCH_100NS;  /* since 1970, 100ns */
+    unsigned long long deadline =
+        (unsigned long long)ts->tv_sec * 10000000ULL + (unsigned long long)ts->tv_nsec / 100ULL;
+    long long rel = (long long)(deadline - now);
+    if (rel <= 0) return thrd_timedout;
+    long long timeout = -rel;     /* negative = relative, in 100ns units */
+    c->waiters++;
+    mtx_unlock(mtx);
+    unsigned st = KeWaitForSingleObject(c->ev, 0, 0, 0, &timeout);
+    mtx_lock(mtx);
+    c->waiters--;
+    return st == 0x00000102u /*STATUS_TIMEOUT*/ ? thrd_timedout : thrd_success;
+}
+
+int cnd_signal(cnd_t *cond) {
+    struct rxdk_cnd *c = (struct rxdk_cnd *)cond;
+    if (!c) return thrd_error;
+    cnd_ensure(c);
+    if (c->waiters > 0) KeSetEvent(c->ev, 0, 0);
+    return thrd_success;
+}
+
+int cnd_broadcast(cnd_t *cond) {
+    struct rxdk_cnd *c = (struct rxdk_cnd *)cond;
+    if (!c) return thrd_error;
+    cnd_ensure(c);
+    for (int n = c->waiters; n > 0; --n) KeSetEvent(c->ev, 0, 0);
+    return thrd_success;
+}
+
+void cnd_destroy(cnd_t *cond) { (void)cond; }

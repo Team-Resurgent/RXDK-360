@@ -167,3 +167,28 @@ void *aligned_alloc(size_t alignment, size_t size) {
 void __assert_no_args(void) {
     abort();
 }
+
+/* errno: picolibc.h routes errno through __rxdk_errno(). Per-thread storage via
+   kernel TLS (each thread gets its own int, lazily allocated); a shared fallback
+   covers the pre-TLS/allocation-failure case. */
+extern unsigned KeTlsAlloc(void);
+extern void    *KeTlsGetValue(unsigned index);
+extern unsigned KeTlsSetValue(unsigned index, void *value);
+static unsigned g_errno_key = 0xFFFFFFFFu;
+static int      g_errno_fallback;
+int *__rxdk_errno(void) {
+    if (g_errno_key == 0xFFFFFFFFu) {
+        unsigned k = KeTlsAlloc();
+        if (k == 0xFFFFFFFFu) return &g_errno_fallback;
+        g_errno_key = k;
+    }
+    int *p = (int *)KeTlsGetValue(g_errno_key);
+    if (!p) {
+        p = (int *)malloc(sizeof(int));
+        if (!p) return &g_errno_fallback;
+        *p = 0;
+        KeTlsSetValue(g_errno_key, p);
+    }
+    return p;
+}
+

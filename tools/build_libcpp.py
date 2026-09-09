@@ -69,12 +69,32 @@ ABI_FLAGS = COMMON + [
     "-std=c++23", "-fexceptions", "-frtti",
     "-D_LIBCPP_BUILDING_LIBRARY", "-DLIBCXX_BUILDING_LIBCXXABI",
     "-DLIBCXXABI_BUILDING_LIBCXXABI", "-D_LIBCXXABI_XBOX360_TLS_KEY=1",
-    "-include", "__config_site",
+    "-include", "__config_site", "-include", "rxdk_libcpp_prereq.h",
     "-I" + os.path.join(LLVM, "libcxx", "include"),
     "-I" + os.path.join(LLVM, "libcxx", "src"),
     "-I" + os.path.join(ABI_DIR, "include"),
     "-I" + os.path.join(ABI_DIR, "src"),
 ] + PICO_INC
+
+
+# libc++ threading + support: std::thread / mutex / condition_variable and the
+# std::system_error they throw. Same flag set as libc++abi. (chrono/steady_clock
+# is deferred -- it needs a monotonic clock_gettime; timed waits use cnd_timedwait
+# directly, so untimed std::thread/mutex/condition_variable do not need it.)
+LIBCXX_DIR = os.path.join(LLVM, "libcxx")
+LIBCXX_SRCS = [
+    "thread.cpp", "mutex.cpp", "mutex_destructor.cpp",
+    "condition_variable.cpp", "condition_variable_destructor.cpp",
+    "shared_mutex.cpp", "system_error.cpp", "verbose_abort.cpp",
+    "future.cpp",   # __assoc_sub_state, pulled by thread.cpp's __thread_struct
+    # The out-of-line STL bits <system_error>/<future>/<thread> drag in:
+    "stdexcept.cpp",   # logic_error/runtime_error ctors + their typeinfo/vtables
+    "string.cpp",      # basic_string out-of-line members (what the errors carry)
+    "memory.cpp",      # __shared_count::~__shared_count (shared_ptr refcount)
+    "exception.cpp",   # std::exception_ptr / rethrow_exception glue over libc++abi
+    "error_category.cpp",  # base error_category virtuals + its typeinfo
+    "functional.cpp",  # __hash_memory (std::hash for the error machinery)
+]
 
 
 def compile_one(src, flags, objdir, tag):
@@ -106,6 +126,10 @@ def main():
 
     for s in ABI_SRCS:
         obj, err = compile_one(os.path.join(ABI_DIR, "src", s), ABI_FLAGS, objdir, "abi")
+        (objs if obj else failed).append(obj or err)
+
+    for s in LIBCXX_SRCS:
+        obj, err = compile_one(os.path.join(LIBCXX_DIR, "src", s), ABI_FLAGS, objdir, "cxx")
         (objs if obj else failed).append(obj or err)
 
     if failed:
