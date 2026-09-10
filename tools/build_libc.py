@@ -98,7 +98,8 @@ XBOX_GLUE = [
     os.path.join(ROOT, "runtime", "xbox", "dirio.c"),               # <dirent.h> + rename/truncate/realpath/getcwd... for <filesystem>
     os.path.join(ROOT, "runtime", "xbox", "posix_ext.c"),           # sleep family, posix_memalign, isatty, access
     os.path.join(ROOT, "runtime", "xbox", "posix_stubs.c"),         # process/signal/mmap/tty/timer/perm stubs (no console concept)
-    os.path.join(ROOT, "runtime", "xbox", "posix_glob.c"),          # fnmatch + glob + select/pselect (fd never blocks)
+    os.path.join(ROOT, "runtime", "xbox", "posix_glob.c"),          # fnmatch + glob + select/pselect + poll/ppoll (fd never blocks)
+    os.path.join(ROOT, "runtime", "xbox", "posix_string_ext.c"),    # basename/dirname (XPG) + ffs/ffsl/ffsll
     os.path.join(ROOT, "runtime", "xbox", "posix_stdio_streams.c"), # stdin/stdout/stderr FILE globals
     os.path.join(ROOT, "runtime", "xbox", "locks.c"),              # kernel critical-section retargetable locks
     os.path.join(ROOT, "runtime", "xbox", "threads.c"),            # C11 <threads.h> over the kernel (thrd/mtx/tss/once)

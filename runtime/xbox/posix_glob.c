@@ -28,6 +28,8 @@
 #include <sys/stat.h>
 #include <sys/select.h>
 #include <sys/time.h>
+#include <poll.h>
+#include <signal.h>
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -338,4 +340,39 @@ int pselect(int n, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
             const struct timespec *timeout, const sigset_t *sigmask) {
     (void)timeout; (void)sigmask;
     return select_ready(n, readfds, writefds, exceptfds);
+}
+
+/* ---- poll / ppoll -------------------------------------------------------- */
+
+/* Same reasoning as select: an open console descriptor is always ready, so every
+   POLLIN/POLLOUT/POLLPRI a caller waits on is reported set at once and the
+   timeout is irrelevant. A negative fd is skipped (revents 0) per POSIX. */
+static int poll_ready(struct pollfd *fds, nfds_t nfds) {
+    int ready = 0;
+    nfds_t i;
+    if (!fds)
+        return 0;
+    for (i = 0; i < nfds; i++) {
+        if (fds[i].fd < 0) {
+            fds[i].revents = 0;
+            continue;
+        }
+        fds[i].revents = fds[i].events & (POLLIN | POLLOUT | POLLPRI);
+        if (fds[i].revents)
+            ++ready;
+    }
+    return ready;
+}
+
+int poll(struct pollfd *fds, nfds_t nfds, int timeout) {
+    (void)timeout;
+    return poll_ready(fds, nfds);
+}
+
+/* ppoll is a GNU extension not declared in this <poll.h>; provide the prototype
+   so portable code that expects it still links. */
+int ppoll(struct pollfd *fds, nfds_t nfds, const struct timespec *timeout,
+          const sigset_t *sigmask) {
+    (void)timeout; (void)sigmask;
+    return poll_ready(fds, nfds);
 }

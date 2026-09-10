@@ -367,6 +367,14 @@ int fsync(int fd) {
 }
 int fdatasync(int fd) { return fsync(fd); }
 
+/* sync(): flush every open file description's buffers to the volume. */
+void sync(void) {
+    IO_STATUS_BLOCK iosb;
+    for (int i = RXDK_FD_BASE; i < RXDK_FD_MAX; ++i)
+        if (fd_table[i] && fd_table[i]->handle)
+            NtFlushBuffersFile(fd_table[i]->handle, &iosb);
+}
+
 /* fcntl: F_DUPFD duplicates; the flag getters/setters are accepted as no-ops
    (the fd flags the 360 file API exposes are fixed). */
 int fcntl(int fd, int cmd, ...) {
