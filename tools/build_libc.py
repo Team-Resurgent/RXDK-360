@@ -94,6 +94,7 @@ LIBM_EXCLUDE = set([
 # .cpp C++ runtime compiles with the C++ flag set below.
 XBOX_GLUE = [
     os.path.join(ROOT, "runtime", "xbox", "ms_printf.c"),           # MSVC %S/%C/%I64 rewrite
+    os.path.join(ROOT, "runtime", "xbox", "ms_crt_compat.c"),       # MS CRT compat: _stricmp/_snprintf/_wtoi/_s wrappers/security cookie (parity: shipped XDK libs link against ours)
     os.path.join(ROOT, "runtime", "xbox", "rt_support.c"),          # 64-bit div + console-pool malloc
     os.path.join(ROOT, "runtime", "xbox", "cxxrt.cpp"),             # operator new/delete + __cxa_*
     os.path.join(ROOT, "runtime", "xbox", "libc_hooks.c"),          # stdin/output/exec hook storage
