@@ -95,14 +95,9 @@ extern int   stat(const char *path, struct stat *st);
 #define PATH_MAX 1024
 #endif
 
-/* '/'->'\'\; fully-qualified paths pass through (360 has no cwd default). */
-static const char *fix_seps(const char *in, char *out, size_t n) {
-    size_t i = 0;
-    if (!in) return in;
-    for (; in[i] && i + 1 < n; ++i) out[i] = (in[i] == '/') ? '\\' : in[i];
-    out[i] = '\0';
-    return out;
-}
+/* Translate '/'->'\', apply the libc cwd to relative paths, and collapse ./.. --
+   shared with fileio.c, defined in pathres.c (which also has getcwd/chdir). */
+extern const char *__rxdk_resolve_path(const char *in, char *out, size_t n);
 
 static NTSTATUS nt_open(const char *path, ULONG access, ULONG disp,
                         ULONG options, HANDLE *out) {
@@ -110,7 +105,7 @@ static NTSTATUS nt_open(const char *path, ULONG access, ULONG disp,
     OBJECT_ATTRIBUTES obja;
     IO_STATUS_BLOCK iosb;
     char buf[PATH_MAX];
-    RtlInitAnsiString(&name, fix_seps(path, buf, sizeof buf));
+    RtlInitAnsiString(&name, __rxdk_resolve_path(path, buf, sizeof buf));
     obja.RootDirectory = NULL;
     obja.ObjectName = &name;
     obja.Attributes = OBJ_CASE_INSENSITIVE;
@@ -214,7 +209,7 @@ int rename(const char *oldp, const char *newp) {
     }
     ri->ReplaceIfExists = 1;
     ri->RootDirectory = NULL;
-    RtlInitAnsiString(&ri->FileName, fix_seps(newp, nb, sizeof nb));
+    RtlInitAnsiString(&ri->FileName, __rxdk_resolve_path(newp, nb, sizeof nb));
     if (!NT_SUCCESS(NtSetInformationFile(h, &iosb, ri, sizeof info, FILE_RENAME_INFO))) {
         NtClose(h); errno = EIO; return -1;
     }
@@ -249,39 +244,10 @@ int truncate(const char *path, off_t length) {
     return 0;
 }
 
-/* ---- stat variants / realpath / cwd --------------------------------------- */
+/* ---- stat variants -------------------------------------------------------- */
+/* getcwd/chdir/realpath and the cwd itself live in pathres.c (shared resolver). */
 
 int lstat(const char *path, struct stat *st) { return stat(path, st); }  /* no symlinks */
-
-char *realpath(const char *path, char *resolved) {
-    char tmp[PATH_MAX];
-    const char *r = fix_seps(path, tmp, sizeof tmp);
-    size_t n = strlen(r);
-    if (!resolved) { resolved = (char *)malloc(n + 1); if (!resolved) return NULL; }
-    memcpy(resolved, r, n + 1);
-    return resolved;
-}
-
-/* The 360 has no per-process cwd; libc tracks one so relative-path portable code
-   has a base. Defaults to the read-only title media. */
-static char g_cwd[PATH_MAX] = "game:\\";
-
-char *getcwd(char *buf, size_t size) {
-    size_t n = strlen(g_cwd);
-    if (!buf) { buf = (char *)malloc(n + 1); if (!buf) return NULL; }
-    else if (size <= n) { errno = ERANGE; return NULL; }
-    memcpy(buf, g_cwd, n + 1);
-    return buf;
-}
-
-int chdir(const char *path) {
-    char tmp[PATH_MAX];
-    const char *r = fix_seps(path, tmp, sizeof tmp);
-    size_t n = strlen(r);
-    if (n + 1 >= sizeof g_cwd) { errno = ENAMETOOLONG; return -1; }
-    memcpy(g_cwd, r, n + 1);
-    return 0;
-}
 
 /* ---- statvfs (volume free/total, best-effort zero) ------------------------ */
 
