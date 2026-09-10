@@ -57,9 +57,13 @@ extern NTSTATUS NtCreateFile(HANDLE *handle, ULONG access, OBJECT_ATTRIBUTES *ob
 extern NTSTATUS NtClose(HANDLE h);
 extern NTSTATUS NtSetInformationFile(HANDLE h, IO_STATUS_BLOCK *iosb, void *info,
                                      ULONG len, int cls);
+/* NB: the Xbox 360 NtQueryDirectoryFile has NO FileInformationClass parameter
+   (unlike desktop NT and the original Xbox); it always returns
+   FILE_DIRECTORY_INFORMATION. The arg order is handle, event, apc, apcctx,
+   iosb, info, length, FileName, RestartScan. */
 extern NTSTATUS NtQueryDirectoryFile(HANDLE h, HANDLE ev, void *apc, void *apcctx,
                                      IO_STATUS_BLOCK *iosb, void *info, ULONG len,
-                                     int cls, ANSI_STRING *name, unsigned char restart);
+                                     ANSI_STRING *name, unsigned char restart);
 
 /* shared fd table (fileio.c) + the plain file ops we build on */
 extern void *__rxdk_fd_handle(int fd);
@@ -152,10 +156,22 @@ struct dirent *readdir(DIR *d) {
     if (!d || !(h = __rxdk_fd_handle(d->fd))) { errno = EBADF; return NULL; }
 
     if (d->offset >= d->count) {   /* batch exhausted -> fetch next */
+        /* The search spec is supplied as FindFirstFile does: "*" with
+           RestartScan on the very first query (d->count still 0), then an
+           EMPTY (never NULL) spec with RestartScan clear to continue where the
+           enumeration left off. A NULL spec pointer is legal on NT but faults
+           xenia (it dereferences the guest-null X_ANSI_STRING), and a non-empty
+           spec makes xenia restart every call -- so the empty-spec continuation
+           is what both agree on. */
+        int is_first = (d->count == 0);
+        ANSI_STRING spec;
+        RtlInitAnsiString(&spec, is_first ? "*" : "");
         if (!NT_SUCCESS(NtQueryDirectoryFile(h, NULL, NULL, NULL, &iosb, d->buf,
-                                             sizeof d->buf, FILE_DIRECTORY_INFO,
-                                             NULL, 0)))
-            return NULL;           /* STATUS_NO_MORE_FILES or error -> end */
+                                             sizeof d->buf,
+                                             &spec, (unsigned char)is_first))) {
+            if (is_first) d->count = 0;   /* stay "not started" for rewinddir */
+            return NULL;                  /* STATUS_NO_MORE_FILES / error -> end */
+        }
         d->count = (size_t)iosb.Information;
         d->offset = 0;
         if (d->count == 0) return NULL;

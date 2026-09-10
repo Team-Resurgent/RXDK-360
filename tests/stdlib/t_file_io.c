@@ -2,6 +2,9 @@
 #include "rxdk_test.h"
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 int main(void) {
     const char *path = "cache:/t_file_io.txt";
@@ -35,6 +38,23 @@ int main(void) {
         c = fgetc(f);
         CHECK_EQI(c, 'h', "fgetc first char");
         fclose(f);
+    }
+
+    /* stat()/fstat() must report the real byte length (a live handle query on
+       xenia, not the stale 0 the cached directory entry can carry). */
+    off_t total = (off_t)(strlen(msg) + strlen("n=42\n"));
+    struct stat sb;
+    CHECK_EQI(stat(path, &sb), 0, "stat succeeds");
+    CHECK(sb.st_size == total, "stat st_size == bytes written (non-zero)");
+    CHECK(S_ISREG(sb.st_mode), "stat st_mode is a regular file");
+
+    int fd = open(path, O_RDONLY);
+    CHECK(fd >= 0, "open for fstat");
+    if (fd >= 0) {
+        struct stat fb;
+        CHECK_EQI(fstat(fd, &fb), 0, "fstat succeeds");
+        CHECK(fb.st_size == total, "fstat st_size == bytes written (non-zero)");
+        close(fd);
     }
 
     CHECK_EQI(remove(path), 0, "remove file");
