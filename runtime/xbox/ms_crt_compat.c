@@ -37,6 +37,10 @@
 int _stricmp(const char *a, const char *b)             { return strcasecmp(a, b); }
 int _strnicmp(const char *a, const char *b, size_t n)  { return strncasecmp(a, b, n); }
 int _strcmpi(const char *a, const char *b)             { return strcasecmp(a, b); }
+/* bare (non-underscore) spellings -- MS ships these in oldnames.lib as aliases to
+   the underscore forms; shipped libs import them directly. */
+int stricmp(const char *a, const char *b)              { return strcasecmp(a, b); }
+int strnicmp(const char *a, const char *b, size_t n)   { return strncasecmp(a, b, n); }
 int _wcsicmp(const wchar_t *a, const wchar_t *b)            { return wcscasecmp(a, b); }
 int _wcsnicmp(const wchar_t *a, const wchar_t *b, size_t n) { return wcsncasecmp(a, b, n); }
 

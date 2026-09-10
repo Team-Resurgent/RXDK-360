@@ -77,6 +77,8 @@ int main(void) {
     wchar_t wb[64];
 
     /* ---- first wave ---- */
+    { extern int stricmp(const char *, const char *); extern int strnicmp(const char *, const char *, size_t);
+      CHECK(stricmp("AbC", "abc") == 0 && strnicmp("XYz", "xyQ", 2) == 0, "bare stricmp/strnicmp (oldnames)"); }
     CHECK(_stricmp("HeLLo", "hello") == 0, "_stricmp case-insensitive equal");
     CHECK(_strnicmp("ABCxyz", "abcQQQ", 3) == 0, "_strnicmp first 3 equal");
     CHECK(_wcsicmp(L"FOO", L"foo") == 0, "_wcsicmp case-insensitive equal");
