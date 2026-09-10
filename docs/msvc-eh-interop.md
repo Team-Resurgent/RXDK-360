@@ -67,6 +67,39 @@ practice the MS libs catch internally or expose C/HRESULT boundaries.
 4. **Test.** A minimal MSVC-ABI throw/catch (built with cl.exe, or a hand-crafted
    FuncInfo) run in xenia; then exercise an actual xav/vcomp throw path.
 
+## Testability: xenia does not dispatch guest C++ EH (must be added)
+
+Target is **real hardware**, where the console kernel dispatches. But our harness
+is xenia, and xenia does **not** dispatch guest C++/SEH exceptions:
+
+- `RtlRaiseException` (xboxkrnl_debug.cc) recognises the C++ code `0xE06D7363` and
+  even parses the ThrowInfo/CatchableTypeArray (`x_s__ThrowInfo` etc. are already
+  modelled), but `HandleCppException` ends at `XELOGE("Guest attempted to throw a
+  C++ exception!")` -- "TODO: unwinding. This is going to suck." No unwind.
+- `RtlUnwind` / `RtlVirtualUnwind` / `RtlLookupFunctionEntry` / `RtlCaptureContext`
+  / `__C_specific_handler` are `kFunction` entries in `xboxkrnl_table.inc` with no
+  `_entry` implementation -> auto-stubbed.
+- xenia already reads `.pdata` on load, but only for JIT function discovery
+  (`xex_module.cc` ~1565), not for exception dispatch.
+
+So #2 is a **dual track**:
+
+1. **RXDK side (HW-correct):** DONE -- packer emits the exception directory
+   (`tools/elf2xex.py`). Remaining: drop the #1 stubs and reuse the real MS
+   `__CxxFrameHandler`/`_CxxThrowException` + MS RTTI from libcMT via
+   `extract_ms_glue`, provide `_getptd`.
+2. **xenia side (testability, faithful to HW):** implement the C++ EH dispatch in
+   `HandleCppException` so xenia behaves like the console kernel -- walk the guest
+   PPC stack via the `.pdata`/`.xdata` we now emit, invoke the guest
+   `__CxxFrameHandler` per frame (two-pass: find a catch matching a CatchableType,
+   unwind running dtors), and transfer control to the catch (set guest PC/SP/regs
+   and resume). The hard part is PPC virtual-unwind of guest frames + control
+   transfer; the throw-struct parsing already exists. User has approved modifying
+   xenia (built from source) for this.
+
+Recommended order: RXDK runtime reuse (smaller, HW-correct, links the throwers)
+first; then the xenia dispatcher (larger emulator feature) to make throws testable.
+
 ## Open risks
 
 - Exact XEX ↔ PE-exception-directory mechanism on the 360 loader (step 1) — the
