@@ -332,6 +332,30 @@ End-to-end host-side dispatch working in xenia (`xboxkrnl_eh.cc`):
 - Register RtlLookupFunctionEntry/RtlVirtualUnwind/RtlUnwind in xboxkrnl_table.inc
   if guest code calls them directly.
 
+### Continuation + destructor findings (2nd test bed: tests/eh/tc2 with a dtor)
+
+- **Continuation resume works for the common case, by construction:** xenia uses
+  an LR-sentinel (0xBCBCBCBC) return model and recompiles guest `bl` as host
+  calls, so the intermediate frames (_CxxThrowException, throw helper) unwind
+  **naturally via normal host returns** back to the catching frame at the
+  continuation. That is why the fall-through lands correctly -- not luck.
+- **Destructors run but in the WRONG order.** With a destructible local in the try
+  (`Guard g`), the output is `caught-int 1234` THEN `dtor-7` THEN `after-catch`.
+  Correct C++ is `dtor-7` (2nd-pass unwind) BEFORE `caught-int`. My dispatch runs
+  the catch funclet first (via Execute); the destructor runs afterward via the
+  natural unwind. Running the 2nd-pass destructors explicitly BEFORE the catch AND
+  keeping the natural fall-through would double-destroy.
+
+**Conclusion / architectural frontier:** getting destructor ordering + a fully
+general continuation right requires **explicit control transfer** -- perform the
+whole EH sequence (2nd-pass UnwindMap destructors in order -> catch -> resume at
+the funclet's continuation IP with SP=establisher) and DO NOT let the intermediate
+recompiled frames return naturally. In xenia's model (guest frames are host
+frames) that means host-level stack unwinding / longjmp from the shim -- the deep
+"this is going to suck" piece. The current dispatcher is correct for
+catch-value + no-destructor and runs destructors (mis-ordered) otherwise; full
+ordering correctness is the remaining hard work.
+
 ## Open risks
 
 - Exact XEX ↔ PE-exception-directory mechanism on the 360 loader (step 1) — the
