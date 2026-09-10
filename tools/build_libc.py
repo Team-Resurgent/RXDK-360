@@ -234,7 +234,15 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("-o", "--out", default=os.path.join(ROOT, "build", "libc", "libc.a"))
     ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("--debug", action="store_true",
+                    help="build the _DEBUG variant (define _DEBUG, -O0 -g, assertions "
+                         "active) -- for the libcMTd/libcpMTd drop-in variants")
     args = ap.parse_args()
+
+    if args.debug:
+        global FLAGS, CPP_FLAGS
+        FLAGS = ["-O0" if f == "-O2" else f for f in FLAGS] + ["-g", "-D_DEBUG"]
+        CPP_FLAGS = ["-O0" if f == "-O2" else f for f in CPP_FLAGS] + ["-g", "-D_DEBUG"]
 
     if not os.path.exists(CLANG):
         sys.exit("patched clang not found: %s (build tools/build-llvm.bat)" % CLANG)

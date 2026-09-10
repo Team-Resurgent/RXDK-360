@@ -160,7 +160,17 @@ def compile_one(src, flags, objdir, tag):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-o", "--out", default=os.path.join(ROOT, "build", "libc", "libcpp.a"))
+    ap.add_argument("--debug", action="store_true",
+                    help="build the _DEBUG variant (define _DEBUG, -O0 -g, drop NDEBUG "
+                         "so libc++ assertions are active) -- for the libcpMTd variant")
     args = ap.parse_args()
+    if args.debug:
+        global UNWIND_FLAGS, ABI_FLAGS
+        def dbg(fl):
+            return (["-O0" if f == "-O2" else f for f in fl if f != "-DNDEBUG"]
+                    + ["-g", "-D_DEBUG"])
+        UNWIND_FLAGS = dbg(UNWIND_FLAGS)
+        ABI_FLAGS = dbg(ABI_FLAGS)
     if not os.path.exists(CLANG):
         sys.exit("patched clang not found: %s" % CLANG)
 
