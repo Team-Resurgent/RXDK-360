@@ -101,6 +101,82 @@ rxdk_PNH rxdk_set_new_handler(rxdk_PNH h) { rxdk_PNH o = g_ms_new_handler; g_ms_
 
 }  // extern "C++"
 
+// ---- MSVC C++ EH/RTTI stubs (for shipped libs that never throw) ------------
+// A handful of cl.exe-built libs reference the MSVC C++ EH personality and RTTI
+// vtable purely because /EHsc emits them for any function with a destructible
+// local -- even ones that never actually throw (verified: d3dx9/nuispeech have
+// 0 _CxxThrowException call sites). These stubs let those libs link and run
+// correctly: the personality is only *invoked* during a real unwind, which those
+// libs never originate. A lib that genuinely throws (xav/vcomp) will hit the
+// loud abort until the real .pdata unwinder lands. This is deliberately separate
+// from our Itanium EH -- no MSVC unwind is performed.
+extern "C" {
+extern void abort(void);
+
+// EXCEPTION_DISPOSITION __CxxFrameHandler(EXCEPTION_RECORD*, EstablisherFrame,
+//                                         CONTEXT*, DISPATCHER_CONTEXT*)
+// 1 == ExceptionContinueSearch: "not handled in this frame, keep unwinding".
+int __CxxFrameHandler(void *rec, void *frame, void *ctx, void *disp) {
+    (void)rec; (void)frame; (void)ctx; (void)disp;
+    return 1;
+}
+// A real throw would need the MSVC unwinder; fail loud rather than corrupt.
+void _CxxThrowException(void *object, void *throwinfo) {
+    (void)object; (void)throwinfo;
+    abort();
+}
+// The scalar-deleting destructor slot of the MS type_info vtable (never called
+// unless RTTI is used at runtime, which these libs do not do).
+static void rxdk_ti_dtor(void) {}
+}  // extern "C"
+
+// ??_7type_info@@6B@ -- the MS `type_info` vtable. Emitted/stored by libs with
+// RTTI; a one-slot stub vtable satisfies the reference (no runtime RTTI here).
+// The asm label carries the mangled name; `used` + external linkage keep the
+// unreferenced-in-this-TU definition from being dropped.
+extern void *const rxdk_type_info_vtable[] asm("??_7type_info@@6B@");
+__attribute__((used)) void *const rxdk_type_info_vtable[] = { (void *)&rxdk_ti_dtor };
+
+// ---- MS STL exception-glue stubs (xtms) ----
+// std::_Xlength_error(const char*) throws length_error; the exception ctor path
+// and stdext::exception dtor. No MSVC unwinder yet -> _Xlength_error fails loud;
+// the rest are link-completeness data/dtor stubs (not called unless the lib
+// actually raises, which these paths do not on success).
+extern "C++" {
+// public: virtual void * stdext::exception::`scalar deleting dtor'(unsigned)
+void *rxdk_stdext_exc_dtor(void *self, unsigned flags) asm("??_Gexception@stdext@@UAAPAXI@Z");
+void *rxdk_stdext_exc_dtor(void *self, unsigned flags) { (void)flags; return self; }
+// void std::_Xlength_error(char const *)
+void rxdk_Xlength_error(const char *) asm("?_Xlength_error@std@@YAXPBD@Z");
+void rxdk_Xlength_error(const char *msg) { (void)msg; abort(); }
+// void (*std::_Raise_handler)(stdext::exception const &) -- data pointer, null
+extern void *rxdk_raise_handler asm("?_Raise_handler@std@@3P6AXABVexception@stdext@@@ZA");
+__attribute__((used)) void *rxdk_raise_handler = 0;
+// std::nothrow_t const std::nothrow -- empty object, 1 byte
+extern const char rxdk_std_nothrow asm("?nothrow@std@@3Unothrow_t@1@B");
+__attribute__((used)) const char rxdk_std_nothrow = 0;
+
+// std::_Lockit / _Init_locks / _Mutex -- the MS STL locale/stream lock guards.
+// Single-threaded locale here, so ctors/dtors/lock/unlock are no-ops (ctors
+// return `this` per the MSVC ABI).
+void *rxdk_Lockit_ctor(void *self, int) asm("??0_Lockit@std@@QAA@H@Z");
+void *rxdk_Lockit_ctor(void *self, int kind) { (void)kind; return self; }
+void  rxdk_Lockit_dtor(void *self) asm("??1_Lockit@std@@QAA@XZ");
+void  rxdk_Lockit_dtor(void *self) { (void)self; }
+void *rxdk_Initlocks_ctor(void *self) asm("??0_Init_locks@std@@QAA@XZ");
+void *rxdk_Initlocks_ctor(void *self) { return self; }
+void  rxdk_Initlocks_dtor(void *self) asm("??1_Init_locks@std@@QAA@XZ");
+void  rxdk_Initlocks_dtor(void *self) { (void)self; }
+void *rxdk_Mutex_ctor(void *self) asm("??0_Mutex@std@@QAA@XZ");
+void *rxdk_Mutex_ctor(void *self) { return self; }
+void  rxdk_Mutex_dtor(void *self) asm("??1_Mutex@std@@QAA@XZ");
+void  rxdk_Mutex_dtor(void *self) { (void)self; }
+void  rxdk_Mutex_lock(void *self) asm("?_Lock@_Mutex@std@@QAAXXZ");
+void  rxdk_Mutex_lock(void *self) { (void)self; }
+void  rxdk_Mutex_unlock(void *self) asm("?_Unlock@_Mutex@std@@QAAXXZ");
+void  rxdk_Mutex_unlock(void *self) { (void)self; }
+}
+
 // ---- atexit / static-destructor table (file scope, internal linkage) -------
 
 namespace {
