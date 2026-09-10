@@ -165,9 +165,130 @@ int vsprintf_s(char *buf, size_t n, const char *fmt, va_list ap) {
 int vswprintf_s(wchar_t *buf, size_t n, const wchar_t *fmt, va_list ap) {
     return vswprintf(buf, n, fmt, ap);
 }
-/* NOTE: sscanf_s/swscanf_s are NOT thin forwards -- MS passes a buffer-size arg
-   after each %s/%c in the varargs, so forwarding to sscanf() would desync the
-   argument list. Left for a real secure-scan implementation. */
+/* Secure scan: MS passes a buffer-size argument after each %s/%c/%[ pointer, so
+   sscanf_s cannot forward to sscanf() directly. Instead scan ONE conversion at a
+   time: build a mini-format for the conversion plus a trailing %n, run the real
+   sscanf() on the current input position, and advance by the reported count. For
+   %s/%c/%[ the size arg is turned into a field width so the buffer can't
+   overflow. Suppressed (%*) conversions consume input but take no argument. */
+static int rxdk_sscanf_s(const char *in, const char *fmt, va_list ap) {
+    int assigned = 0;
+    const char *f = fmt;
+    while (*f) {
+        if (isspace((unsigned char)*f)) { f++; continue; }   /* ws: absorbed by the next conversion */
+        if (*f != '%') {                                      /* literal must match */
+            while (isspace((unsigned char)*in)) in++;
+            if (*in != *f) break;
+            in++; f++; continue;
+        }
+        const char *spec = f++;                               /* spec[0]=='%' */
+        int suppress = 0;
+        if (*f == '*') { suppress = 1; f++; }
+        char wbuf[8]; int wi = 0;
+        while (isdigit((unsigned char)*f) && wi < 6) wbuf[wi++] = *f++;
+        while (*f=='h'||*f=='l'||*f=='L'||*f=='j'||*f=='z'||*f=='t') f++;
+        char conv = *f;
+        const char *setstart = 0;
+        if (conv == '[') {
+            setstart = f; f++;
+            if (*f == '^') f++;
+            if (*f == ']') f++;
+            while (*f && *f != ']') f++;
+            if (*f == ']') f++;
+        } else if (conv) f++;
+        if (conv == '%') { while (isspace((unsigned char)*in)) in++; if (*in=='%') in++; else break; continue; }
+        if (!conv) break;
+
+        char mini[80]; int consumed = 0, r; int is_str = (conv=='s'||conv=='c'||conv=='[');
+        if (is_str && !suppress) {
+            void *buf = va_arg(ap, void *);
+            size_t rsize = va_arg(ap, size_t);
+            int width = (conv=='c') ? (wi ? atoi(wbuf) : 1) : (int)(rsize ? rsize - 1 : 0);
+            if (conv=='c' && (size_t)width > rsize) width = (int)rsize;
+            if (width < 0) width = 0;
+            int n;
+            if (conv=='[') n = snprintf(mini, sizeof mini, "%%%d%.*s%%n", width, (int)(f - setstart), setstart);
+            else           n = snprintf(mini, sizeof mini, "%%%d%c%%n", width, conv);
+            if (n < 0 || n >= (int)sizeof mini) break;
+            r = sscanf(in, mini, buf, &consumed);
+            if (r < 1) break;
+            in += consumed; assigned++;
+        } else {
+            int slen = (int)(f - spec);
+            if (slen > 60) break;
+            memcpy(mini, spec, slen); mini[slen] = 0; strcat(mini, "%n");
+            if (suppress) { r = sscanf(in, mini, &consumed); if (consumed == 0) break; in += consumed; }
+            else {
+                void *arg = va_arg(ap, void *);
+                r = sscanf(in, mini, arg, &consumed);
+                if (r < 1) break;
+                in += consumed; assigned++;
+            }
+        }
+    }
+    return assigned;
+}
+int sscanf_s(const char *in, const char *fmt, ...) {
+    va_list ap; va_start(ap, fmt);
+    int r = rxdk_sscanf_s(in, fmt, ap);
+    va_end(ap); return r;
+}
+/* wide mirror: identical control flow over swscanf(); the mini-format is built
+   narrow (format chars are ASCII) and widened before the swscanf call. */
+static int rxdk_swscanf_s(const wchar_t *in, const wchar_t *fmt, va_list ap) {
+    int assigned = 0;
+    const wchar_t *f = fmt;
+    while (*f) {
+        if (iswspace(*f)) { f++; continue; }
+        if (*f != L'%') { while (iswspace(*in)) in++; if (*in != *f) break; in++; f++; continue; }
+        const wchar_t *spec = f++;
+        int suppress = 0;
+        if (*f == L'*') { suppress = 1; f++; }
+        char wbuf[8]; int wi = 0, narrow = 0;
+        while (*f >= L'0' && *f <= L'9' && wi < 6) wbuf[wi++] = (char)*f++;
+        while (*f==L'h'||*f==L'l'||*f==L'L'||*f==L'j'||*f==L'z'||*f==L't') { if (*f==L'h') narrow = 1; f++; }
+        wchar_t conv = *f;
+        const wchar_t *setstart = 0;
+        if (conv == L'[') { setstart = f; f++; if (*f==L'^') f++; if (*f==L']') f++; while (*f && *f != L']') f++; if (*f==L']') f++; }
+        else if (conv) f++;
+        if (conv == L'%') { while (iswspace(*in)) in++; if (*in==L'%') in++; else break; continue; }
+        if (!conv) break;
+
+        wchar_t mini[80]; int consumed = 0, r; int is_str = (conv==L's'||conv==L'c'||conv==L'[');
+        if (is_str && !suppress) {
+            void *buf = va_arg(ap, void *);
+            size_t rsize = va_arg(ap, size_t);
+            int width = (conv==L'c') ? (wi ? atoi(wbuf) : 1) : (int)(rsize ? rsize - 1 : 0);
+            if (conv==L'c' && (size_t)width > rsize) width = (int)rsize;
+            if (width < 0) width = 0;
+            /* build "%<width><conv-or-set>%n" as wide */
+            int m = 0; mini[m++] = L'%';
+            { char tmp[24]; int tn = snprintf(tmp, sizeof tmp, "%d", width);
+              for (int i = 0; i < tn; ++i) mini[m++] = (wchar_t)(unsigned char)tmp[i]; }
+            /* MS wide scanf treats %s/%c/%[ as WIDE by default; our standard
+               swscanf needs the 'l' modifier for that (bare %s is a char*). */
+            if (!narrow) mini[m++] = L'l';
+            if (conv==L'[') { for (const wchar_t *s = setstart; s < f && m < 74; ++s) mini[m++] = *s; }
+            else mini[m++] = conv;
+            mini[m++] = L'%'; mini[m++] = L'n'; mini[m] = 0;
+            r = swscanf(in, mini, buf, &consumed);
+            if (r < 1) break;
+            in += consumed; assigned++;
+        } else {
+            int slen = (int)(f - spec);
+            if (slen > 60) break;
+            wmemcpy(mini, spec, slen); mini[slen] = L'%'; mini[slen+1] = L'n'; mini[slen+2] = 0;
+            if (suppress) { r = swscanf(in, mini, &consumed); if (consumed == 0) break; in += consumed; }
+            else { void *arg = va_arg(ap, void *); r = swscanf(in, mini, arg, &consumed); if (r < 1) break; in += consumed; assigned++; }
+        }
+    }
+    return assigned;
+}
+int swscanf_s(const wchar_t *in, const wchar_t *fmt, ...) {
+    va_list ap; va_start(ap, fmt);
+    int r = rxdk_swscanf_s(in, fmt, ap);
+    va_end(ap); return r;
+}
 
 /* ====================================================================== */
 /* Second-wave CRT surface: the underscore CRT/POSIX spellings the shipped */
@@ -353,6 +474,55 @@ char *_gcvt(double v, int ndig, char *buf) { snprintf(buf, (size_t)ndig + 8, "%.
 _Noreturn void _invoke_watson(const wchar_t *e, const wchar_t *f, const wchar_t *fi, unsigned l, uintptr_t r) {
     (void)e; (void)f; (void)fi; (void)l; (void)r; abort();
 }
+/* ---- _beginthreadex over the kernel thread primitive ----
+   MS: uintptr_t _beginthreadex(void *security, unsigned stack,
+                                unsigned (*start)(void *), void *arg,
+                                unsigned initflag, unsigned *thrdaddr)
+   returns a thread HANDLE usable with the Wait/Close kernel calls. ExCreateThread
+   runs start(arg) directly and the thread ends when start returns (so the unused
+   _endthreadex is unnecessary). PPC has a single calling convention, so the MS
+   unsigned(*)(void*) start is ABI-compatible with the void* entry ExCreateThread
+   expects. */
+extern unsigned ExCreateThread(unsigned *handle, unsigned stack_size, unsigned *tid,
+                               unsigned xapi_startup, void *start, void *ctx,
+                               unsigned flags);
+uintptr_t _beginthreadex(void *security, unsigned stack,
+                         unsigned (*start)(void *), void *arg,
+                         unsigned initflag, unsigned *thrdaddr) {
+    (void)security;
+    unsigned handle = 0, tid = 0;
+    if (ExCreateThread(&handle, stack ? stack : 0x40000u, &tid, 0,
+                       (void *)start, arg, initflag) != 0)
+        return 0;
+    if (thrdaddr) *thrdaddr = tid;
+    return (uintptr_t)handle;
+}
+
+/* ---- _wsplitpath: decompose a path into drive/dir/fname/ext (any out NULL) ---- */
+void _wsplitpath(const wchar_t *path, wchar_t *drive, wchar_t *dir,
+                 wchar_t *fname, wchar_t *ext) {
+    const wchar_t *p = path, *slash = NULL, *dot = NULL;
+    if (drive) drive[0] = 0;
+    if (dir)   dir[0] = 0;
+    if (fname) fname[0] = 0;
+    if (ext)   ext[0] = 0;
+    if (!path) return;
+    if (path[0] && path[1] == L':') {                 /* "X:" drive */
+        if (drive) { drive[0] = path[0]; drive[1] = L':'; drive[2] = 0; }
+        p = path + 2;
+    }
+    for (const wchar_t *q = p; *q; ++q) {
+        if (*q == L'\\' || *q == L'/') slash = q;
+        else if (*q == L'.') dot = q;
+    }
+    const wchar_t *name = slash ? slash + 1 : p;      /* first char of filename */
+    if (dot && dot < name) dot = NULL;                /* a '.' in the dir is not an ext */
+    if (dir) { size_t n = (size_t)(name - p); wmemcpy(dir, p, n); dir[n] = 0; }
+    const wchar_t *nameend = dot ? dot : name + wcslen(name);
+    if (fname) { size_t n = (size_t)(nameend - name); wmemcpy(fname, name, n); fname[n] = 0; }
+    if (ext && dot) wcscpy(ext, dot);
+}
+
 /* _isctype(c, mask): test an int against the MS <ctype.h> classification bits. */
 #define _MS_UPPER 0x1
 #define _MS_LOWER 0x2

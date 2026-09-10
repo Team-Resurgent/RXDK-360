@@ -55,6 +55,15 @@ extern void qsort_s(void *, size_t, size_t, int (*)(void *, const void *, const 
 extern char *_gcvt(double, int, char *);
 extern int _isctype(int, int);
 extern long long _time64(long long *);
+extern uintptr_t _beginthreadex(void *, unsigned, unsigned (*)(void *), void *, unsigned, unsigned *);
+extern void _wsplitpath(const wchar_t *, wchar_t *, wchar_t *, wchar_t *, wchar_t *);
+extern unsigned NtWaitForSingleObjectEx(unsigned handle, unsigned mode, unsigned alertable, void *timeout);
+extern unsigned NtClose(unsigned handle);
+extern int sscanf_s(const char *, const char *, ...);
+extern int swscanf_s(const wchar_t *, const wchar_t *, ...);
+
+static volatile int g_thread_ran;
+static unsigned thread_body(void *arg) { g_thread_ran = *(int *)arg; return 0; }
 
 static int cmp_ctx(void *ctx, const void *a, const void *b) {
     int dir = *(int *)ctx;                       /* +1 ascending, -1 descending */
@@ -134,6 +143,38 @@ int main(void) {
     CHECK(_isctype('A', 0x1 /*_UPPER*/) && !_isctype('a', 0x1), "_isctype _UPPER");
     CHECK(_isctype('7', 0x4 /*_DIGIT*/) != 0, "_isctype _DIGIT");
     CHECK(_time64(NULL) > 0, "_time64 returns a clock value");
+
+    /* ---- harder C: _beginthreadex (real kernel thread) ---- */
+    { int val = 0x1234; unsigned tid = 0;
+      g_thread_ran = 0;
+      uintptr_t h = _beginthreadex(NULL, 0, thread_body, &val, 0, &tid);
+      CHECK(h != 0, "_beginthreadex returns a handle");
+      NtWaitForSingleObjectEx((unsigned)h, 1 /*Kernel*/, 0, 0 /*infinite*/);
+      NtClose((unsigned)h);
+      CHECK_EQI(g_thread_ran, 0x1234, "_beginthreadex ran the start routine with arg"); }
+
+    /* ---- harder C: _wsplitpath ---- */
+    { wchar_t drv[8], dir[64], fn[32], ext[16];
+      _wsplitpath(L"c:\\game\\assets\\model.bin", drv, dir, fn, ext);
+      CHECK(wcscmp(drv, L"c:") == 0, "_wsplitpath drive");
+      CHECK(wcscmp(dir, L"\\game\\assets\\") == 0, "_wsplitpath directory");
+      CHECK(wcscmp(fn, L"model") == 0, "_wsplitpath filename");
+      CHECK(wcscmp(ext, L".bin") == 0, "_wsplitpath extension"); }
+
+    /* ---- harder C: secure scan (size arg bounds %s/%c/%[) ---- */
+    { int a = 0, c = 0; char name[8];
+      int n = sscanf_s("12 34", "%d %d", &a, &c);
+      CHECK(n == 2 && a == 12 && c == 34, "sscanf_s numeric fields");
+      n = sscanf_s("hello world", "%s", name, (unsigned)sizeof name);
+      CHECK(n == 1 && strcmp(name, "hello") == 0, "sscanf_s %s honours size");
+      char small[4];
+      n = sscanf_s("abcdefgh", "%s", small, (unsigned)sizeof small);   /* must not overflow */
+      CHECK(strlen(small) <= 3, "sscanf_s %s truncates to buffer size");
+      int hx = 0; n = sscanf_s("0x1F", "%x", &hx);
+      CHECK(hx == 0x1F, "sscanf_s hex"); }
+    { int wa = 0; wchar_t ws[8];
+      int n = swscanf_s(L"7 tag", L"%d %s", &wa, ws, (unsigned)(sizeof ws / sizeof *ws));
+      CHECK(n == 2 && wa == 7 && wcscmp(ws, L"tag") == 0, "swscanf_s int + wide string"); }
 
     CHECK_DONE("mscompat");
     return 0;
