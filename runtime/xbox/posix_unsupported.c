@@ -70,12 +70,9 @@ int sigwait(const sigset_t *s, int *sig) { (void)s; (void)sig; return ENOSYS; } 
 int sigqueue(pid_t pid, int sig, const union sigval v) { (void)pid; (void)sig; (void)v; errno = EPERM; return -1; } /* RXDK-STUB */
 int killpg(pid_t pgrp, int sig)    { (void)pgrp; (void)sig; errno = EPERM; return -1; } /* RXDK-STUB */
 
-/* ---- per-process interval timers (need signal delivery) ---- */
-int timer_create(clockid_t c, struct sigevent *e, timer_t *t) { (void)c; (void)e; (void)t; errno = ENOSYS; return -1; } /* RXDK-STUB */
-int timer_delete(timer_t t)                                   { (void)t; errno = ENOSYS; return -1; } /* RXDK-STUB */
-int timer_settime(timer_t t, int f, const struct itimerspec *n, struct itimerspec *o) { (void)t; (void)f; (void)n; (void)o; errno = ENOSYS; return -1; } /* RXDK-STUB */
-int timer_gettime(timer_t t, struct itimerspec *o)            { (void)t; (void)o; errno = ENOSYS; return -1; } /* RXDK-STUB */
-useconds_t ualarm(useconds_t u, useconds_t i) { (void)u; (void)i; return 0; } /* RXDK-STUB: no timers */
+/* ---- interval alarm: no SIGALRM delivery. timer_create (SIGEV_THREAD/NONE) is
+   real -- see timer.c. ---- */
+useconds_t ualarm(useconds_t u, useconds_t i) { (void)u; (void)i; return 0; } /* RXDK-STUB: no SIGALRM */
 
 /* ---- process groups / sessions (one title, one group) ---- */
 int   setpgid(pid_t pid, pid_t pgid)  { (void)pid; (void)pgid; return 0; } /* RXDK-STUB */
