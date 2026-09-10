@@ -140,17 +140,11 @@ int __rxdk_fd_install(void *h) {
     return fd;
 }
 
-/* Translate '/' to '\' into a caller buffer; fully-qualified paths pass through
-   unchanged (the 360 has no cwd/default drive). */
+/* Resolve a path to a fully-qualified 360 path (translate '/'->'\', apply the
+   libc cwd to relative paths, collapse ./..). Shared with dirio.c; defined in
+   pathres.c alongside getcwd/chdir. */
 #define RXDK_PATH_BUF 1024
-static const char *fix_seps(const char *in, char *out, size_t n) {
-    size_t i = 0;
-    if (!in) return in;
-    for (; in[i] && i + 1 < n; ++i)
-        out[i] = (in[i] == '/') ? '\\' : in[i];
-    out[i] = '\0';
-    return out;
-}
+extern const char *__rxdk_resolve_path(const char *in, char *out, size_t n);
 
 static NTSTATUS nt_open(const char *path, ULONG access, ULONG disp,
                         ULONG options, HANDLE *out) {
@@ -159,7 +153,7 @@ static NTSTATUS nt_open(const char *path, ULONG access, ULONG disp,
     IO_STATUS_BLOCK iosb;
     char buf[RXDK_PATH_BUF];
 
-    RtlInitAnsiString(&name, fix_seps(path, buf, sizeof buf));
+    RtlInitAnsiString(&name, __rxdk_resolve_path(path, buf, sizeof buf));
     obja.RootDirectory = NULL;   /* the drive path is fully-qualified */
     obja.ObjectName = &name;
     obja.Attributes = OBJ_CASE_INSENSITIVE;
