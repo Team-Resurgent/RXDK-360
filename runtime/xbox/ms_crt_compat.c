@@ -523,6 +523,42 @@ void _wsplitpath(const wchar_t *path, wchar_t *drive, wchar_t *dir,
     if (ext && dot) wcscpy(ext, dot);
 }
 
+/* ---- __iob_func: MS's stdin/stdout/stderr accessor ----
+   MS code takes stdin/stdout/stderr as &__iob_func()[0..2], indexing with MS's
+   own sizeof(FILE) == sizeof(struct _iobuf) == 32 bytes. We return an array of 3
+   slots padded to that 32-byte stride, each starting with a real (unbuffered)
+   picolibc `struct __file` whose put/get/flush DELEGATE to our actual
+   stdin/stdout/stderr -- so a shipped lib's fprintf(stderr, ...) reaches the same
+   console sink, sharing our line buffering (no one-char-per-line debug spam).
+   struct __file (~20B: unget + flags + 3 fn ptrs) fits the 32-byte slot. */
+#define RXDK_MS_FILE_SIZE 32
+_Static_assert(sizeof(struct __file) <= RXDK_MS_FILE_SIZE, "picolibc FILE exceeds MS _iobuf stride");
+
+extern FILE *const __posix_stdin;
+extern FILE *const __posix_stdout;
+extern FILE *const __posix_stderr;
+
+static int iob_put_out(char c, struct __file *f) { (void)f; return putc((unsigned char)c, __posix_stdout); }
+static int iob_put_err(char c, struct __file *f) { (void)f; return putc((unsigned char)c, __posix_stderr); }
+static int iob_get_in(struct __file *f)          { (void)f; return getc(__posix_stdin); }
+static int iob_flush_out(struct __file *f)       { (void)f; return fflush(__posix_stdout); }
+static int iob_flush_err(struct __file *f)       { (void)f; return fflush(__posix_stderr); }
+
+typedef union { struct __file f; char pad[RXDK_MS_FILE_SIZE]; } rxdk_ms_iob;
+static rxdk_ms_iob g_ms_iob[3];
+
+FILE *__iob_func(void) {
+    static int inited;
+    if (!inited) {
+        struct __file in  = { 0 }; in.flags  = __SRD; in.get  = iob_get_in;
+        struct __file out = { 0 }; out.flags = __SWR; out.put = iob_put_out; out.flush = iob_flush_out;
+        struct __file err = { 0 }; err.flags = __SWR; err.put = iob_put_err; err.flush = iob_flush_err;
+        g_ms_iob[0].f = in; g_ms_iob[1].f = out; g_ms_iob[2].f = err;
+        inited = 1;
+    }
+    return (FILE *)&g_ms_iob[0].f;
+}
+
 /* _isctype(c, mask): test an int against the MS <ctype.h> classification bits. */
 #define _MS_UPPER 0x1
 #define _MS_LOWER 0x2
