@@ -145,3 +145,66 @@ int mkostemp(char *tmpl, int flags) {
     errno = EEXIST;
     return -1;
 }
+
+/* ---- sched_yield: hand the core to another ready thread (C11 thrd_yield) --- */
+extern void thrd_yield(void);
+int sched_yield(void) { thrd_yield(); return 0; }
+
+/* ---- getentropy / getrandom: the console has no hardware entropy source, and
+   picolibc's arc4random SEEDS itself from getentropy(), so this must be a
+   self-contained generator (using arc4random here would recurse). It is a
+   clock-seeded xorshift PRNG -- fine for tempfile names/hashing/dedup, NOT for
+   cryptographic keys. getentropy is the seed source arc4random then builds on. */
+static unsigned g_ent_state;
+
+static unsigned ent_next(void) {
+    unsigned x = g_ent_state;
+    if (x == 0) {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        x = (unsigned)ts.tv_nsec ^ ((unsigned)ts.tv_sec << 16) ^ 0x9E3779B9u;
+        if (x == 0) x = 0xA5A5A5A5u;
+    }
+    x ^= x << 13; x ^= x >> 17; x ^= x << 5;   /* xorshift32 */
+    g_ent_state = x;
+    return x;
+}
+
+int getentropy(void *buf, size_t len) {
+    unsigned char *p = (unsigned char *)buf;
+    if (len > 256) { errno = EIO; return -1; }
+    if (!buf && len) { errno = EFAULT; return -1; }
+    while (len) {
+        unsigned r = ent_next();
+        size_t n = len < 4 ? len : 4, i;
+        for (i = 0; i < n; i++) { p[i] = (unsigned char)(r & 0xff); r >>= 8; }
+        p += n; len -= n;
+    }
+    return 0;
+}
+
+ssize_t getrandom(void *buf, size_t len, unsigned int flags) {
+    unsigned char *p = (unsigned char *)buf;
+    size_t left = len;
+    (void)flags;
+    if (!buf && len) { errno = EFAULT; return -1; }
+    while (left) {                             /* getentropy caps at 256/call */
+        size_t chunk = left < 256 ? left : 256;
+        getentropy(p, chunk);
+        p += chunk; left -= chunk;
+    }
+    return (ssize_t)len;
+}
+
+/* ---- confstr: the console has one fixed environment; report the launch drive
+   for _CS_PATH and empty strings for the rest, returning the full length. ----- */
+size_t confstr(int name, char *buf, size_t len) {
+    const char *val = (name == _CS_PATH) ? "game:\\" : "";
+    size_t n = strlen(val);
+    if (buf && len) {
+        size_t c = (n < len - 1) ? n : len - 1;
+        memcpy(buf, val, c);
+        buf[c] = '\0';
+    }
+    return n + 1;
+}

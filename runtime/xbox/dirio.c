@@ -299,6 +299,52 @@ int unlinkat(int dirfd, const char *path, int flag) {
     return (flag & AT_REMOVEDIR) ? rmdir(path) : unlink(path);
 }
 
+/* The rest of the *at family: AT_FDCWD resolves against the libc cwd (the plain
+   call already does), and there is no other dirfd-relative open on the 360. */
+extern int access(const char *path, int amode);
+
+int mkdirat(int dirfd, const char *path, mode_t mode) {
+    if (dirfd != AT_FDCWD) { errno = ENOSYS; return -1; }
+    return mkdir(path, mode);
+}
+int fstatat(int dirfd, const char *path, struct stat *st, int flag) {
+    (void)flag;
+    if (dirfd != AT_FDCWD) { errno = ENOSYS; return -1; }
+    return stat(path, st);
+}
+int faccessat(int dirfd, const char *path, int amode, int flag) {
+    (void)flag;
+    if (dirfd != AT_FDCWD) { errno = ENOSYS; return -1; }
+    return access(path, amode);
+}
+int fchownat(int dirfd, const char *path, uid_t owner, gid_t group, int flag) {
+    (void)path; (void)owner; (void)group; (void)flag;
+    if (dirfd != AT_FDCWD) { errno = ENOSYS; return -1; }
+    return 0;                              /* FATX/GDFX have no ownership */
+}
+int futimens(int fd, const struct timespec times[2]) {
+    (void)fd; (void)times; return 0;       /* timestamps not settable via fd */
+}
+int utimensat(int dirfd, const char *path, const struct timespec times[2], int flag) {
+    (void)path; (void)times; (void)flag;
+    if (dirfd != AT_FDCWD) { errno = ENOSYS; return -1; }
+    return 0;
+}
+ssize_t readlinkat(int dirfd, const char *path, char *buf, size_t bufsize) {
+    (void)dirfd; (void)path; (void)buf; (void)bufsize;
+    errno = EINVAL; return -1;             /* no symlinks */
+}
+int symlinkat(const char *target, int dirfd, const char *linkpath) {
+    (void)target; (void)dirfd; (void)linkpath; errno = ENOSYS; return -1;
+}
+int linkat(int ofd, const char *oldp, int nfd, const char *newp, int flag) {
+    (void)ofd; (void)oldp; (void)nfd; (void)newp; (void)flag;
+    errno = ENOSYS; return -1;             /* no hard links */
+}
+int fchdir(int fd) {
+    (void)fd; errno = ENOSYS; return -1;   /* no fd->path mapping to chdir into */
+}
+
 /* ---- unsupported on FATX: honest failures / no-ops ------------------------ */
 
 int fchmod(int fd, mode_t mode) { (void)fd; (void)mode; return 0; }   /* no perms */
