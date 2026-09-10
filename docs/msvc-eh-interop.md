@@ -214,6 +214,35 @@ The critical unknown for `RtlLookupFunctionEntry`/`RtlVirtualUnwind` -- now crac
 4. `RtlUnwind`: second pass -- run cleanup funclets, then set the guest context
    (PC=catch funclet, SP=target frame) and resume there instead of returning.
 
+## xenia dispatcher draft (WIP)
+
+First-draft implementation lives in the xenia tree (built from source, not this
+repo): `src/xenia/kernel/xboxkrnl/xboxkrnl_eh.cc`. NOT yet added to the xenia
+build (so it can't break it). Implemented correct-by-construction against the
+decoded format:
+- `DecodeRuntimeFunction` (the PrologLen/FuncLen/32Bit/Exc word),
+- `LookupFunctionEntry` (RtlLookupFunctionEntry: scan the module's .pdata for the
+  RF covering a PC),
+- `ReadHandlerPair` (the `[handler,FuncInfo]` at BeginAddress-8),
+- `DispatchCppException` skeleton (walk frames, per-frame call the guest
+  `__CxxFrameHandler`).
+
+Remaining (the build-loop coding, marked TODO in the file):
+1. wire the .pdata base/count out of XexModule (downcast cpu::Module* ->
+   XexModule, GetPESection(".pdata") / exception directory),
+2. marshal a guest DISPATCHER_CONTEXT + CONTEXT and `processor()->Execute` the
+   guest `__CxxFrameHandler(record, frame, ctx, dispatcher)`,
+3. `RtlVirtualUnwind`: decode PrologLen instructions (mflr/stw-LR/stwu +
+   __save{gprlr,fpr,vmx}_N) to recover caller SP/LR (needed for OUTER-frame
+   catches; same-frame catches resolve without it),
+4. `RtlUnwind` control transfer: set guest PC=catch funclet / SP=target frame and
+   resume there,
+5. register RtlLookupFunctionEntry/RtlVirtualUnwind/RtlUnwind in
+   xboxkrnl_table.inc + call DispatchCppException from HandleCppException.
+
+The same-frame catch (test bed) should resolve first with 1+2+4; multi-frame
+needs 3.
+
 ## Open risks
 
 - Exact XEX ↔ PE-exception-directory mechanism on the 360 loader (step 1) — the
