@@ -62,6 +62,8 @@ SUBDIRS = [
     "libc/time",     # strftime_l + time formatting the locale facets use
     "libc/stdlib",   # abs/labs/getenv/strtol/div/mb<->wc ... (allocator + atexit
                      # + abort + exit excluded below; our runtime provides those)
+    "libc/search",   # qsort/qsort_r/bsearch (ISO C) + tsearch tree family; the
+                     # file-backed BSD hash/ndbm cluster is excluded below.
 ]
 
 # libm: full double + float math (libm/common + libm/math), the same wholesale
@@ -96,6 +98,7 @@ XBOX_GLUE = [
     os.path.join(ROOT, "runtime", "xbox", "dirio.c"),               # <dirent.h> + rename/truncate/realpath/getcwd... for <filesystem>
     os.path.join(ROOT, "runtime", "xbox", "posix_ext.c"),           # sleep family, posix_memalign, isatty, access
     os.path.join(ROOT, "runtime", "xbox", "posix_stubs.c"),         # process/signal/mmap/tty/timer/perm stubs (no console concept)
+    os.path.join(ROOT, "runtime", "xbox", "posix_glob.c"),          # fnmatch + glob + select/pselect (fd never blocks)
     os.path.join(ROOT, "runtime", "xbox", "posix_stdio_streams.c"), # stdin/stdout/stderr FILE globals
     os.path.join(ROOT, "runtime", "xbox", "locks.c"),              # kernel critical-section retargetable locks
     os.path.join(ROOT, "runtime", "xbox", "threads.c"),            # C11 <threads.h> over the kernel (thrd/mtx/tss/once)
@@ -145,6 +148,11 @@ EXCLUDE = set([
     "malloc-error.c", "malloc-stats.c", "malloc-usable-size.c",
     "abort.c", "assert_no_arg.c",
     "atexit.c", "cxa-atexit.c", "onexit.c", "exitprocs.c", "exit.c", "_Exit.c",
+    # libc/search: keep qsort/qsort_r/bsearch and the in-memory tsearch tree
+    # family; drop the on-disk BSD hash database (hsearch/ndbm), which is backed
+    # by file I/O the console does not need.
+    "hash.c", "hash_bigkey.c", "hash_buf.c", "hash_func.c", "hash_log2.c",
+    "hash_page.c", "hcreate.c", "hcreate_r.c", "ndbm.c",
 ])
 
 
