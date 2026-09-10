@@ -32,6 +32,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/sendfile.h>
 #include <unistd.h>
 
 #include "libc_hooks.h"
@@ -472,5 +473,78 @@ int mkdir(const char *path, mode_t mode) {
         errno = EEXIST; return -1;
     }
     NtClose(h);
+    return 0;
+}
+
+/* ---- bulk copy + advisory/preallocation --------------------------------- */
+
+extern int ftruncate(int fd, off_t length);   /* dirio.c */
+
+/* sendfile: copy `count` bytes from in_fd to out_fd through a bounce buffer
+   (the console has no zero-copy path). With `offset` non-NULL the source is read
+   at that position without disturbing in_fd's own offset, and *offset is
+   advanced; otherwise in_fd's current offset is used. */
+ssize_t sendfile(int out_fd, int in_fd, off_t *offset, size_t count) {
+    char   buf[4096];
+    size_t done = 0;
+    off_t  pos = offset ? *offset : 0;
+    while (done < count) {
+        size_t chunk = count - done;
+        ssize_t r, w;
+        if (chunk > sizeof buf) chunk = sizeof buf;
+        r = offset ? pread(in_fd, buf, chunk, pos) : read(in_fd, buf, chunk);
+        if (r < 0) return -1;
+        if (r == 0) break;
+        w = write(out_fd, buf, (size_t)r);
+        if (w < 0) return -1;
+        done += (size_t)w;
+        pos += w;
+        if (w < r) break;
+    }
+    if (offset) *offset = pos;
+    return (ssize_t)done;
+}
+
+/* copy_file_range: like sendfile but both ends may carry an explicit offset. */
+ssize_t copy_file_range(int in_fd, off_t *in_off, int out_fd, off_t *out_off,
+                        size_t len, unsigned int flags) {
+    char   buf[4096];
+    size_t done = 0;
+    off_t  ip = in_off ? *in_off : 0, op = out_off ? *out_off : 0;
+    (void)flags;
+    while (done < len) {
+        size_t chunk = len - done;
+        ssize_t r, w;
+        if (chunk > sizeof buf) chunk = sizeof buf;
+        r = in_off ? pread(in_fd, buf, chunk, ip) : read(in_fd, buf, chunk);
+        if (r < 0) return -1;
+        if (r == 0) break;
+        w = out_off ? pwrite(out_fd, buf, (size_t)r, op) : write(out_fd, buf, (size_t)r);
+        if (w < 0) return -1;
+        done += (size_t)w;
+        ip += w;
+        op += w;
+        if (w < r) break;
+    }
+    if (in_off)  *in_off = ip;
+    if (out_off) *out_off = op;
+    return (ssize_t)done;
+}
+
+/* posix_fadvise: no cache hints on the console -> accept and ignore. */
+int posix_fadvise(int fd, off_t offset, off_t len, int advice) {
+    (void)fd; (void)offset; (void)len; (void)advice;
+    return 0;
+}
+
+/* posix_fallocate: ensure the file is at least offset+len bytes (grow only).
+   Returns an error number directly, not via errno. */
+int posix_fallocate(int fd, off_t offset, off_t len) {
+    struct stat st;
+    off_t need;
+    if (offset < 0 || len <= 0) return EINVAL;
+    if (fstat(fd, &st) != 0) return errno;
+    need = offset + len;
+    if (st.st_size < need && ftruncate(fd, need) != 0) return errno;
     return 0;
 }

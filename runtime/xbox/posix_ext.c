@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <sys/stat.h>
 
 /* ---- sleep family: all wait via the C11 thread sleep (threads.c), which does
@@ -207,4 +208,18 @@ size_t confstr(int name, char *buf, size_t len) {
         buf[c] = '\0';
     }
     return n + 1;
+}
+
+/* ---- fpathconf: fixed limits for the console's FATX/GDFX volumes. --------- */
+long fpathconf(int fd, int name) {
+    (void)fd;
+    switch (name) {
+        case _PC_LINK_MAX:         return 1;        /* no hard links */
+        case _PC_NAME_MAX:         return 255;
+        case _PC_PATH_MAX:         return PATH_MAX;
+        case _PC_PIPE_BUF:         return 4096;
+        case _PC_NO_TRUNC:         return 1;
+        case _PC_CHOWN_RESTRICTED: return 1;
+        default:                   errno = EINVAL; return -1;
+    }
 }
