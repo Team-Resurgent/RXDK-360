@@ -346,6 +346,26 @@ End-to-end host-side dispatch working in xenia (`xboxkrnl_eh.cc`):
   natural unwind. Running the 2nd-pass destructors explicitly BEFORE the catch AND
   keeping the natural fall-through would double-destroy.
 
+### HW correctness vs the xenia test shortcut (no workarounds)
+
+The HARDWARE EH path is already correct and involves NO xenia and NO workaround:
+`elf2xex` emits the PE exception directory for `.pdata` (done), and on the console
+the title's REAL MS `__CxxFrameHandler` (linked from libcMT, or the track-1
+reuse) driven by the REAL kernel SEH dispatcher performs the full two-pass EH --
+destructor ordering included -- exactly as retail titles do. That is the genuine
+solution for HW.
+
+The xenia host-side dispatcher in `xboxkrnl_eh.cc` (parse FuncInfo + run funclets
+directly) is a TEST SHORTCUT, not the HW path -- which is exactly why it mis-
+orders destructors. A FAITHFUL xenia test must instead drive the REAL guest
+`__CxxFrameHandler` and implement `RtlUnwind` (2-pass, control transfer via
+xenia's `XThread::Reenter` as the emulator realization of the kernel's transfer),
+so the emulated path == the HW path and a green test validates hardware. That is a
+large emulator + MS-EH-ABI RE effort (DISPATCHER_CONTEXT layout, __CxxFrameHandler3
+internals) -- to be done properly, not shortcut. Until then, xenia validates
+catch-by-value/no-destructor; real destructor-ordering correctness is validated on
+hardware (the real kernel), or by the faithful xenia dispatcher when built.
+
 **Conclusion / architectural frontier:** getting destructor ordering + a fully
 general continuation right requires **explicit control transfer** -- perform the
 whole EH sequence (2nd-pass UnwindMap destructors in order -> catch -> resume at
