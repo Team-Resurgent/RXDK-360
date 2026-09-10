@@ -685,3 +685,15 @@ int _CrtDbgReportW(int reportType, const wchar_t *file, int line,
     (void)reportType; (void)file; (void)line; (void)module; (void)fmt; return 0;
 }
 int _chvalidator(int c) { return c; }
+
+/* ---- version-stamp + XAPI globals referenced by vcomp / the MS CRT ----
+   Data symbols the shipped libs expect the CRT/XAPI to define. XapiProcessHeap
+   is the process heap handle GetProcessHeap() returns; it is initialised to a
+   real kernel heap by XAPI startup (crt_start). For link-completeness here it is
+   a definition; runtime heap wiring is in the startup path. */
+/* weak: a self-contained lib (e.g. vcomp) may bundle its own strong copies --
+   ours are the fallback so both link orders resolve without collision. */
+__attribute__((weak)) unsigned VCOMPBuildNumber = 0;
+__attribute__((weak)) unsigned __CrtBuildNumber = 0;
+__attribute__((weak)) void *XapiProcessHeap = 0;          /* startup sets a real heap */
+__attribute__((weak)) void *XapiCurrentTopLevelFilter = 0;

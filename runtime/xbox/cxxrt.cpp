@@ -139,12 +139,13 @@ void *rxdk_stdext_exc_dtor(void *self, unsigned flags) { (void)flags; return sel
 // void std::_Xlength_error(char const *)
 void rxdk_Xlength_error(const char *) asm("?_Xlength_error@std@@YAXPBD@Z");
 void rxdk_Xlength_error(const char *msg) { (void)msg; abort(); }
-// void (*std::_Raise_handler)(stdext::exception const &) -- data pointer, null
+// void (*std::_Raise_handler)(stdext::exception const &) -- data pointer, null.
+// weak: a lib bundling its own STL (vcomp) provides a strong copy that wins.
 extern void *rxdk_raise_handler asm("?_Raise_handler@std@@3P6AXABVexception@stdext@@@ZA");
-__attribute__((used)) void *rxdk_raise_handler = 0;
-// std::nothrow_t const std::nothrow -- empty object, 1 byte
+__attribute__((used, weak)) void *rxdk_raise_handler = 0;
+// std::nothrow_t const std::nothrow -- empty object, 1 byte (weak, as above)
 extern const char rxdk_std_nothrow asm("?nothrow@std@@3Unothrow_t@1@B");
-__attribute__((used)) const char rxdk_std_nothrow = 0;
+__attribute__((used, weak)) const char rxdk_std_nothrow = 0;
 // bool __uncaught_exception(void) -- MS CRT internal (imported by vcomp's bundled
 // MS-STL); forward to our libc++abi uncaught-exception count.
 extern "C" int __cxa_uncaught_exceptions(void);
