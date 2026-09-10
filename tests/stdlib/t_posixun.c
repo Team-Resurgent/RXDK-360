@@ -36,9 +36,11 @@ int main(void) {
     errno = 0; CHECK(posix_openpt(0) == -1 && errno == ENOSYS, "posix_openpt -> ENOSYS");
     CHECK(ptsname(0) == NULL, "ptsname -> NULL");
 
-    /* per-process timers */
+    /* per-process timers: SIGEV_THREAD/NONE are real (see t_timer); only the
+       signal-notified default (NULL sev == SIGEV_SIGNAL) is unsupported */
     timer_t t;
-    errno = 0; CHECK(timer_create(CLOCK_REALTIME, 0, &t) == -1 && errno == ENOSYS, "timer_create -> ENOSYS");
+    errno = 0; CHECK(timer_create(CLOCK_REALTIME, 0, &t) == -1 && errno == ENOTSUP,
+                     "timer_create SIGEV_SIGNAL -> ENOTSUP");
 
     /* process groups / sessions (one title) */
     CHECK((long)getpgrp() == 1, "getpgrp == 1");
