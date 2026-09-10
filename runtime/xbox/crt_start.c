@@ -100,13 +100,22 @@ static void run_fini(void) {
         (*--f)();
 }
 
+/* C standard exit(): run the atexit/static-dtor + .fini_array teardown, trace the
+   status the way the console's xapi startup does, and power off. Callable from any
+   depth (unlike returning from main). _start routes through it so the normal-return
+   and explicit-exit paths are identical. picolibc's exit.c is excluded from the
+   build in favour of this one (it drives our __rxdk_run_atexit, not picolibc's
+   exitprocs). _Exit()/_exit() (no teardown) remain picolibc's. */
+_Noreturn void exit(int code) {
+    __rxdk_run_atexit();  /* C++ static-object dtors + atexit, reverse order */
+    run_fini();           /* .fini_array (e.g. the stdio flush), runs last */
+    DbgPrint("[XAPI RETURN VALUE] %d\n", code);
+    HalReturnToFirmware(0);
+    for (;;) {}
+}
+
 void _start(void) {
     run_init();
     int argc = build_args();
-    int rc = main(argc, g_argv);      /* g_argv is always NULL-terminated */
-    __rxdk_run_atexit();  /* C++ static-object dtors + atexit, reverse order */
-    run_fini();           /* .fini_array (e.g. the stdio flush), runs last */
-    DbgPrint("[XAPI RETURN VALUE] %d\n", rc);
-    HalReturnToFirmware(0);
-    for (;;) {}
+    exit(main(argc, g_argv));         /* g_argv is always NULL-terminated */
 }
