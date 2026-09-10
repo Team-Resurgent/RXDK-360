@@ -213,7 +213,19 @@ def build_pe_basefile(base, sections, entry):
                        PE_SUBSYSTEM_XBOX, 0,            # Subsystem, DllCharacteristics
                        0x40000, 0x1000, 0x100000, 0x1000,  # stack/heap reserve/commit
                        0, 16)                           # LoaderFlags, NumberOfRvaAndSizes
-    opt += b"\0" * (16 * 8)                             # data directories
+    # data directories (16 x {VirtualAddress, Size}). Only the exception
+    # directory (index 3) is populated, and only when a .pdata section is present
+    # -- MS-compiled objects contribute .pdata (RUNTIME_FUNCTION table) + .xdata,
+    # and the console kernel's RtlLookupFunctionEntry finds the frame info through
+    # this directory to dispatch MSVC C++ / SEH exceptions. Our own clang code is
+    # DWARF/.eh_frame and emits no .pdata, so this stays zero for such titles.
+    IMAGE_DIRECTORY_ENTRY_EXCEPTION = 3
+    dirs = bytearray(16 * 8)
+    pdata = next((s for s in sections if s.name == ".pdata"), None)
+    if pdata is not None:
+        struct.pack_into("<II", dirs, IMAGE_DIRECTORY_ENTRY_EXCEPTION * 8,
+                         pdata.vaddr - base, pdata.memsize)
+    opt += bytes(dirs)                                  # data directories
     assert len(opt) == PE_SIZEOF_OPTIONAL_HEADER, len(opt)
 
     # a kept section that starts inside the PE header region cannot be
