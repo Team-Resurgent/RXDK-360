@@ -73,6 +73,7 @@ extern NTSTATUS NtQueryFullAttributesFile(OBJECT_ATTRIBUTES *obja,
                                           FILE_NETWORK_OPEN_INFORMATION *info);
 extern NTSTATUS NtSetInformationFile(HANDLE h, IO_STATUS_BLOCK *iosb, void *info,
                                      ULONG len, int cls);
+extern NTSTATUS NtFlushBuffersFile(HANDLE h, IO_STATUS_BLOCK *iosb);
 
 #define NT_SUCCESS(s)  ((NTSTATUS)(s) >= 0)
 #define STATUS_END_OF_FILE ((NTSTATUS)0xC0000011L)
@@ -106,6 +107,7 @@ typedef struct {
     HANDLE    handle;
     long long offset;
     int       append;
+    int       refcount;   /* dup'd fds share one open-file description */
 } rxdk_ofd;
 
 static rxdk_ofd *fd_table[RXDK_FD_MAX];   /* NULL = free */
@@ -132,6 +134,7 @@ int __rxdk_fd_install(void *h) {
     o->handle = (HANDLE)h;
     o->offset = 0;
     o->append = 0;
+    o->refcount = 1;
     fd = alloc_slot(o);
     if (fd < 0) { free(o); return -1; }
     return fd;
@@ -206,6 +209,7 @@ int open(const char *path, int flags, ...) {
     o->handle = h;
     o->offset = 0;
     o->append = (flags & O_APPEND) ? 1 : 0;
+    o->refcount = 1;
     if (o->append) { long long sz = file_size(h); o->offset = sz > 0 ? sz : 0; }
 
     fd = alloc_slot(o);
@@ -287,9 +291,101 @@ int close(int fd) {
     o = get_fd(fd);
     if (!o) { errno = EBADF; return -1; }
     fd_table[fd] = NULL;
-    if (o->handle) NtClose(o->handle);
-    free(o);
+    if (--o->refcount <= 0) {          /* last fd on this open-file description */
+        if (o->handle) NtClose(o->handle);
+        free(o);
+    }
     return 0;
+}
+
+/* creat(path, mode) == open for writing, create/truncate. */
+int creat(const char *path, mode_t mode) {
+    return open(path, O_CREAT | O_WRONLY | O_TRUNC, mode);
+}
+
+/* dup / dup2: a second fd onto the SAME open-file description (shared offset),
+   the POSIX contract. Refcounted so close() frees the handle only once. */
+int dup(int fd) {
+    rxdk_ofd *o = get_fd(fd);
+    int nfd;
+    if (!o) { errno = EBADF; return -1; }
+    nfd = alloc_slot(o);
+    if (nfd < 0) { errno = EMFILE; return -1; }
+    ++o->refcount;
+    return nfd;
+}
+
+int dup2(int fd, int newfd) {
+    rxdk_ofd *o = get_fd(fd);
+    if (!o) { errno = EBADF; return -1; }
+    if (newfd < RXDK_FD_BASE || newfd >= RXDK_FD_MAX) { errno = EBADF; return -1; }
+    if (newfd == fd) return newfd;
+    if (fd_table[newfd]) close(newfd);
+    fd_table[newfd] = o;
+    ++o->refcount;
+    return newfd;
+}
+
+/* pread / pwrite: I/O at an explicit offset without disturbing the fd's own
+   offset (the kernel Nt calls already take a byte offset). */
+ssize_t pread(int fd, void *buf, size_t count, off_t offset) {
+    rxdk_ofd *o = get_fd(fd);
+    IO_STATUS_BLOCK iosb;
+    LARGE_INTEGER off;
+    NTSTATUS st;
+    if (!o) { errno = EBADF; return -1; }
+    if (count == 0) return 0;
+    off.QuadPart = (long long)offset;
+    st = NtReadFile(o->handle, NULL, NULL, NULL, &iosb, buf, (ULONG)count, &off);
+    if (st == STATUS_END_OF_FILE) return 0;
+    if (!NT_SUCCESS(st)) { errno = EIO; return -1; }
+    return (ssize_t)iosb.Information;
+}
+
+ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
+    rxdk_ofd *o = get_fd(fd);
+    IO_STATUS_BLOCK iosb;
+    LARGE_INTEGER off;
+    NTSTATUS st;
+    if (!o) { errno = EBADF; return -1; }
+    if (!buf || count == 0) return 0;
+    off.QuadPart = (long long)offset;
+    st = NtWriteFile(o->handle, NULL, NULL, NULL, &iosb, (void *)(size_t)buf,
+                     (ULONG)count, &off);
+    if (!NT_SUCCESS(st)) { errno = EIO; return -1; }
+    return (ssize_t)iosb.Information;
+}
+
+/* fsync / fdatasync: flush the file's buffers to the device. */
+int fsync(int fd) {
+    rxdk_ofd *o = get_fd(fd);
+    IO_STATUS_BLOCK iosb;
+    if (fd >= 0 && fd < RXDK_FD_BASE) return 0;      /* console: nothing to flush */
+    if (!o) { errno = EBADF; return -1; }
+    NtFlushBuffersFile(o->handle, &iosb);
+    return 0;
+}
+int fdatasync(int fd) { return fsync(fd); }
+
+/* fcntl: F_DUPFD duplicates; the flag getters/setters are accepted as no-ops
+   (the fd flags the 360 file API exposes are fixed). */
+int fcntl(int fd, int cmd, ...) {
+    switch (cmd) {
+    case F_DUPFD:
+    case F_DUPFD_CLOEXEC:
+        return dup(fd);
+    case F_GETFD:
+    case F_GETFL:
+        if (!get_fd(fd)) { errno = EBADF; return -1; }
+        return 0;
+    case F_SETFD:
+    case F_SETFL:
+        if (!get_fd(fd)) { errno = EBADF; return -1; }
+        return 0;
+    default:
+        errno = EINVAL;
+        return -1;
+    }
 }
 
 /* ---- stat / unlink / mkdir / rmdir ---------------------------------------- */

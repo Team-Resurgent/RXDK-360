@@ -142,7 +142,9 @@ def auto_clang_flags(is_cpp):
     cfg = os.path.join(ROOT, "runtime", "config")
     pico = os.path.join(ROOT, "vendor", "picolibc", "libc", "include")
     if not is_cpp:
-        return ["-D__Picolibc__", "-I" + cfg, "-I" + pico,
+        # _GNU_SOURCE makes the POSIX/GNU surface visible (dup/pread/access/
+        # posix_memalign/nanosleep ... are gated behind it in picolibc's headers).
+        return ["-D__Picolibc__", "-D_GNU_SOURCE", "-I" + cfg, "-I" + pico,
                 "-include", "picolibc.h"]
     lx = os.path.join(ROOT, "vendor", "llvm-project", "libcxx", "include")
     la = os.path.join(ROOT, "vendor", "llvm-project", "libcxxabi", "include")

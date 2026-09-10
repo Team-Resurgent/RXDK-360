@@ -186,12 +186,25 @@ void abort(void) {
     for (;;) {}
 }
 
-/* C11 aligned_alloc. malloc already returns 16-byte-aligned blocks (see above),
-   which covers every alignment the C++ exception runtime asks for (the unwind
-   exception header is 8/16-aligned). Larger alignments are not needed yet. */
+/* C11 aligned_alloc, honouring alignments larger than the 16-byte malloc gives
+   (posix_memalign, std::aligned_alloc, over-aligned types). Over-allocate,
+   align the user pointer up, and place the alloc header immediately below it --
+   which is exactly what free() reads, so the result frees like any malloc block
+   (no separate aligned-free needed). Unlike C11's aligned_alloc, size need not
+   be a multiple of alignment here. */
 void *aligned_alloc(size_t alignment, size_t size) {
-    (void)alignment;
-    return malloc(size);
+    if (alignment < RXDK_MALLOC_ALIGN)
+        alignment = RXDK_MALLOC_ALIGN;
+    size_t total = size + alignment + sizeof(rxdk_alloc_hdr);
+    void *raw = ExAllocatePool((unsigned)total);
+    if (!raw)
+        return 0;
+    uintptr_t base = (uintptr_t)raw + sizeof(rxdk_alloc_hdr);
+    uintptr_t user = (base + (alignment - 1)) & ~(uintptr_t)(alignment - 1);
+    rxdk_alloc_hdr *h = (rxdk_alloc_hdr *)(user - sizeof(rxdk_alloc_hdr));
+    h->raw  = raw;
+    h->size = size;
+    return (void *)user;
 }
 
 /* picolibc's assert() (no-message form) lands here on failure. */
