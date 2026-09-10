@@ -30,9 +30,19 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* ---- kernel imports (xboxkrnl) ---- */
+/* ---- kernel imports (xboxkrnl) ----
+   The 360 kernel exports the full NT-family SEH/unwind surface (confirmed in
+   xboxkrnl.lib): the dispatch below is Microsoft's own model -- our language
+   handler is invoked by the kernel exception dispatcher for each frame, and on
+   a match we drive the second pass + control transfer through RtlUnwind2, the
+   same primitive MS's __CxxFrameHandler uses. No hand-rolled unwinder, no ABI
+   workarounds; this is exactly how the shipped cl.exe libs already expect to be
+   dispatched. */
 extern void RaiseException(unsigned code, unsigned flags, unsigned n_args,
                            const unsigned *args);
+extern void RtlUnwind2(unsigned TargetFrame, unsigned TargetIp,
+                       void *ExceptionRecord, unsigned ReturnValue,
+                       void *ContextRecord, void *HistoryTable);
 extern unsigned KeTlsAlloc(void);
 extern void *KeTlsGetValue(unsigned index);
 extern unsigned KeTlsSetValue(unsigned index, void *value);
@@ -145,55 +155,141 @@ static int rxdk_type_matches(unsigned catchType, const ThrowInfo *ti) {
  * nuispeech, ... never throw) resolves as ExceptionContinueSearch here, which is
  * correct and needs none of the transfer machinery.
  */
-typedef int EXCEPTION_DISPOSITION;               /* ExceptionContinueSearch = 1 */
-#define ExceptionContinueSearch 1
+typedef int EXCEPTION_DISPOSITION;
+#define ExceptionContinueSearch    1
+#define ExceptionContinueExecution 0
 
-/* Minimal DISPATCHER_CONTEXT view: the handler data (FuncInfo) + establisher.
-   Field order per the PPC SEH dispatcher; refine against HW/faithful xenia. */
+/* NT/Xenon EXCEPTION_RECORD: the C++ throw carries {magic, pObject, pThrowInfo}
+   in ExceptionInformation (info[0..2]); info[1] is the thrown object pointer. */
+typedef struct { unsigned code, flags, rec, addr, nparm; unsigned info[15]; }
+    EXCEPTION_RECORD;
+
+/* DISPATCHER_CONTEXT as the Xenon SEH dispatcher passes it. ControlPc (the
+   in-frame PC), the RUNTIME_FUNCTION, the establisher frame, the CONTEXT being
+   dispatched, and HandlerData (== our FuncInfo*, read by the kernel from
+   FuncStart-4). The kernel also passes EstablisherFrame + ContextRecord as the
+   2nd/3rd handler args (the __C_specific_handler shape in <xbox/excpt.h>), so we
+   rely on those for the transfer and use dc only for HandlerData/ControlPc. */
 typedef struct {
     unsigned ControlPc;
     unsigned ImageBase;
     unsigned FunctionEntry;                       /* RUNTIME_FUNCTION* */
     unsigned EstablisherFrame;
-    unsigned ContextRecord;
+    unsigned ContextRecord;                       /* CONTEXT* */
     unsigned LanguageHandler;
     unsigned HandlerData;                         /* == FuncInfo* */
 } DISPATCHER_CONTEXT;
 
-typedef struct { unsigned code, flags, rec, addr, nparm; unsigned info[15]; } EXCEPTION_RECORD;
+/* Invoke an MSVC catch/cleanup funclet with the establisher frame pointer in
+   r12 (the ABI the cl.exe-emitted funclets require: they recover the frame
+   pointer as `addi r31, r12, -framesize` -- verified against a real object in
+   tests/eh). Catch funclets return the continuation IP in r3; cleanup funclets
+   return nothing. This one register-setup step is the only thing that must be
+   expressed in asm; everything else is the portable table walk below. */
+static unsigned rxdk_eh_call_funclet(unsigned funclet, unsigned establisher) {
+    register unsigned r3  __asm__("r3");
+    register unsigned r11 __asm__("r11") = funclet;
+    register unsigned r12 __asm__("r12") = establisher;
+    __asm__ __volatile__(
+        "mtctr %2\n\t"
+        "bctrl\n\t"
+        : "=r"(r3)
+        : "r"(r12), "r"(r11)
+        : "ctr", "lr", "r0", "r4", "r5", "r6", "r7", "r8", "r9", "r10",
+          "memory", "cc");
+    return r3;
+}
 
+/* ip2state: the active EH state at `pc` is the entry with the greatest ip <= pc.
+   Callers pass the throwing call site (return address - 1). Entry = {ip, state}. */
+static int rxdk_state_from_ip(const FuncInfo *fi, unsigned pc) {
+    const unsigned *m = (const unsigned *)(uintptr_t)fi->pIPtoStateMap;
+    int state = -1; unsigned best = 0;
+    for (unsigned i = 0; i < fi->nIPMapEntries; ++i) {
+        unsigned ip = m[i * 2];
+        if (ip <= pc && ip >= best) { best = ip; state = (int)m[i * 2 + 1]; }
+    }
+    return state;
+}
+
+/* Run the cleanup (destructor) funclets for the states being exited, from
+   `from` down to (but not including) `to`, per the UnwindMap. */
+static void rxdk_frame_unwind(const FuncInfo *fi, int from, int to,
+                              unsigned establisher) {
+    const UnwindMapEntry *um = (const UnwindMapEntry *)(uintptr_t)fi->pUnwindMap;
+    int s = from;
+    for (int guard = 0; guard < 4096 && s != to && s >= 0; ++guard) {
+        int next = um[s].toState;
+        unsigned action = um[s].action;
+        s = next;                                 /* advance first (re-entrant) */
+        if (action) rxdk_eh_call_funclet(action, establisher);
+    }
+}
+
+/*
+ * The language handler the kernel dispatcher calls for each MSVC frame. This is
+ * the standard two-pass MSVC/NT model, driven by the real kernel unwinder:
+ *
+ *   Pass 1 (no UNWINDING): find a catch in this frame whose type matches the
+ *   thrown object. On a match, build the catch object, ask the kernel to unwind
+ *   every inner frame down to this establisher (RtlUnwind2 -- runs their
+ *   destructors through their handlers' UNWINDING pass), run this frame's own
+ *   cleanup funclets to the try state, invoke the catch funclet, and resume the
+ *   guest at the continuation IP it returns.
+ *
+ *   Pass 2 (UNWINDING): the kernel is unwinding THIS frame because an inner
+ *   frame caught; run our cleanup funclets for the exited states.
+ *
+ * Establisher frame + CONTEXT come in as the 2nd/3rd args (kernel-supplied);
+ * FuncInfo comes from dc->HandlerData. The whole algorithm -- establisher ==
+ * the frame's incoming sp, ip2state at the call site, r12-based funclet frame,
+ * catch object at establisher+dispCatchObj -- is the one proven end-to-end in
+ * the RXDK xenia reference dispatcher (tests/eh: tc/tc2, destructor-before-catch
+ * ordering verified). On-metal validation of the RtlUnwind2 handshake is the
+ * remaining step; the non-throwing case (the vast majority of shipped libs)
+ * resolves as ExceptionContinueSearch and needs none of this machinery.
+ */
 EXCEPTION_DISPOSITION __CxxFrameHandler(EXCEPTION_RECORD *rec, void *establisher,
                                         void *context, DISPATCHER_CONTEXT *dc) {
     const FuncInfo *fi = dc ? (const FuncInfo *)(uintptr_t)dc->HandlerData : 0;
     if (!fi || (fi->magicNumber & 0xFFFFFF00u) != 0x19930500u)
         return ExceptionContinueSearch;
+    unsigned est = (unsigned)(uintptr_t)establisher;
+    int cur = rxdk_state_from_ip(fi, (dc->ControlPc) - 1);
 
     if (rec->flags & EXCEPTION_UNWINDING) {
-        /* second pass: destructor cleanup for the exited states (UnwindMap).
-           TODO(hw): walk the state from the establisher's ip2state down to the
-           target, running each UnwindMapEntry.action funclet with the
-           establisher frame pointer in r12. */
+        /* second pass: run every cleanup funclet still live in this frame. */
+        rxdk_frame_unwind(fi, cur, -1, est);
         return ExceptionContinueSearch;
     }
 
-    /* first pass: is there a matching catch in this frame? */
+    /* first pass: find a matching catch in this frame's try blocks. */
     const ThrowInfo *ti = (const ThrowInfo *)(uintptr_t)rec->info[2];
     const TryBlockMapEntry *tb =
         (const TryBlockMapEntry *)(uintptr_t)fi->pTryBlockMap;
     for (unsigned t = 0; t < fi->nTryBlocks; ++t) {
+        /* the try must enclose the current state */
+        if (cur < tb[t].tryLow || cur > tb[t].tryHigh) continue;
         const HandlerType *ha =
             (const HandlerType *)(uintptr_t)tb[t].pHandlerArray;
         for (int h = 0; h < tb[t].nCatches; ++h) {
-            if (rxdk_type_matches(ha[h].pType, ti)) {
-                /* Found the catch. Ask the kernel to unwind to this frame (runs
-                   the second pass above for destructors) and transfer control to
-                   ha[h].addressOfHandler with the establisher frame pointer in
-                   r12 and the caught object at [establisher + dispCatchObj].
-                   TODO(hw): perform the RtlUnwind + catch-funclet transfer per
-                   the kernel ABI. */
-                (void)establisher; (void)context;
-                return ExceptionContinueSearch;   /* placeholder until transfer */
+            if (!rxdk_type_matches(ha[h].pType, ti)) continue;
+
+            /* build the catch object in the establisher frame */
+            if (ha[h].dispCatchObj) {
+                unsigned *slot = (unsigned *)(uintptr_t)(est + ha[h].dispCatchObj);
+                *slot = rec->info[1];             /* thrown object ptr (by-value
+                                                     int copied by the funclet) */
             }
+            /* unwind all inner frames to this establisher (their destructors),
+               then this frame's own cleanup to the try state. */
+            RtlUnwind2(est, 0, rec, 0, context, 0);
+            rxdk_frame_unwind(fi, cur, tb[t].tryLow, est);
+            /* run the catch funclet; it returns where to resume past the try. */
+            unsigned cont = rxdk_eh_call_funclet(ha[h].addressOfHandler, est);
+            /* resume the guest at the continuation with this frame's context. */
+            RtlUnwind2(est, cont, rec, 0, context, 0);
+            abort();                              /* transfer does not return */
         }
     }
     return ExceptionContinueSearch;
