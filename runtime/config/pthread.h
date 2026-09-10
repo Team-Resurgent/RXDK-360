@@ -65,6 +65,12 @@ typedef struct {
 #define PTHREAD_MUTEX_DEFAULT   0
 #define PTHREAD_BARRIER_SERIAL_THREAD (-1)
 
+#define PTHREAD_CANCEL_ENABLE        0
+#define PTHREAD_CANCEL_DISABLE       1
+#define PTHREAD_CANCEL_DEFERRED      0
+#define PTHREAD_CANCEL_ASYNCHRONOUS  1
+#define PTHREAD_CANCELED ((void *) -1)
+
 /* ---- threads ---- */
 int       pthread_create(pthread_t *, const pthread_attr_t *, void *(*)(void *), void *);
 int       pthread_join(pthread_t, void **);
@@ -73,6 +79,12 @@ pthread_t pthread_self(void);
 int       pthread_equal(pthread_t, pthread_t);
 _Noreturn void pthread_exit(void *);
 int       pthread_yield(void);
+
+/* ---- cooperative cancellation (deferred; checked at pthread_testcancel) ---- */
+int  pthread_cancel(pthread_t);
+int  pthread_setcancelstate(int state, int *oldstate);
+int  pthread_setcanceltype(int type, int *oldtype);
+void pthread_testcancel(void);
 
 /* ---- attr ---- */
 int pthread_attr_init(pthread_attr_t *);

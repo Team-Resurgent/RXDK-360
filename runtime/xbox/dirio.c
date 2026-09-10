@@ -344,6 +344,10 @@ int linkat(int ofd, const char *oldp, int nfd, const char *newp, int flag) {
 int fchdir(int fd) {
     (void)fd; errno = ENOSYS; return -1;   /* no fd->path mapping to chdir into */
 }
+int renameat(int ofd, const char *oldp, int nfd, const char *newp) {
+    if (ofd != AT_FDCWD || nfd != AT_FDCWD) { errno = ENOSYS; return -1; }
+    return rename(oldp, newp);
+}
 
 /* ---- unsupported on FATX: honest failures / no-ops ------------------------ */
 

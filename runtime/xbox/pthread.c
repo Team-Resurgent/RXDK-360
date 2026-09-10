@@ -41,6 +41,8 @@ struct __pthread {
     void  *arg;
     void  *ret;
     int    detached;
+    int    cancel_req;   /* pthread_cancel was called */
+    int    cancel_dis;   /* PTHREAD_CANCEL_DISABLE in effect */
 };
 
 static tss_t     g_self_key;
@@ -71,6 +73,7 @@ int pthread_create(pthread_t *out, const pthread_attr_t *attr,
     c = (struct __pthread *)malloc(sizeof *c);
     if (!c) return EAGAIN;
     c->fn = start; c->arg = arg; c->ret = 0;
+    c->cancel_req = 0; c->cancel_dis = 0;
     c->detached = (attr && attr->detachstate == PTHREAD_CREATE_DETACHED);
     rc = thrd_create(&c->th, pt_trampoline, c);
     if (rc != thrd_success) { free(c); return EAGAIN; }
@@ -114,6 +117,34 @@ _Noreturn void pthread_exit(void *retval) {
 }
 
 int pthread_yield(void) { thrd_yield(); return 0; }
+
+/* ---- cooperative cancellation. There is no safe way to asynchronously unwind
+   a running kernel thread, so cancellation is deferred: pthread_cancel sets a
+   flag and the target acts on it at the next pthread_testcancel (returning
+   PTHREAD_CANCELED to a joiner). ------------------------------------------- */
+int pthread_cancel(pthread_t t) {
+    if (!t || t == &g_main) return ESRCH;
+    t->cancel_req = 1;
+    return 0;
+}
+int pthread_setcancelstate(int state, int *oldstate) {
+    pthread_t self = pthread_self();
+    if (self == &g_main) { if (oldstate) *oldstate = PTHREAD_CANCEL_ENABLE; return 0; }
+    if (oldstate) *oldstate = self->cancel_dis ? PTHREAD_CANCEL_DISABLE : PTHREAD_CANCEL_ENABLE;
+    self->cancel_dis = (state == PTHREAD_CANCEL_DISABLE);
+    return 0;
+}
+int pthread_setcanceltype(int type, int *oldtype) {
+    /* only deferred cancellation is supported; accept the request either way */
+    (void)type;
+    if (oldtype) *oldtype = PTHREAD_CANCEL_DEFERRED;
+    return 0;
+}
+void pthread_testcancel(void) {
+    pthread_t self = pthread_self();
+    if (self != &g_main && self->cancel_req && !self->cancel_dis)
+        pthread_exit(PTHREAD_CANCELED);
+}
 
 /* ---- attributes ---------------------------------------------------------- */
 
