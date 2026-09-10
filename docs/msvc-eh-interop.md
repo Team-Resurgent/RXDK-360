@@ -177,6 +177,43 @@ These two (plus `RtlLookupFunctionEntry`) are unimplemented table stubs in xenia
 today; implementing them is the bulk of track 2. Track 1's real MS handler then
 rides the same dispatcher on the RXDK-runtime side.
 
+## Xenon MSVC-EH data format (REVERSE-ENGINEERED from tests/eh/tc.obj)
+
+The critical unknown for `RtlLookupFunctionEntry`/`RtlVirtualUnwind` -- now cracked:
+
+- **RUNTIME_FUNCTION** (`.pdata`, 8 bytes, big-endian): `BeginAddress` (RVA) then a
+  packed word: `PrologLength:8 | FunctionLength:22 | ThirtyTwoBit:1 |
+  ExceptionFlag:1` (lengths in INSTRUCTIONS; ×4 = bytes). Decode from the word W:
+  `PrologLen = W & 0xFF; FuncLen = (W>>8)&0x3FFFFF; 32bit = (W>>30)&1; Exc =
+  (W>>31)&1`. Verified: rxdk_eh_test W=0xC0001C07 -> prolog 7, func 28, Exc.
+- **Handler pair**: when Exc=1, the two DWORDs at **`BeginAddress - 8`** are
+  `[__CxxFrameHandler RVA][FuncInfo (_s_FuncInfo) RVA]`. (In tc.obj the function
+  symbol is at .text+8, and .text@0x0/@0x4 relocate to __CxxFrameHandler /
+  __ehfuncinfo$rxdk_eh_test.)
+- **FuncInfo** (`_s_FuncInfo`, in .rdata): magic/maxState/pUnwindMap/nTryBlocks/
+  pTryBlockMap/... -> `__unwindtable$` / `__tryblocktable$` / `__catchsym$`. Catch
+  types reference CatchableTypeArray -> CatchableType -> type_info (`??_R0H@8` for
+  int) with {properties, pType, displacement(0,-1,0), size, copyFn}.
+- **Funclets**: each catch handler is a SEPARATE function with its own `.pdata`
+  entry AND its own `[handler,FuncInfo]-8` pair (tc.obj: main + 2 funclets ->
+  3 `.pdata` entries).
+- **Prolog** is regular MS-PPC (`.text+8: mflr r12 (7d8802a6); stw r12,-8(r1)
+  (9181fff8); stwu r1,-N(r1); bl __savegprlr_N/__savefpr_N/__savevmx_N; ...`), so
+  `RtlVirtualUnwind` replays `PrologLen` instructions to restore SP/LR/nonvols.
+
+### xenia implementation TODO (against this format)
+1. `RtlLookupFunctionEntry(PC)`: binary-search the loaded module's `.pdata`
+   (exception directory) for `BeginAddress <= PC < BeginAddress + FuncLen*4`.
+2. dispatch (in HandleCppException): from the throw context, loop -- look up the
+   RF, read `[handler,FuncInfo]` at `BeginAddress-8`, `processor()->Execute` the
+   guest `__CxxFrameHandler(record, frame, ctx, dispatcher)`; on
+   ExceptionContinueSearch, `RtlVirtualUnwind` to the caller and continue.
+3. `RtlVirtualUnwind`: decode the prolog (PrologLen insns from BeginAddress) --
+   handle mflr/stw-LR/stwu-frame + the __save{gpr,fpr,vmx} helper calls -- to
+   restore the caller's SP/LR/nonvolatiles into the CONTEXT.
+4. `RtlUnwind`: second pass -- run cleanup funclets, then set the guest context
+   (PC=catch funclet, SP=target frame) and resume there instead of returning.
+
 ## Open risks
 
 - Exact XEX ↔ PE-exception-directory mechanism on the 360 loader (step 1) — the
