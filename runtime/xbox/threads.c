@@ -34,6 +34,7 @@ void    *KeTlsGetValue(unsigned index);
 unsigned KeTlsSetValue(unsigned index, void *value);
 void     RtlInitializeCriticalSection(void *cs);
 void     RtlEnterCriticalSection(void *cs);
+int      RtlTryEnterCriticalSection(void *cs);   /* nonzero if acquired */
 void     RtlLeaveCriticalSection(void *cs);
 void     KeInitializeEvent(void *ev, unsigned type, unsigned state);
 unsigned KeSetEvent(void *ev, int increment, unsigned wait);
@@ -204,7 +205,7 @@ int mtx_init(mtx_t *mtx, int type) {
 }
 int  mtx_lock(mtx_t *mtx)    { struct rxdk_mtx *m = (struct rxdk_mtx *)mtx; mtx_ensure(m); RtlEnterCriticalSection(m->cs); return thrd_success; }
 int  mtx_unlock(mtx_t *mtx)  { struct rxdk_mtx *m = (struct rxdk_mtx *)mtx; mtx_ensure(m); RtlLeaveCriticalSection(m->cs); return thrd_success; }
-int  mtx_trylock(mtx_t *mtx) { struct rxdk_mtx *m = (struct rxdk_mtx *)mtx; mtx_ensure(m); RtlEnterCriticalSection(m->cs); return thrd_success; }
+int  mtx_trylock(mtx_t *mtx) { struct rxdk_mtx *m = (struct rxdk_mtx *)mtx; mtx_ensure(m); return RtlTryEnterCriticalSection(m->cs) ? thrd_success : thrd_busy; }
 void mtx_destroy(mtx_t *mtx) { (void)mtx; }  /* no RtlDeleteCriticalSection on the 360 */
 int  mtx_timedlock(mtx_t *__restrict m, const struct timespec *__restrict t) {
     (void)t; mtx_lock(m); return thrd_success;
