@@ -139,6 +139,10 @@ int pthread_barrier_init(pthread_barrier_t *, const pthread_barrierattr_t *, uns
 int pthread_barrier_destroy(pthread_barrier_t *);
 int pthread_barrier_wait(pthread_barrier_t *);
 
+/* ---- fork handlers: a title never fork()s, so registration is a no-op that
+   always "succeeds" -- see runtime/xbox/posix_unsupported.c ---- */
+int pthread_atfork(void (*prepare)(void), void (*parent)(void), void (*child)(void));
+
 #ifdef __cplusplus
 }
 #endif
