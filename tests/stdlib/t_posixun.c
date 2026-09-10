@@ -18,6 +18,16 @@
 #include <semaphore.h>
 #include <mqueue.h>
 #include <iconv.h>
+#include <dlfcn.h>
+#include <wordexp.h>
+#include <crypt.h>
+#include <pthread.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/msg.h>
+#include <sys/sem.h>
+
+static void afork(void) {}
 
 int main(void) {
     /* spawn / pipes / fifo */
@@ -78,6 +88,35 @@ int main(void) {
 
     /* iconv: clean-failing stub (functional iconv needs __MB_CAPABLE) */
     CHECK(iconv_open("UTF-8", "UTF-8") == (iconv_t)-1, "iconv_open -> (iconv_t)-1 (detectable failure)");
+
+    /* dynamic loading: no runtime loader, and dlerror reports why (then clears) */
+    CHECK(dlopen("libfoo.so", RTLD_NOW) == NULL, "dlopen -> NULL");
+    CHECK(dlerror() != NULL, "dlerror reports the failure");
+    CHECK(dlerror() == NULL, "dlerror clears after reading");
+    CHECK(dlsym(NULL, "sym") == NULL, "dlsym -> NULL");
+
+    /* password hashing: no back end */
+    errno = 0; CHECK(crypt("pw", "sa") == NULL && errno == ENOSYS, "crypt -> NULL/ENOSYS");
+
+    /* shell word expansion: no shell */
+    wordexp_t we;
+    CHECK_EQI(wordexp("$HOME/*", &we, 0), WRDE_NOSYS, "wordexp -> WRDE_NOSYS");
+
+    /* alternate signal stack */
+    errno = 0; CHECK(sigaltstack(NULL, NULL) == -1 && errno == ENOSYS, "sigaltstack -> ENOSYS");
+
+    /* waitid: no children */
+    errno = 0; CHECK(waitid(P_ALL, 0, NULL, WEXITED) == -1 && errno == ECHILD, "waitid -> ECHILD");
+
+    /* pthread_atfork: no fork, registration is a silent no-op success */
+    CHECK_EQI(pthread_atfork(afork, afork, afork), 0, "pthread_atfork -> 0");
+
+    /* System V IPC: no cross-process namespace */
+    errno = 0; CHECK(ftok("cache:/x", 1) == (key_t)-1 && errno == ENOSYS, "ftok -> ENOSYS");
+    errno = 0; CHECK(shmget(IPC_PRIVATE, 4096, IPC_CREAT | 0600) == -1 && errno == ENOSYS, "shmget -> ENOSYS");
+    errno = 0; CHECK(shmat(0, NULL, 0) == (void *)-1 && errno == ENOSYS, "shmat -> (void*)-1");
+    errno = 0; CHECK(msgget(IPC_PRIVATE, IPC_CREAT | 0600) == -1 && errno == ENOSYS, "msgget -> ENOSYS");
+    errno = 0; CHECK(semget(IPC_PRIVATE, 1, IPC_CREAT | 0600) == -1 && errno == ENOSYS, "semget -> ENOSYS");
 
     CHECK_DONE("posixun");
     return 0;

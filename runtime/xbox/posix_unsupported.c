@@ -7,10 +7,11 @@
 /*
  * Linkable stubs for POSIX facilities a single-title console fundamentally
  * cannot provide: multi-process spawning, pipes/FIFOs, pseudo-terminals,
- * inter-process IPC (named semaphores, message queues, shared memory), per-
- * process interval timers, scheduling policy, and user/group identity. They
- * exist only so portable code links; each fails cleanly (ENOSYS/-1) or returns
- * the single-title console's fixed identity.
+ * inter-process IPC (named semaphores, message queues, shared memory, System V
+ * IPC), per-process interval timers, scheduling policy, user/group identity,
+ * runtime dynamic loading (dlopen), password hashing (crypt) and shell word
+ * expansion (wordexp). They exist only so portable code links; each fails
+ * cleanly (ENOSYS/-1) or returns the single-title console's fixed identity.
  *
  * Every stub is tagged  RXDK-STUB  so the whole set is greppable when any of
  * these facilities later becomes implementable (e.g. sockets/pipes over XNet).
@@ -33,6 +34,14 @@
 #include <semaphore.h>
 #include <mqueue.h>
 #include <iconv.h>
+#include <dlfcn.h>
+#include <wordexp.h>
+#include <crypt.h>
+#include <pthread.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/msg.h>
+#include <sys/sem.h>
 
 /* ---- multi-process spawning (no process model) ---- */
 int posix_spawn(pid_t *pid, const char *path,
@@ -153,3 +162,68 @@ size_t iconv(iconv_t cd, char **in, size_t *il, char **out, size_t *ol) {
     (void)cd; (void)in; (void)il; (void)out; (void)ol; errno = EBADF; return (size_t)-1; /* RXDK-STUB */
 }
 int iconv_close(iconv_t cd) { (void)cd; return 0; } /* RXDK-STUB */
+
+/* ---- runtime dynamic loading (a title is one statically-linked image; there
+   is no loader, symbols resolve at link time) ---- */
+static const char *g_dlerr;
+void *dlopen(const char *file, int mode) {
+    (void)file; (void)mode;
+    g_dlerr = "dlopen: no runtime dynamic loader on this platform"; /* RXDK-STUB */
+    return NULL;
+}
+void *dlsym(void *handle, const char *name) {
+    (void)handle; (void)name;
+    g_dlerr = "dlsym: no runtime dynamic loader on this platform"; /* RXDK-STUB */
+    return NULL;
+}
+int dlclose(void *handle) { (void)handle; return 0; } /* RXDK-STUB: nothing was opened */
+char *dlerror(void) { const char *e = g_dlerr; g_dlerr = NULL; return (char *)e; } /* RXDK-STUB */
+
+/* ---- password hashing: no DES/MD5/bcrypt back end ---- */
+char *crypt(const char *key, const char *salt) {
+    (void)key; (void)salt; errno = ENOSYS; return NULL; /* RXDK-STUB */
+}
+char *crypt_r(const char *key, const char *salt, struct crypt_data *data) {
+    (void)key; (void)salt; (void)data; errno = ENOSYS; return NULL; /* RXDK-STUB */
+}
+
+/* ---- shell word expansion: no shell / command substitution ---- */
+int  wordexp(const char *words, wordexp_t *pwordexp, int flags) {
+    (void)words; (void)pwordexp; (void)flags; return WRDE_NOSYS; /* RXDK-STUB */
+}
+void wordfree(wordexp_t *pwordexp) { (void)pwordexp; } /* RXDK-STUB: nothing allocated */
+
+/* ---- alternate signal stack: cooperative signals never switch stacks ---- */
+int sigaltstack(const stack_t *ss, stack_t *oss) {
+    (void)ss; (void)oss; errno = ENOSYS; return -1; /* RXDK-STUB */
+}
+
+/* ---- waitid: no child processes ---- */
+int waitid(idtype_t idtype, id_t id, siginfo_t *infop, int options) {
+    (void)idtype; (void)id; (void)infop; (void)options; errno = ECHILD; return -1; /* RXDK-STUB */
+}
+
+/* ---- pthread fork handlers: a title never fork()s, so there is nothing to run
+   on either side of one. Registration silently succeeds. ---- */
+int pthread_atfork(void (*prepare)(void), void (*parent)(void), void (*child)(void)) {
+    (void)prepare; (void)parent; (void)child; return 0; /* RXDK-STUB */
+}
+
+/* ---- System V IPC (shared memory / message queues / semaphore sets): a cross-
+   process namespace the console has no concept of. The real in-process POSIX
+   semaphores are sem.c / <semaphore.h>. ---- */
+key_t ftok(const char *path, int id) { (void)path; (void)id; errno = ENOSYS; return (key_t)-1; } /* RXDK-STUB */
+
+int   shmget(key_t k, size_t sz, int f)            { (void)k; (void)sz; (void)f; errno = ENOSYS; return -1; } /* RXDK-STUB */
+void *shmat(int id, const void *addr, int f)       { (void)id; (void)addr; (void)f; errno = ENOSYS; return (void *)-1; } /* RXDK-STUB */
+int   shmdt(const void *addr)                      { (void)addr; errno = ENOSYS; return -1; } /* RXDK-STUB */
+int   shmctl(int id, int cmd, struct shmid_ds *b)  { (void)id; (void)cmd; (void)b; errno = ENOSYS; return -1; } /* RXDK-STUB */
+
+int     msgget(key_t k, int f)                                  { (void)k; (void)f; errno = ENOSYS; return -1; } /* RXDK-STUB */
+int     msgsnd(int id, const void *m, size_t sz, int f)         { (void)id; (void)m; (void)sz; (void)f; errno = ENOSYS; return -1; } /* RXDK-STUB */
+ssize_t msgrcv(int id, void *m, size_t sz, long t, int f)       { (void)id; (void)m; (void)sz; (void)t; (void)f; errno = ENOSYS; return -1; } /* RXDK-STUB */
+int     msgctl(int id, int cmd, struct msqid_ds *b)             { (void)id; (void)cmd; (void)b; errno = ENOSYS; return -1; } /* RXDK-STUB */
+
+int semget(key_t k, int n, int f)            { (void)k; (void)n; (void)f; errno = ENOSYS; return -1; } /* RXDK-STUB */
+int semop(int id, struct sembuf *o, size_t n){ (void)id; (void)o; (void)n; errno = ENOSYS; return -1; } /* RXDK-STUB */
+int semctl(int id, int num, int cmd, ...)    { (void)id; (void)num; (void)cmd; errno = ENOSYS; return -1; } /* RXDK-STUB */
