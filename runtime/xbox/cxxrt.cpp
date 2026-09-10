@@ -145,6 +145,11 @@ __attribute__((used)) void *rxdk_raise_handler = 0;
 // std::nothrow_t const std::nothrow -- empty object, 1 byte
 extern const char rxdk_std_nothrow asm("?nothrow@std@@3Unothrow_t@1@B");
 __attribute__((used)) const char rxdk_std_nothrow = 0;
+// bool __uncaught_exception(void) -- MS CRT internal (imported by vcomp's bundled
+// MS-STL); forward to our libc++abi uncaught-exception count.
+extern "C" int __cxa_uncaught_exceptions(void);
+bool rxdk_uncaught_exception(void) asm("?__uncaught_exception@@YA_NXZ");
+bool rxdk_uncaught_exception(void) { return __cxa_uncaught_exceptions() > 0; }
 
 // std::_Lockit / _Init_locks / _Mutex -- the MS STL locale/stream lock guards.
 // Single-threaded locale here, so ctors/dtors/lock/unlock are no-ops (ctors
