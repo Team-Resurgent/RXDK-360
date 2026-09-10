@@ -104,6 +104,11 @@ void _cexit(void) { __rxdk_run_atexit(); }
 /* the linker marker cl.exe emits into any object that uses floating point */
 int _fltused = 0x9875;
 
+/* MS internal block move (dst, src, count). Its libcMT member also defines
+   memcpy, which would collide with ours, so provide it here over memmove
+   (overlap-safe -- the conservative choice for an internal block mover). */
+void *_blkmov(void *dst, const void *src, size_t n) { return memmove(dst, src, n); }
+
 /* wide assertion failure -> trace + abort */
 extern int DbgPrint(const char *, ...);
 void _wassert(const wchar_t *msg, const wchar_t *file, unsigned line) {

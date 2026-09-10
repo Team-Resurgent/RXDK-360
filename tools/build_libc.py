@@ -194,13 +194,22 @@ def sources():
     return out
 
 
-# The MS out-of-line register save/restore helpers (__savegprlr_N/__restgprlr_N,
-# __savefpr_N/__restfpr_N) are pure ABI glue that every MS-compiled prebuilt lib
-# calls and that picolibc does not provide (our own clang inlines its saves).
-# Pull the verified objects from the translated libcMT rather than hand-writing
-# the sequences -- reusing the shipped glue, like the rest of the toolchain.
+# Leaf ABI/runtime glue that MS-compiled prebuilt libs call and picolibc does not
+# provide. Pull the verified objects from the translated libcMT rather than
+# hand-writing them -- reusing the shipped glue, like the rest of the toolchain.
+# Each member listed defines ONLY these helpers (no collision with our symbols;
+# checked with tools/lib_parity.py):
+#   crtgpr.o  __savegprlr_N / __restgprlr_N   (GPR save/restore)
+#   crtfpr.o  __savefpr_N / __restfpr_N       (FPR save/restore)
+#   crtvmx.o  __savevmx_N / __restvmx_N       (VMX/AltiVec save/restore)
+#   u64tod.o  __u64tod                        (uint64 -> double)
+#   chkstk.o  _RtlCheckStack / _RtlCheckStack12 (stack probe)
+#   jmpuwind.o __jump_unwind                  (SEH longjmp-unwind helper)
+# (_blkmov is NOT reused here -- its member memcpyp.o also defines memcpy, which
+# would collide with ours; it is hand-written in runtime/xbox/ms_crt_compat.c.)
 LIBCMT = os.path.join(ROOT, "build", "coff", "libcMT.a")
-MS_GLUE_MEMBERS = ("crtgpr.o", "crtfpr.o")
+MS_GLUE_MEMBERS = ("crtgpr.o", "crtfpr.o", "crtvmx.o",
+                   "u64tod.o", "chkstk.o", "jmpuwind.o")
 
 
 def extract_ms_glue(objdir):
