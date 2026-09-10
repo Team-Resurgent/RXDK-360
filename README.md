@@ -127,9 +127,11 @@ replacement CRT.
 
 ## The toolchain
 
-`vendor/llvm-project` (gitignored; clone it yourself) carries branch
+`vendor/llvm-project` is a git submodule (see `.gitmodules`) tracking branch
 `xbox360-msppc`, which adds a `powerpc64-unknown-xbox360` target implementing the
-platform ABI. See [docs/llvm-patch-design.md](docs/llvm-patch-design.md).
+platform ABI. Initialise it (and the other submodules) after cloning with
+`git submodule update --init --recursive`. See
+[docs/llvm-patch-design.md](docs/llvm-patch-design.md).
 
 ```
 tools/build-llvm.bat    build the patched clang + lld (PowerPC backend only)
