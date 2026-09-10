@@ -196,7 +196,10 @@ class CoffObject:
 ET_REL = 1
 EM_PPC = 20
 SHT_PROGBITS, SHT_SYMTAB, SHT_STRTAB, SHT_RELA, SHT_NOBITS = 1, 2, 3, 4, 8
-SHF_WRITE, SHF_ALLOC, SHF_EXECINSTR = 0x1, 0x2, 0x4
+SHT_GROUP = 17
+SHF_WRITE, SHF_ALLOC, SHF_EXECINSTR, SHF_GROUP = 0x1, 0x2, 0x4, 0x200
+GRP_COMDAT = 0x1
+IMAGE_COMDAT_SELECT_ASSOCIATIVE = 5
 STB_LOCAL, STB_GLOBAL, STB_WEAK = 0, 1, 2
 STT_NOTYPE, STT_OBJECT, STT_FUNC, STT_SECTION = 0, 1, 2, 3
 SHN_UNDEF, SHN_ABS = 0, 0xFFF1
@@ -272,6 +275,20 @@ def coff_to_elf(obj, warn=print):
         coff_to_elfshndx[ci] = 1 + len(kept)
         kept.append((ci, elf_name, s))
 
+    # 1b. COMDAT selection per kept COMDAT section, read from its section symbol's
+    #     aux record (Auxiliary Format 5): Selection@14, associated Number@12. A
+    #     COMDAT section becomes a real ELF section group below (not the old weak
+    #     hack), so its defining symbols stay strong and lld dedups whole groups.
+    sec_selection = {}                 # coff secnum -> (selection, assoc_number)
+    for _, sym in _enumerate_coff_syms(obj):
+        if (sym.cls == IMAGE_SYM_CLASS_STATIC and sym.naux >= 1
+                and sym.secnum in coff_to_elfshndx
+                and (obj.sections[sym.secnum - 1].flags & IMAGE_SCN_LNK_COMDAT)):
+            aux = sym.aux[0]
+            if len(aux) >= 15:
+                number = struct.unpack_from("<H", aux, 12)[0]
+                sec_selection.setdefault(sym.secnum, (aux[14], number))
+
     # 2. symbols. Emit locals first (ELF requires it): a STT_SECTION symbol per
     #    kept section, then local COFF symbols, then globals. Build a map from
     #    COFF symbol index to ELF symbol index for the relocations.
@@ -316,11 +333,16 @@ def coff_to_elf(obj, warn=print):
                 value = sym.value
                 sflags = obj.sections[sym.secnum - 1].flags
                 styp = STT_FUNC if (sflags & IMAGE_SCN_MEM_EXECUTE) else STT_OBJECT
-                # a symbol defined in a COMDAT section (the MS ".text$"/".rdata$"
-                # groups the CRT is full of) must be weak: MS's linker keeps one
-                # definition by name, so many objects legally define the same
-                # symbol. Emit it STB_WEAK so lld dedups instead of erroring.
-                if is_global and (sflags & IMAGE_SCN_LNK_COMDAT):
+                # a symbol in a COMDAT section (the MS ".text$"/".rdata$" groups
+                # the CRT is full of): many objects legally define the same
+                # symbol by name. When we can wrap the section in a real ELF
+                # section group (below), keep the symbol STRONG and let lld dedup
+                # whole groups -- this preserves the definition through
+                # --gc-sections, unlike a bare weak symbol whose section GC can
+                # drop out from under a live reference. Only fall back to STB_WEAK
+                # for a COMDAT section we could not group (no section symbol/aux).
+                if is_global and (sflags & IMAGE_SCN_LNK_COMDAT) \
+                        and sym.secnum not in sec_selection:
                     bind = STB_WEAK
             else:
                 # symbol in a dropped section (debug etc.) -- keep as a name only
@@ -393,7 +415,50 @@ def coff_to_elf(obj, warn=print):
         if entries:
             rela[elf_idx] = entries
 
-    return _write_elf(kept, elf_syms, strtab, first_global, rela, coff_to_elfshndx)
+    # 4. COMDAT section groups. Signature = the first external symbol defined in
+    #    the section (the name lld dedups on); an ASSOCIATIVE section folds into
+    #    its parent's group (kept/discarded together with it).
+    sec_sig = {}                       # coff secnum -> elf sym index (signature)
+    for csi, sym in _enumerate_coff_syms(obj):
+        if (sym.cls == IMAGE_SYM_CLASS_EXTERNAL and sym.secnum in sec_selection
+                and csi in coff_to_elfsym):
+            sec_sig.setdefault(sym.secnum, coff_to_elfsym[csi])
+
+    def _root(sn, seen):
+        sel, num = sec_selection.get(sn, (0, 0))
+        if (sel == IMAGE_COMDAT_SELECT_ASSOCIATIVE and num
+                and num != sn and num not in seen and num in sec_selection):
+            seen.add(sn)
+            return _root(num, seen)
+        return sn
+
+    groups = {}                        # root elf_shndx -> {"sig":symidx,"members":[elf_shndx]}
+    for sn in sec_selection:
+        root = _root(sn, set())
+        sig = sec_sig.get(root)
+        if sig is None:                # no external signature -> left weak above
+            continue
+        r_elf = coff_to_elfshndx[root]
+        g = groups.setdefault(r_elf, {"sig": sig, "members": []})
+        g["members"].append(coff_to_elfshndx[sn])
+
+    # COMDAT binding invariant: exactly one strong symbol per group -- its
+    # signature -- so lld dedups groups by that name; every OTHER COMDAT global
+    # (a section we could not group, or a secondary symbol sharing a grouped
+    # section) becomes weak, so two objects that legally define the same COMDAT
+    # symbol under different group signatures cannot collide as strong dups.
+    # This mirrors COFF COMDAT "pick any" semantics while keeping the section-
+    # group so the definition survives --gc-sections.
+    signatures = {g["sig"] for g in groups.values()}
+    comdat_kept = {coff_to_elfshndx[ci] for ci, _, s in kept
+                   if s.flags & IMAGE_SCN_LNK_COMDAT}
+    for k, (noff, val, sz, info, other, shndx) in enumerate(elf_syms):
+        if ((info >> 4) == STB_GLOBAL and shndx in comdat_kept
+                and k not in signatures):
+            elf_syms[k] = (noff, val, sz, (STB_WEAK << 4) | (info & 0xF), other, shndx)
+
+    return _write_elf(kept, elf_syms, strtab, first_global, rela,
+                      coff_to_elfshndx, groups)
 
 
 def _enumerate_coff_syms(obj):
@@ -510,9 +575,18 @@ class ElfSec:
         self.offset = 0
 
 
-def _write_elf(kept, elf_syms, strtab, first_global, rela, coff_to_elfshndx):
-    # section order: [0] null, kept sections, .symtab, .strtab, then one
-    # .rela.* per kept section that has relocations, then .shstrtab last.
+def _write_elf(kept, elf_syms, strtab, first_global, rela, coff_to_elfshndx,
+               groups=None):
+    groups = groups or {}
+    # which kept sections belong to a group (get SHF_GROUP): map their kept
+    # elf_idx to the group root so their .rela joins the same group too.
+    member_root = {}                             # kept elf_idx -> root elf_idx
+    for root, g in groups.items():
+        for m in g["members"]:
+            member_root[m] = root
+
+    # section order: [0] null, kept sections, .symtab, .strtab, one .rela.* per
+    # kept section with relocations, then .group sections, then .shstrtab last.
     secs = [ElfSec("", 0)]                       # null section
 
     kept_elf_index = {}                          # kept elf_idx (1-based) -> secs[] index
@@ -522,6 +596,8 @@ def _write_elf(kept, elf_syms, strtab, first_global, rela, coff_to_elfshndx):
             flags |= SHF_WRITE
         if s.flags & IMAGE_SCN_MEM_EXECUTE:
             flags |= SHF_EXECINSTR
+        if elf_idx in member_root:
+            flags |= SHF_GROUP
         nalign = (s.flags >> 20) & 0xF           # COFF align is (n+1) in this nibble
         align = (1 << (nalign - 1)) if nalign else 4
         kept_elf_index[elf_idx] = len(secs)
@@ -537,12 +613,31 @@ def _write_elf(kept, elf_syms, strtab, first_global, rela, coff_to_elfshndx):
                        info=first_global, align=4, entsize=16))
     secs.append(ElfSec(".strtab", SHT_STRTAB, data=bytes(strtab.buf), align=1))
 
+    # group root elf_idx -> list of secs[] indices that are its members (the
+    # COMDAT section(s) plus, appended just below, their .rela sections).
+    group_secidx = {root: [] for root in groups}
+    for elf_idx in member_root:
+        group_secidx[member_root[elf_idx]].append(kept_elf_index[elf_idx])
+
     for elf_idx, entries in rela.items():
         target = kept_elf_index[elf_idx]
+        rflags = SHF_GROUP if elf_idx in member_root else 0
         blob = b"".join(struct.pack(">IIi", off, (sym << 8) | rtype, add)
                         for off, sym, rtype, add in entries)
         secs.append(ElfSec(".rela" + secs[target].name, SHT_RELA, data=blob,
-                           link=symtab_idx, info=target, align=4, entsize=12))
+                           link=symtab_idx, info=target, align=4, entsize=12,
+                           flags=rflags))
+        if elf_idx in member_root:
+            group_secidx[member_root[elf_idx]].append(len(secs) - 1)
+
+    # one SHT_GROUP section per COMDAT group; sh_info = signature symbol index,
+    # data = GRP_COMDAT flag followed by each member section's header index.
+    for root, g in groups.items():
+        members = group_secidx[root]
+        blob = struct.pack(">I", GRP_COMDAT) + b"".join(
+            struct.pack(">I", m) for m in members)
+        secs.append(ElfSec(".group", SHT_GROUP, data=blob, link=symtab_idx,
+                           info=g["sig"], align=4, entsize=4))
 
     shstr = StrTab()
     for sec in secs:

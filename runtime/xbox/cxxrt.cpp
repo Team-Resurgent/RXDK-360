@@ -56,13 +56,15 @@ void operator delete[](void *p, size_t, std::align_val_t) noexcept { rxdk_aligne
 // MSVC C++ EH/RTTI/STL ABI is involved (those libs are otherwise C-clean).
 extern "C++" {
 
-void *rxdk_msvc_new(size_t n) asm("??2@YAPAXI@Z");
+// weak: a lib bundling its own STL (vcomp) provides strong operator new/new[];
+// ours is the fallback for libs that don't.
+__attribute__((weak)) void *rxdk_msvc_new(size_t n) asm("??2@YAPAXI@Z");
 void *rxdk_msvc_new(size_t n) { return operator new(n); }
 
-void *rxdk_msvc_new_nothrow(size_t n, const void *) asm("??2@YAPAXIABUnothrow_t@std@@@Z");
+__attribute__((weak)) void *rxdk_msvc_new_nothrow(size_t n, const void *) asm("??2@YAPAXIABUnothrow_t@std@@@Z");
 void *rxdk_msvc_new_nothrow(size_t n, const void *) { return operator new(n); }
 
-void *rxdk_msvc_newa(size_t n) asm("??_U@YAPAXI@Z");
+__attribute__((weak)) void *rxdk_msvc_newa(size_t n) asm("??_U@YAPAXI@Z");
 void *rxdk_msvc_newa(size_t n) { return operator new[](n); }
 
 void rxdk_msvc_del(void *p) asm("??3@YAXPAX@Z");
@@ -134,9 +136,11 @@ __attribute__((used)) void *const rxdk_type_info_vtable[] = { (void *)&rxdk_ti_d
 // actually raises, which these paths do not on success).
 extern "C++" {
 // public: virtual void * stdext::exception::`scalar deleting dtor'(unsigned)
+__attribute__((weak))
 void *rxdk_stdext_exc_dtor(void *self, unsigned flags) asm("??_Gexception@stdext@@UAAPAXI@Z");
 void *rxdk_stdext_exc_dtor(void *self, unsigned flags) { (void)flags; return self; }
 // void std::_Xlength_error(char const *)
+__attribute__((weak))
 void rxdk_Xlength_error(const char *) asm("?_Xlength_error@std@@YAXPBD@Z");
 void rxdk_Xlength_error(const char *msg) { (void)msg; abort(); }
 // void (*std::_Raise_handler)(stdext::exception const &) -- data pointer, null.
@@ -154,22 +158,24 @@ bool rxdk_uncaught_exception(void) { return __cxa_uncaught_exceptions() > 0; }
 
 // std::_Lockit / _Init_locks / _Mutex -- the MS STL locale/stream lock guards.
 // Single-threaded locale here, so ctors/dtors/lock/unlock are no-ops (ctors
-// return `this` per the MSVC ABI).
-void *rxdk_Lockit_ctor(void *self, int) asm("??0_Lockit@std@@QAA@H@Z");
+// return `this` per the MSVC ABI). WEAK: a lib bundling its own STL (vcomp)
+// carries strong copies of these that override ours; ours are the fallback.
+#define RXDK_STL_FALLBACK __attribute__((weak))
+RXDK_STL_FALLBACK void *rxdk_Lockit_ctor(void *self, int) asm("??0_Lockit@std@@QAA@H@Z");
 void *rxdk_Lockit_ctor(void *self, int kind) { (void)kind; return self; }
-void  rxdk_Lockit_dtor(void *self) asm("??1_Lockit@std@@QAA@XZ");
+RXDK_STL_FALLBACK void  rxdk_Lockit_dtor(void *self) asm("??1_Lockit@std@@QAA@XZ");
 void  rxdk_Lockit_dtor(void *self) { (void)self; }
-void *rxdk_Initlocks_ctor(void *self) asm("??0_Init_locks@std@@QAA@XZ");
+RXDK_STL_FALLBACK void *rxdk_Initlocks_ctor(void *self) asm("??0_Init_locks@std@@QAA@XZ");
 void *rxdk_Initlocks_ctor(void *self) { return self; }
-void  rxdk_Initlocks_dtor(void *self) asm("??1_Init_locks@std@@QAA@XZ");
+RXDK_STL_FALLBACK void  rxdk_Initlocks_dtor(void *self) asm("??1_Init_locks@std@@QAA@XZ");
 void  rxdk_Initlocks_dtor(void *self) { (void)self; }
-void *rxdk_Mutex_ctor(void *self) asm("??0_Mutex@std@@QAA@XZ");
+RXDK_STL_FALLBACK void *rxdk_Mutex_ctor(void *self) asm("??0_Mutex@std@@QAA@XZ");
 void *rxdk_Mutex_ctor(void *self) { return self; }
-void  rxdk_Mutex_dtor(void *self) asm("??1_Mutex@std@@QAA@XZ");
+RXDK_STL_FALLBACK void  rxdk_Mutex_dtor(void *self) asm("??1_Mutex@std@@QAA@XZ");
 void  rxdk_Mutex_dtor(void *self) { (void)self; }
-void  rxdk_Mutex_lock(void *self) asm("?_Lock@_Mutex@std@@QAAXXZ");
+RXDK_STL_FALLBACK void  rxdk_Mutex_lock(void *self) asm("?_Lock@_Mutex@std@@QAAXXZ");
 void  rxdk_Mutex_lock(void *self) { (void)self; }
-void  rxdk_Mutex_unlock(void *self) asm("?_Unlock@_Mutex@std@@QAAXXZ");
+RXDK_STL_FALLBACK void  rxdk_Mutex_unlock(void *self) asm("?_Unlock@_Mutex@std@@QAAXXZ");
 void  rxdk_Mutex_unlock(void *self) { (void)self; }
 }
 
