@@ -97,8 +97,41 @@ So #2 is a **dual track**:
    transfer; the throw-struct parsing already exists. User has approved modifying
    xenia (built from source) for this.
 
-Recommended order: RXDK runtime reuse (smaller, HW-correct, links the throwers)
-first; then the xenia dispatcher (larger emulator feature) to make throws testable.
+### Track 1 precise scope (spike result)
+
+Reusing the real MS `__CxxFrameHandler` is viable via a SURGICAL extraction, but
+only with `_getptd`/`terminate` as a shim boundary -- the naive closure drags the
+entire MS CRT (21 members: crt0*/thread/tidtable/mlock/dosmap/winxfltr…, 12
+symbol collisions incl. exit/_errno/_mtinit, 14 Win32 APIs) because the EH code's
+`_getptd` pulls MS's whole per-thread-data + threading + init subsystem.
+
+With `_getptd` + `?terminate@@YAXXZ` treated as shims-we-provide, it collapses to
+**9 EH-core members** (extract via build_libc `extract_ms_glue`, translated names):
+`frame.o handlers.o throw.o unwind.o ehstate.o trnsctrl.o exsup.o hooks.o
+validate.o`. Then: NO real collisions (only my #1 stubs `__CxxFrameHandler`/
+`_CxxThrowException`, which get dropped); the only externals are `_getptd`,
+`?terminate@@YAXXZ` (we provide -> abort / our terminate), and `RaiseException`
+(kernel). Catch-matching uses inline CatchableType pointer comparison (no
+`__RTtypeid` pulled), so the #1 stub type_info vtable stays fine.
+
+**Crux / open work:** `_getptd` must return an MS `_tiddata`/`_ptd`-LAYOUT-
+compatible per-thread struct (the EH objects read specific offsets:
+_curexception/_curcontext/_ProcessingThrow/_pFrameInfoChain/_translator/…). The
+XDK ships no mtdll.h, so the layout must be reverse-engineered from the objects
+(disasm the `bl _getptd` + subsequent `lwz off(r3)` loads) or from the public VC
+CRT mtdll.h, then verified.
+
+### Coupling + recommendation
+
+Track 1 adds NO new linkability (throwers already link via the #1 stubs -> still
+127/129); its only payoff is HW-correct throw behaviour, which is UNVERIFIABLE
+without track 2 (RaiseException is a xenia stub) or real HW. So track 1 and track
+2 are COUPLED: a testable throw/catch needs the real handler (1) AND xenia
+dispatch (2) together. Swapping the verified, working #1 stubs for an unverifiable
+`_getptd`-guessed engine risks regressing the non-throwers (d3dx9 etc. work
+today). Recommendation: KEEP the #1 stubs, and do track 1 + track 2 as ONE
+coupled HW-EH subproject with the xenia dispatcher as the test bed -- not a
+delicate, untestable reuse landed on its own.
 
 ## Open risks
 
