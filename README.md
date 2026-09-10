@@ -10,9 +10,12 @@ already speak. The 360 is PPC COFF/XEX, which LLVM has never supported, so the s
 playbook does not transfer.
 
 The hybrid approach: translate the XDK's `lib\xbox\*.lib` from PPC COFF to PPC32 ELF
-**once, offline**, then build everything with `zig cc` + `lld` on any host and pack the
-result into a XEX. That keeps the 2.7 GB of working Microsoft libraries and still gives
-a cross-platform build with a C23/C++23-capable compiler.
+**once, offline**, then build everything with the patched **clang** (a
+`powerpc-unknown-xbox360` target that reproduces the platform's MS-PPC ABI) + `lld`
+on any host and pack the result into a XEX. That keeps the 2.7 GB of working Microsoft
+libraries and still gives a cross-platform build with a C23/C++23-capable compiler.
+(An earlier route used `zig cc` with the PPC EABI, but that ABI does not match the
+console compiler's — see below — so the patched clang is the real toolchain now.)
 
 ## What we know so far
 
@@ -119,16 +122,20 @@ The base target is `powerpc-unknown-xbox360`. An earlier attempt to build on the
 64-bit base failed for reasons worth reading: see
 [docs/base-target-correction.md](docs/base-target-correction.md).
 
-Not yet done: variadic functions are deliberately left to thunks, since the
-platform's varargs layout differs structurally from the 32-bit ELF one; struct
-passing still follows the ELF rules rather than the platform's; and nothing has
-run on hardware or in an emulator. There is no ELF-to-XEX packer yet, and no
-replacement CRT.
+Since then the pipeline has come up end to end: there is an ELF-to-XEX packer
+(`elf2xex` / XexTool `pack`), titles load and run in the **xenia** emulator calling
+the kernel, and there is a full modern **replacement CRT** — a picolibc-based
+`libc.a` plus a `libcpp.a` (libunwind + libc++abi) covering C23/C++23 with working
+exceptions, threads, signals and timers, validated by a stdlib suite (53 sections /
+734 checks, all green). Not yet on real hardware. Remaining ABI gaps: variadic
+functions are still routed through thunks (the platform's varargs layout differs
+structurally from the 32-bit ELF one) and some by-value struct passing still follows
+ELF rather than the platform's rules.
 
 ## The toolchain
 
 `vendor/llvm-project` is a git submodule (see `.gitmodules`) tracking branch
-`xbox360-msppc`, which adds a `powerpc64-unknown-xbox360` target implementing the
+`xbox360-msppc`, which adds a `powerpc-unknown-xbox360` target implementing the
 platform ABI. Initialise it (and the other submodules) after cloning with
 `git submodule update --init --recursive`. See
 [docs/llvm-patch-design.md](docs/llvm-patch-design.md).
@@ -150,12 +157,15 @@ spike/abi/     stack layout, mixed int/float, struct and varargs probes
 spike/abi2/    callee-side probes: structs, 64-bit args, varargs homing, red zone
 spike/vmx/     vector ABI and callee-saved vector register probes
 tools/         scanners, toolchain build, ABI verification
-vendor/        llvm-project checkout (not tracked)
+vendor/        llvm-project, picolibc and xextool (git submodules)
 ```
 
 ## Prerequisites
 
 - Xbox 360 XDK, full install (not `InstallType=Minimum` — that omits `include\`,
   `lib\` and the compiler). Windows only, and needed only for the spikes that compare
-  against `cl.exe`.
-- zig 0.16.0 or newer.
+  against `cl.exe` and for the shipped `lib\xbox\*.lib` the toolchain reuses.
+- The patched clang + lld, built once from the `vendor/llvm-project` submodule via
+  `tools/build-llvm.bat`. This is the real toolchain.
+- zig 0.16.0 or newer — optional, only for the legacy PPC-EABI path (`mktitle.py
+  --cc zig`) and the early ABI spikes.

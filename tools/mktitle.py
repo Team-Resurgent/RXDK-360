@@ -252,8 +252,9 @@ def main():
     ap.add_argument("--coff-dir", default=os.path.join(ROOT, "build", "coff"),
                     help="where bare --lib names resolve (coff2elf archives)")
     ap.add_argument("--xdk", default=DEFAULT_XDK, help="XDK lib\\xbox directory")
-    ap.add_argument("--cc", choices=("zig", "clang"), default="zig",
-                    help="compiler: zig (PPC EABI) or clang (patched MS-PPC ABI)")
+    ap.add_argument("--cc", choices=("zig", "clang"), default="clang",
+                    help="compiler: clang (patched MS-PPC ABI -- the real toolchain, "
+                         "default) or zig (legacy PPC EABI, simple titles only)")
     ap.add_argument("--clang", default=DEFAULT_CLANG,
                     help="patched clang path (for --cc clang)")
     ap.add_argument("--cflag", action="append", default=[],
