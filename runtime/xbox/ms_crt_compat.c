@@ -590,3 +590,98 @@ int _isctype(int c, int mask) {
     if (isxdigit(c)) r |= _MS_HEX;
     return r & mask;
 }
+
+/* ============================================================================
+ * MS CRT locale / ctype / time internals imported by cl.exe C++ libs (notably
+ * vcomp.lib's bundled MS-STL). Our runtime is single-locale ("C"); these give
+ * the MS-spelled entry points over that. See the vcomp import audit.
+ * ==========================================================================*/
+
+/* __pctype_func(): the MS <ctype.h> classification table, indexed [(uchar)c].
+   Same bit layout as _isctype above, plus _ALPHA (0x0100). */
+#define _MS_ALPHA 0x0100
+static unsigned short g_ms_pctype[256];
+const unsigned short *__pctype_func(void) {
+    static int inited;
+    if (!inited) {
+        for (int c = 0; c < 256; ++c) {
+            unsigned short m = 0;
+            if (isupper(c)) m |= _MS_UPPER | _MS_ALPHA;
+            if (islower(c)) m |= _MS_LOWER | _MS_ALPHA;
+            if (isdigit(c)) m |= _MS_DIGIT;
+            if (isspace(c)) m |= _MS_SPACE;
+            if (ispunct(c)) m |= _MS_PUNCT;
+            if (iscntrl(c)) m |= _MS_CONTROL;
+            if (c == ' ' || c == '\t') m |= _MS_BLANK;
+            if (isxdigit(c)) m |= _MS_HEX;
+            g_ms_pctype[c] = m;
+        }
+        inited = 1;
+    }
+    return g_ms_pctype;
+}
+
+/* Locale-data accessors. For the "C" locale these are the neutral defaults the
+   MS-STL expects: 1-byte mb, no codepage/handle (LCID 0). */
+int      ___mb_cur_max_func(void)   { return 1; }
+unsigned ___lc_codepage_func(void)  { return 0; }
+unsigned ___lc_collate_cp_func(void){ return 0; }
+void    *___lc_handle_func(void)    { static long h[6]; return h; } /* 6 LC_* categories, all 0 */
+
+/* Time-locale name lists, MS colon-delimited format (abbrev then full, leading
+   ':'); consumed by the MS strftime path for %a/%A and %b/%B. "C" locale. */
+char *_Getdays(void) {
+    static char s[] = ":Sun:Sunday:Mon:Monday:Tue:Tuesday:Wed:Wednesday"
+                      ":Thu:Thursday:Fri:Friday:Sat:Saturday";
+    return s;
+}
+char *_Getmonths(void) {
+    static char s[] = ":Jan:January:Feb:February:Mar:March:Apr:April:May:May"
+                      ":Jun:June:Jul:July:Aug:August:Sep:September:Oct:October"
+                      ":Nov:November:Dec:December";
+    return s;
+}
+
+/* _Gettnames(): MS __lc_time_data blob. The MS-STL <locale> time facets read it,
+   but the OpenMP runtime never formats times, so a zeroed "C"-locale block only
+   has to satisfy the link. */
+void *_Gettnames(void) { static char tnames[512]; return tnames; } /* RXDK-STUB */
+
+/* _Strftime(): MS internal strftime worker (last arg is __lc_time_data, which we
+   don't consult -- our strftime is already "C" locale). */
+size_t _Strftime(char *s, size_t max, const char *fmt, const struct tm *t,
+                 void *lc_time) {
+    (void)lc_time;
+    return strftime(s, max, fmt, t);
+}
+
+/* rand_s(): MS secure RNG. Not cryptographic here -- an xorshift64* seeded from
+   address/counter entropy; adequate for the STL uses (seeding, shuffles). */
+int rand_s(unsigned int *p) {
+    if (!p) { errno = EINVAL; return EINVAL; }
+    static unsigned long long s;
+    if (!s) s = 0x9E3779B97F4A7C15ULL ^ (unsigned long long)(uintptr_t)&p;
+    s ^= s >> 12; s ^= s << 25; s ^= s >> 27;
+    *p = (unsigned)((s * 0x2545F4914F6CDD1DULL) >> 32);
+    return 0;
+}
+
+/* ---- MS debug-CRT heap shims (imported by the *d debug libs, e.g. vcompd) ----
+   The _*_dbg heap wrappers forward to our real allocator (we track no debug
+   block headers); _CrtDbgReportW is a no-op; _chvalidator is the debug ctype
+   range validator (identity here). */
+void *_malloc_dbg(size_t size, int blockType, const char *file, int line) {
+    (void)blockType; (void)file; (void)line; return malloc(size);
+}
+void *_calloc_dbg(size_t num, size_t size, int blockType, const char *file, int line) {
+    (void)blockType; (void)file; (void)line; return calloc(num, size);
+}
+void *_realloc_dbg(void *p, size_t size, int blockType, const char *file, int line) {
+    (void)blockType; (void)file; (void)line; return realloc(p, size);
+}
+void _free_dbg(void *p, int blockType) { (void)blockType; free(p); }
+int _CrtDbgReportW(int reportType, const wchar_t *file, int line,
+                   const wchar_t *module, const wchar_t *fmt, ...) {
+    (void)reportType; (void)file; (void)line; (void)module; (void)fmt; return 0;
+}
+int _chvalidator(int c) { return c; }
