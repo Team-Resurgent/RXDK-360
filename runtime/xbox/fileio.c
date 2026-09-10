@@ -320,6 +320,14 @@ int dup2(int fd, int newfd) {
     return newfd;
 }
 
+/* dup3: like dup2 but the two fds must differ and it carries O_CLOEXEC, which
+   has no meaning without exec on the console -- so the flag is ignored. */
+int dup3(int fd, int newfd, int flags) {
+    (void)flags;
+    if (fd == newfd) { errno = EINVAL; return -1; }
+    return dup2(fd, newfd);
+}
+
 /* pread / pwrite: I/O at an explicit offset without disturbing the fd's own
    offset (the kernel Nt calls already take a byte offset). */
 ssize_t pread(int fd, void *buf, size_t count, off_t offset) {
