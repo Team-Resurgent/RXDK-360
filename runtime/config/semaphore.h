@@ -32,6 +32,13 @@ int sem_timedwait(sem_t *sem, const struct timespec *abstime);
 int sem_post(sem_t *sem);
 int sem_getvalue(sem_t *sem, int *sval);
 
+/* Named semaphores need a cross-process namespace the console has not got, so
+   the sem_open family is a linkable stub (see runtime/xbox/posix_unsupported.c). */
+#define SEM_FAILED ((sem_t *) 0)
+sem_t *sem_open(const char *name, int oflag, ...);
+int    sem_close(sem_t *sem);
+int    sem_unlink(const char *name);
+
 #ifdef __cplusplus
 }
 #endif
