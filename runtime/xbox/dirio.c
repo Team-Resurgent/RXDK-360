@@ -323,3 +323,54 @@ ssize_t readlink(const char *path, char *buf, size_t bufsize) {
 int link(const char *oldpath, const char *newpath) {
     (void)oldpath; (void)newpath; errno = ENOSYS; return -1;
 }
+
+/* ---- scandir / alphasort -------------------------------------------------- */
+
+/* Enumerate a directory into an allocated, optionally filtered and sorted array
+   of dirent copies (readdir reuses one buffer, so each survivor is copied). The
+   caller frees each entry and the array. */
+int scandir(const char *dir, struct dirent ***namelist,
+            int (*filter)(const struct dirent *),
+            int (*compar)(const struct dirent **, const struct dirent **)) {
+    DIR *d = opendir(dir);
+    struct dirent *ent, **list = NULL, **nl;
+    size_t n = 0, cap = 0;
+    if (!d)
+        return -1;
+    while ((ent = readdir(d)) != NULL) {
+        struct dirent *copy;
+        if (filter && !filter(ent))
+            continue;
+        if (n == cap) {
+            size_t ncap = cap ? cap * 2 : 16;
+            nl = (struct dirent **)realloc(list, ncap * sizeof(*list));
+            if (!nl)
+                goto enomem;
+            list = nl;
+            cap = ncap;
+        }
+        copy = (struct dirent *)malloc(sizeof(struct dirent));
+        if (!copy)
+            goto enomem;
+        *copy = *ent;
+        list[n++] = copy;
+    }
+    closedir(d);
+    if (compar && n > 1)
+        qsort(list, n, sizeof(*list),
+              (int (*)(const void *, const void *))compar);
+    *namelist = list;
+    return (int)n;
+
+enomem:
+    while (n)
+        free(list[--n]);
+    free(list);
+    closedir(d);
+    errno = ENOMEM;
+    return -1;
+}
+
+int alphasort(const struct dirent **a, const struct dirent **b) {
+    return strcmp((*a)->d_name, (*b)->d_name);
+}
