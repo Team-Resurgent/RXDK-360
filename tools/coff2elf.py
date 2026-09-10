@@ -256,7 +256,18 @@ class StrTab:
         return off
 
 
-def coff_to_elf(obj, warn=print):
+def strong_noncomdat_globals(obj):
+    """Names this object defines STRONG in a non-COMDAT section -- an out-of-line
+    definition that COMDAT ("pick any") copies elsewhere must yield to."""
+    out = set()
+    for _, sym in _enumerate_coff_syms(obj):
+        if (sym.cls == IMAGE_SYM_CLASS_EXTERNAL and 0 < sym.secnum <= len(obj.sections)
+                and not (obj.sections[sym.secnum - 1].flags & IMAGE_SCN_LNK_COMDAT)):
+            out.add(sym.name)
+    return out
+
+
+def coff_to_elf(obj, warn=print, noncomdat_strong=frozenset()):
     """Translate one parsed CoffObject to PPC32 big-endian ELF32 bytes.
 
     Each kept COFF section becomes its own ELF section in the same order, so a
@@ -419,10 +430,13 @@ def coff_to_elf(obj, warn=print):
     #    the section (the name lld dedups on); an ASSOCIATIVE section folds into
     #    its parent's group (kept/discarded together with it).
     sec_sig = {}                       # coff secnum -> elf sym index (signature)
+    sec_signame = {}                   # coff secnum -> signature symbol name
     for csi, sym in _enumerate_coff_syms(obj):
         if (sym.cls == IMAGE_SYM_CLASS_EXTERNAL and sym.secnum in sec_selection
                 and csi in coff_to_elfsym):
-            sec_sig.setdefault(sym.secnum, coff_to_elfsym[csi])
+            if sym.secnum not in sec_sig:
+                sec_sig[sym.secnum] = coff_to_elfsym[csi]
+                sec_signame[sym.secnum] = sym.name
 
     def _root(sn, seen):
         sel, num = sec_selection.get(sn, (0, 0))
@@ -439,17 +453,23 @@ def coff_to_elf(obj, warn=print):
         if sig is None:                # no external signature -> left weak above
             continue
         r_elf = coff_to_elfshndx[root]
-        g = groups.setdefault(r_elf, {"sig": sig, "members": []})
+        g = groups.setdefault(r_elf, {"sig": sig, "members": [],
+                                      "signame": sec_signame.get(root, "")})
         g["members"].append(coff_to_elfshndx[sn])
 
-    # COMDAT binding invariant: exactly one strong symbol per group -- its
-    # signature -- so lld dedups groups by that name; every OTHER COMDAT global
-    # (a section we could not group, or a secondary symbol sharing a grouped
-    # section) becomes weak, so two objects that legally define the same COMDAT
-    # symbol under different group signatures cannot collide as strong dups.
-    # This mirrors COFF COMDAT "pick any" semantics while keeping the section-
-    # group so the definition survives --gc-sections.
-    signatures = {g["sig"] for g in groups.values()}
+    # COMDAT binding: one STRONG symbol per group -- its signature -- so lld
+    # dedups groups by that name AND keeps the (referenced) group section through
+    # --gc-sections; a weak signature would let GC drop a section that is only
+    # referenced from another object (the vtable deleting-dtor thunks). Every
+    # OTHER COMDAT global becomes weak, so two objects that legally define the
+    # same COMDAT symbol under different group signatures do not collide as
+    # strong duplicates -- COFF COMDAT "pick any", but GC-safe.
+    # Exception: if a signature's name is ALSO defined strong out-of-line (in a
+    # non-COMDAT section of some object in the archive -- an inline helper one TU
+    # emits for real), the COMDAT copies must yield to that strong definition, so
+    # its signatures are weak too (noncomdat_strong is passed in by archive mode).
+    signatures = {g["sig"] for g in groups.values()
+                  if g["signame"] not in noncomdat_strong}
     comdat_kept = {coff_to_elfshndx[ci] for ci, _, s in kept
                    if s.flags & IMAGE_SCN_LNK_COMDAT}
     for k, (noff, val, sz, info, other, shndx) in enumerate(elf_syms):
@@ -843,6 +863,10 @@ def cmd_archive(path, out_a, out_manifest):
     members = []
     imports = []
     seen = {}                           # unique member names
+    # First pass: every COFF object, plus the union of names each defines strong
+    # out-of-line (non-COMDAT) -- COMDAT copies of those must yield to them.
+    coff_members = []                   # (member, longnames, obj)
+    noncomdat_strong = set()
     for member, longnames in read_archive(blob):
         if member.name in ("/", "//"):
             continue
@@ -852,7 +876,14 @@ def cmd_archive(path, out_a, out_manifest):
                             "name_type": nt, "import_type": it})
             continue
         obj = CoffObject(member.data)
-        elf = coff_to_elf(obj, warn=lambda m: None)
+        noncomdat_strong |= strong_noncomdat_globals(obj)
+        coff_members.append((member, longnames, obj))
+
+    # Second pass: translate each object, weakening COMDAT signatures that clash
+    # with an out-of-line strong definition seen anywhere in the archive.
+    for member, longnames, obj in coff_members:
+        elf = coff_to_elf(obj, warn=lambda m: None,
+                          noncomdat_strong=noncomdat_strong)
         base = member_name(member.name, longnames).replace("\\", "/").split("/")[-1]
         base = base[:-4] if base.endswith(".obj") else base
         n = seen.get(base, 0)
