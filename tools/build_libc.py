@@ -64,6 +64,9 @@ SUBDIRS = [
                      # + abort + exit excluded below; our runtime provides those)
     "libc/search",   # qsort/qsort_r/bsearch (ISO C) + tsearch tree family; the
                      # file-backed BSD hash/ndbm cluster is excluded below.
+    "libc/posix",    # POSIX regex engine + exec* front-ends + strfmon + the
+                     # passwd/group database + wait/getlogin; files our own
+                     # runtime already provides are excluded below.
 ]
 
 # libm: full double + float math (libm/common + libm/math), the same wholesale
@@ -155,6 +158,13 @@ EXCLUDE = set([
     # by file I/O the console does not need.
     "hash.c", "hash_bigkey.c", "hash_buf.c", "hash_func.c", "hash_log2.c",
     "hash_page.c", "hcreate.c", "hcreate_r.c", "ndbm.c",
+    # libc/posix: our runtime already provides these (basename/dirname in
+    # posix_string_ext.c, fnmatch in posix_glob.c, creat in fileio.c, sleep in
+    # posix_ext.c), so drop picolibc's copies to avoid duplicate symbols.
+    "basename.c", "dirname.c", "fnmatch.c", "creat.c", "sleep.c",
+    # engine.c is the regex matcher template #included (twice) by regexec.c, not
+    # a standalone translation unit.
+    "engine.c",
 ])
 
 
