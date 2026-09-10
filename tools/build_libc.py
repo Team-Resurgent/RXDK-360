@@ -101,7 +101,8 @@ XBOX_GLUE = [
     os.path.join(ROOT, "runtime", "xbox", "dirio.c"),               # <dirent.h> + rename/truncate/scandir... for <filesystem>
     os.path.join(ROOT, "runtime", "xbox", "pathres.c"),             # cwd + relative-path resolver (getcwd/chdir/realpath) shared by fileio/dirio
     os.path.join(ROOT, "runtime", "xbox", "posix_ext.c"),           # sleep family, posix_memalign, isatty, access
-    os.path.join(ROOT, "runtime", "xbox", "posix_stubs.c"),         # process/signal/mmap/tty/timer/perm stubs (no console concept)
+    os.path.join(ROOT, "runtime", "xbox", "posix_stubs.c"),         # process/mmap/tty/perm stubs (no console concept)
+    os.path.join(ROOT, "runtime", "xbox", "signals.c"),             # cooperative signal facility + ITIMER_REAL (setitimer/alarm)
     os.path.join(ROOT, "runtime", "xbox", "posix_unsupported.c"),   # linkable RXDK-STUB set: spawn/pipe/pty/ipc/timers/sched/identity
     os.path.join(ROOT, "runtime", "xbox", "syslog.c"),              # syslog -> cache:\syslog.log + DbgPrint mirror
     os.path.join(ROOT, "runtime", "xbox", "timer.c"),               # POSIX timer_create (SIGEV_THREAD/NONE) over a helper thread
