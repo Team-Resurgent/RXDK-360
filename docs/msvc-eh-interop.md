@@ -133,6 +133,50 @@ today). Recommendation: KEEP the #1 stubs, and do track 1 + track 2 as ONE
 coupled HW-EH subproject with the xenia dispatcher as the test bed -- not a
 delicate, untestable reuse landed on its own.
 
+## Track 2 (xenia dispatcher) -- test bed, building blocks, algorithm
+
+**Test bed (done):** `tests/eh/build.py` -- a minimal cl.exe `/EHsc` throw/catch
+linked with the real `libcMT` -> a stock XEX with MS `__CxxFrameHandler` +
+`.pdata`/`.xdata`. Decoupled from the RXDK runtime side, so track 2 is validated
+on its own. **Baseline in stock xenia:** prints `before-throw` and `after-catch`
+plus "Guest attempted to throw a C++ exception!", but NOT `caught-int` -- the
+catch is skipped (`RtlRaiseException` logs and returns without dispatching).
+**Target: `[T] caught-int 1234`.**
+
+**xenia building blocks (confirmed):**
+- call a guest function from a shim: `processor()->Execute(thread_state, addr,
+  args[], arg_count)` (used for APCs / thread-notify / Ob callbacks).
+- throwing thread + registers: `XThread::GetCurrentThread()->thread_state()->
+  context()` (ppc_context).
+- guest memory: `kernel_memory()->TranslateVirtual`.
+- `HandleCppException` already parses the EXCEPTION_RECORD -> ThrowInfo ->
+  CatchableTypeArray.
+
+**Dispatcher algorithm (in HandleCppException / RtlRaiseException), matching the
+real 360 kernel SEH dispatcher:**
+1. Seed CONTEXT = the throwing thread's ppc_context (PC/SP/regs at the `throw`).
+2. Loop over frames:
+   a. `RtlLookupFunctionEntry(PC)` -> RUNTIME_FUNCTION from the loaded module's
+      `.pdata` (the PE exception directory we now emit). 
+   b. read its `.xdata` UNWIND_INFO -> language handler (__CxxFrameHandler addr)
+      + handler data (FuncInfo); build a DISPATCHER_CONTEXT in guest memory.
+   c. call the guest `__CxxFrameHandler` via `processor()->Execute(...)` with
+      (record, establisher_frame, context, dispatcher). It does the C++ match;
+      on a catch it calls `RtlUnwind` (transfers control, does not return here).
+   d. else `RtlVirtualUnwind` to the caller frame; continue.
+
+**Hard parts (the "this is going to suck"):**
+- **RtlVirtualUnwind for PPC/360** -- interpret the 360 `.xdata` UNWIND_INFO
+  encoding to restore non-volatile regs + compute caller SP/PC. The 360 PPC
+  unwind-data format must be reverse-engineered/understood first.
+- **RtlUnwind control transfer** -- the handler calls it to run cleanup + resume
+  at the catch funclet; xenia must set the guest context (PC=catch, SP=target)
+  and continue guest execution there rather than returning to the shim.
+
+These two (plus `RtlLookupFunctionEntry`) are unimplemented table stubs in xenia
+today; implementing them is the bulk of track 2. Track 1's real MS handler then
+rides the same dispatcher on the RXDK-runtime side.
+
 ## Open risks
 
 - Exact XEX ↔ PE-exception-directory mechanism on the 360 loader (step 1) — the
