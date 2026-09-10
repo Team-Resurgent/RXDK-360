@@ -22,13 +22,16 @@
  */
 #include <errno.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdarg.h>
 #include <string.h>
 #include <strings.h>
 #include <wchar.h>
 #include <wctype.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 /* ---- case-insensitive compares (MS spelling -> POSIX) ---- */
 int _stricmp(const char *a, const char *b)             { return strcasecmp(a, b); }
@@ -165,3 +168,209 @@ int vswprintf_s(wchar_t *buf, size_t n, const wchar_t *fmt, va_list ap) {
 /* NOTE: sscanf_s/swscanf_s are NOT thin forwards -- MS passes a buffer-size arg
    after each %s/%c in the varargs, so forwarding to sscanf() would desync the
    argument list. Left for a real secure-scan implementation. */
+
+/* ====================================================================== */
+/* Second-wave CRT surface: the underscore CRT/POSIX spellings the shipped */
+/* XDK libs import once operator new was satisfied. All forward to our real */
+/* implementations or are small self-contained helpers.                    */
+/* ====================================================================== */
+
+/* ---- case-insensitive memory compare ---- */
+int _memicmp(const void *a, const void *b, size_t n) {
+    const unsigned char *p = a, *q = b;
+    for (size_t i = 0; i < n; ++i) {
+        int d = tolower(p[i]) - tolower(q[i]);
+        if (d) return d;
+    }
+    return 0;
+}
+
+/* ---- misc string ---- */
+char *_strdup(const char *s)                       { return strdup(s); }
+void  _swab(char *src, char *dst, int n) {          /* swap adjacent byte pairs */
+    for (n &= ~1; n > 0; n -= 2, src += 2, dst += 2) { dst[0] = src[1]; dst[1] = src[0]; }
+}
+char *strtok_s(char *s, const char *delim, char **ctx) { return strtok_r(s, delim, ctx); }
+wchar_t *wcstok_s(wchar_t *s, const wchar_t *delim, wchar_t **ctx) { return wcstok(s, delim, ctx); }
+
+/* ---- integer -> string (MS radix spellings) ---- */
+static char *u2s(unsigned long long v, char *buf, int radix, int neg) {
+    static const char D[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+    char tmp[65]; int i = 0;
+    if (radix < 2 || radix > 36) { buf[0] = 0; return buf; }
+    do { tmp[i++] = D[v % (unsigned)radix]; v /= (unsigned)radix; } while (v);
+    char *p = buf;
+    if (neg) *p++ = '-';
+    while (i) *p++ = tmp[--i];
+    *p = 0;
+    return buf;
+}
+char *_ltoa(long v, char *b, int r)              { return (r == 10 && v < 0) ? u2s((unsigned long long)(-(long long)v), b, r, 1) : u2s((unsigned long)v, b, r, 0); }
+char *_ultoa(unsigned long v, char *b, int r)    { return u2s(v, b, r, 0); }
+char *_i64toa(long long v, char *b, int r)       { return (r == 10 && v < 0) ? u2s((unsigned long long)(-v), b, r, 1) : u2s((unsigned long long)v, b, r, 0); }
+char *_ui64toa(unsigned long long v, char *b, int r) { return u2s(v, b, r, 0); }
+static int u2s_s(unsigned long long v, char *b, size_t n, int radix, int neg) {
+    char tmp[66]; u2s(v, tmp, radix, neg);
+    size_t len = strlen(tmp);
+    if (!b || n == 0) return EINVAL;
+    if (len + 1 > n) { b[0] = 0; return ERANGE; }
+    memcpy(b, tmp, len + 1);
+    return 0;
+}
+int _itoa_s(int v, char *b, size_t n, int r)                  { return u2s_s(r == 10 && v < 0 ? (unsigned long long)(-(long long)v) : (unsigned)v, b, n, r, r == 10 && v < 0); }
+int _ui64toa_s(unsigned long long v, char *b, size_t n, int r){ return u2s_s(v, b, n, r, 0); }
+/* wide variants: format narrow then widen */
+static wchar_t *u2ws(unsigned long long v, wchar_t *b, int radix, int neg) {
+    char tmp[66]; u2s(v, tmp, radix, neg);
+    wchar_t *p = b; for (char *q = tmp; *q; ++q) *p++ = (wchar_t)(unsigned char)*q; *p = 0; return b;
+}
+wchar_t *_ltow(long v, wchar_t *b, int r)             { return (r == 10 && v < 0) ? u2ws((unsigned long long)(-(long long)v), b, r, 1) : u2ws((unsigned long)v, b, r, 0); }
+wchar_t *_ultow(unsigned long v, wchar_t *b, int r)   { return u2ws(v, b, r, 0); }
+wchar_t *_i64tow(long long v, wchar_t *b, int r)      { return (r == 10 && v < 0) ? u2ws((unsigned long long)(-v), b, r, 1) : u2ws((unsigned long long)v, b, r, 0); }
+wchar_t *_ui64tow(unsigned long long v, wchar_t *b, int r) { return u2ws(v, b, r, 0); }
+int _ultow_s(unsigned long v, wchar_t *b, size_t n, int r) {
+    wchar_t tmp[66]; u2ws(v, tmp, r, 0);
+    size_t len = wcslen(tmp);
+    if (!b || n == 0) return EINVAL;
+    if (len + 1 > n) { b[0] = 0; return ERANGE; }
+    for (size_t i = 0; i <= len; ++i) b[i] = tmp[i];
+    return 0;
+}
+
+/* ---- string -> integer (64-bit + unsigned spellings) ---- */
+long long          _atoi64(const char *s)                         { return strtoll(s, NULL, 10); }
+long long          _strtoi64(const char *s, char **e, int base)   { return strtoll(s, e, base); }
+unsigned long long _strtoui64(const char *s, char **e, int base)  { return strtoull(s, e, base); }
+long long          _wtoi64(const wchar_t *s)                      { return wcstoll(s, NULL, 10); }
+long long          _wcstoi64(const wchar_t *s, wchar_t **e, int base)  { return wcstoll(s, e, base); }
+unsigned long long _wcstoui64(const wchar_t *s, wchar_t **e, int base) { return wcstoull(s, e, base); }
+long long          _abs64(long long v)                            { return v < 0 ? -v : v; }
+
+/* ---- floating-point classification / control ---- */
+/* _fpclass() return bits (MS <float.h>) */
+#define _FPCLASS_SNAN 0x0001
+#define _FPCLASS_QNAN 0x0002
+#define _FPCLASS_NINF 0x0004
+#define _FPCLASS_NN   0x0008
+#define _FPCLASS_ND   0x0010
+#define _FPCLASS_NZ   0x0020
+#define _FPCLASS_PZ   0x0040
+#define _FPCLASS_PD   0x0080
+#define _FPCLASS_PN   0x0100
+#define _FPCLASS_PINF 0x0200
+int _fpclass(double x) {
+    int neg = __builtin_signbit(x);
+    if (__builtin_isnan(x)) return _FPCLASS_QNAN;
+    if (__builtin_isinf(x)) return neg ? _FPCLASS_NINF : _FPCLASS_PINF;
+    if (x == 0.0)           return neg ? _FPCLASS_NZ : _FPCLASS_PZ;
+    if (!__builtin_isnormal(x)) return neg ? _FPCLASS_ND : _FPCLASS_PD;   /* subnormal */
+    return neg ? _FPCLASS_NN : _FPCLASS_PN;
+}
+double _chgsign(double x) {
+    union { double d; unsigned long long u; } u = { x };
+    u.u ^= 1ULL << 63;
+    return u.d;
+}
+double _copysign(double x, double y) { return __builtin_copysign(x, y); }
+/* FP status/control word: a title runs with the default word; report it and
+   accept changes as no-ops (the console FPSCR is not exposed through fenv here). */
+#define _RXDK_FPCW_DEFAULT 0x0009001fu
+unsigned _clearfp(void)                                   { return 0; }
+unsigned _controlfp(unsigned newv, unsigned mask)         { (void)newv; (void)mask; return _RXDK_FPCW_DEFAULT; }
+int      _controlfp_s(unsigned *cur, unsigned newv, unsigned mask) { (void)newv; (void)mask; if (cur) *cur = _RXDK_FPCW_DEFAULT; return 0; }
+int      _callnewh(size_t n)                              { (void)n; return 0; }   /* no new-handler installed */
+
+/* ---- extra printf spellings ---- */
+int _vsnprintf_s(char *buf, size_t n, size_t count, const char *fmt, va_list ap) {
+    (void)count; return vsnprintf(buf, n, fmt, ap);
+}
+int _vsnwprintf(wchar_t *buf, size_t n, const wchar_t *fmt, va_list ap) {
+    return vswprintf(buf, n, fmt, ap);
+}
+int _vscprintf(const char *fmt, va_list ap) { return vsnprintf(NULL, 0, fmt, ap); }
+int swprintf_s(wchar_t *buf, size_t n, const wchar_t *fmt, ...) {
+    va_list ap; va_start(ap, fmt);
+    int r = vswprintf(buf, n, fmt, ap);
+    va_end(ap); return r;
+}
+
+/* ---- 64-bit time spellings (our time_t already covers the range) ---- */
+long long _time64(long long *t)                     { time_t r = time(NULL); if (t) *t = (long long)r; return (long long)r; }
+struct tm *_gmtime64(const long long *t)            { time_t tt = (time_t)*t; return gmtime(&tt); }
+struct tm *_localtime64(const long long *t)         { time_t tt = (time_t)*t; return localtime(&tt); }
+int _localtime64_s(struct tm *tm, const long long *t) { if (!tm || !t) return EINVAL; time_t tt = (time_t)*t; struct tm *r = localtime(&tt); if (!r) return EINVAL; *tm = *r; return 0; }
+void _strdate(char *buf) { time_t t = time(NULL); struct tm *m = localtime(&t); if (m) strftime(buf, 9, "%m/%d/%y", m); else buf[0] = 0; }
+void _strtime(char *buf) { time_t t = time(NULL); struct tm *m = localtime(&t); if (m) strftime(buf, 9, "%H:%M:%S", m); else buf[0] = 0; }
+
+/* ---- MS multibyte (SBCS -- __MB_CAPABLE is off, so a byte is a character) ---- */
+size_t _mbstrlen(const char *s)                                    { return strlen(s); }
+unsigned char *_mbsnbcpy(unsigned char *dst, const unsigned char *src, size_t n) {
+    size_t i = 0; for (; i < n && src[i]; ++i) dst[i] = src[i]; if (i < n) dst[i] = 0; return dst;
+}
+unsigned char *_mbsnbcat(unsigned char *dst, const unsigned char *src, size_t n) {
+    size_t len = strlen((char *)dst); size_t i = 0;
+    for (; i < n && src[i]; ++i) dst[len + i] = src[i]; dst[len + i] = 0; return dst;
+}
+
+/* ---- FILE helpers ---- */
+FILE *_fsopen(const char *name, const char *mode, int shflag) { (void)shflag; return fopen(name, mode); }
+static FILE *rxdk_wfopen(const wchar_t *path, const wchar_t *mode) {
+    char p[512], m[16];
+    if (wcstombs(p, path, sizeof p) == (size_t)-1) return NULL;
+    if (wcstombs(m, mode, sizeof m) == (size_t)-1) return NULL;
+    return fopen(p, m);
+}
+FILE *_wfopen(const wchar_t *path, const wchar_t *mode)              { return rxdk_wfopen(path, mode); }
+FILE *_wfsopen(const wchar_t *path, const wchar_t *mode, int sh)    { (void)sh; return rxdk_wfopen(path, mode); }
+int _wfopen_s(FILE **pf, const wchar_t *path, const wchar_t *mode)  { if (!pf) return EINVAL; *pf = rxdk_wfopen(path, mode); return *pf ? 0 : errno; }
+int _fseeki64(FILE *f, long long off, int origin)                   { return fseek(f, (long)off, origin); }  /* files are < 2GB */
+void _lock_file(FILE *f)   { (void)f; }   /* stdio locking: single flow here */
+void _unlock_file(FILE *f) { (void)f; }
+
+/* ---- aligned allocation (matched pair; base pointer stashed below block) ---- */
+void *_aligned_malloc(size_t size, size_t align) {
+    if (align < sizeof(void *)) align = sizeof(void *);
+    void *raw = malloc(size + align + sizeof(void *));
+    if (!raw) return NULL;
+    uintptr_t a = ((uintptr_t)raw + sizeof(void *) + (align - 1)) & ~(uintptr_t)(align - 1);
+    ((void **)a)[-1] = raw;
+    return (void *)a;
+}
+void _aligned_free(void *p) { if (p) free(((void **)p)[-1]); }
+
+/* ---- context-passing qsort (single flow: stash the comparator) ---- */
+static int (*g_qs_cmp)(void *, const void *, const void *);
+static void *g_qs_ctx;
+static int rxdk_qs_tramp(const void *a, const void *b) { return g_qs_cmp(g_qs_ctx, a, b); }
+void qsort_s(void *base, size_t num, size_t size,
+             int (*cmp)(void *, const void *, const void *), void *ctx) {
+    g_qs_cmp = cmp; g_qs_ctx = ctx;
+    qsort(base, num, size, rxdk_qs_tramp);
+}
+
+/* ---- misc ---- */
+char *_gcvt(double v, int ndig, char *buf) { snprintf(buf, (size_t)ndig + 8, "%.*g", ndig, v); return buf; }
+_Noreturn void _invoke_watson(const wchar_t *e, const wchar_t *f, const wchar_t *fi, unsigned l, uintptr_t r) {
+    (void)e; (void)f; (void)fi; (void)l; (void)r; abort();
+}
+/* _isctype(c, mask): test an int against the MS <ctype.h> classification bits. */
+#define _MS_UPPER 0x1
+#define _MS_LOWER 0x2
+#define _MS_DIGIT 0x4
+#define _MS_SPACE 0x8
+#define _MS_PUNCT 0x10
+#define _MS_CONTROL 0x20
+#define _MS_BLANK 0x40
+#define _MS_HEX 0x80
+int _isctype(int c, int mask) {
+    int r = 0;
+    if (isupper(c))  r |= _MS_UPPER;
+    if (islower(c))  r |= _MS_LOWER;
+    if (isdigit(c))  r |= _MS_DIGIT;
+    if (isspace(c))  r |= _MS_SPACE;
+    if (ispunct(c))  r |= _MS_PUNCT;
+    if (iscntrl(c))  r |= _MS_CONTROL;
+    if (c == ' ' || c == '\t') r |= _MS_BLANK;
+    if (isxdigit(c)) r |= _MS_HEX;
+    return r & mask;
+}
