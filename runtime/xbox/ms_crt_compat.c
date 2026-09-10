@@ -470,6 +470,12 @@ void qsort_s(void *base, size_t num, size_t size,
 }
 
 /* ---- misc ---- */
+/* _HUGE: MS CRT's HUGE_VAL data global (used by math error paths / <float.h>). */
+double _HUGE = __builtin_huge_val();
+/* MS _tolower/_toupper: the case-mappers (map to the standard ones -- close
+   enough; MS's are the unchecked fast forms). */
+int _tolower(int c) { return tolower(c); }
+int _toupper(int c) { return toupper(c); }
 char *_gcvt(double v, int ndig, char *buf) { snprintf(buf, (size_t)ndig + 8, "%.*g", ndig, v); return buf; }
 _Noreturn void _invoke_watson(const wchar_t *e, const wchar_t *f, const wchar_t *fi, unsigned l, uintptr_t r) {
     (void)e; (void)f; (void)fi; (void)l; (void)r; abort();

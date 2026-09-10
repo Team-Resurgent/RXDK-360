@@ -145,6 +145,9 @@ int main(void) {
     CHECK(_isctype('A', 0x1 /*_UPPER*/) && !_isctype('a', 0x1), "_isctype _UPPER");
     CHECK(_isctype('7', 0x4 /*_DIGIT*/) != 0, "_isctype _DIGIT");
     CHECK(_time64(NULL) > 0, "_time64 returns a clock value");
+    { extern double _HUGE; CHECK(_HUGE > 1e300 && !_finite(_HUGE), "_HUGE is HUGE_VAL"); }
+    { extern int _tolower(int); extern int _toupper(int);
+      CHECK(_tolower('Q') == 'q' && _toupper('q') == 'Q', "_tolower/_toupper"); }
 
     /* ---- harder C: _beginthreadex (real kernel thread) ---- */
     { int val = 0x1234; unsigned tid = 0;
