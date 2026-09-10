@@ -386,3 +386,74 @@ ordering correctness is the remaining hard work.
 
 This does **not** close vcomp by itself: vcomp additionally needs the full MS STL
 (basic_string/iostream/locale), a separate MS-STL object-reuse effort.
+
+---
+
+## RESOLVED — catch-transfer complete + verified (this increment)
+
+The catch-transfer is done and proven end-to-end, and the on-HW path in the
+clean-room runtime is implemented against the **confirmed** kernel ABI.
+
+**ABI confirmation (XDK `winnt.h`/`excpt.h`, `xboxkrnl.lib`).** The reverse-
+engineered layout was exact: `RUNTIME_FUNCTION == IMAGE_CE_RUNTIME_FUNCTION_ENTRY`
+= `FuncStart` + `PrologLen:8 | FuncLen:22 | ThirtyTwoBit:1 | ExceptionFlag:1`;
+Xenon `CONTEXT` = `Msr, Iar, Lr, Ctr, Gpr0..Gpr31 (64-bit), Cr, Xer, ...`. And the
+kernel **exports the full NT unwinder**: `RtlLookupFunctionEntry`,
+`RtlVirtualUnwind`, `RtlUnwind` / `RtlUnwind2`, `RtlCaptureContext`,
+`RtlImageNtHeader`, `RtlImageDirectoryEntryToData`. So the shipped cl.exe libs are
+dispatched by the real kernel exactly as on Windows — **no hand-rolled unwinder,
+no ABI workaround** is needed; our clean-room `__CxxFrameHandler` just plugs in.
+
+**Frame math (reverse-engineered from a real object, tests/eh/tc2.obj).**
+`rxdk_eh_test2` prologue is `mflr r12; stw r12,-8(r1); std r31,-0x10(r1);
+addi r31,r1,-0x70; stwu r1,-0x70(r1)` ⇒ **r31 == working sp**, and the funclets do
+`addi r31, r12, -framesize`. Therefore the **establisher frame passed to funclets
+in r12 is the function's INCOMING sp** = the catching frame's back-chain word
+`*(sp)`, NOT `sp`. The catch object sits at `establisher + dispCatchObj`
+(== `r31 + 0x54` here). The current EH state comes from the **ip2state map looked
+up at the call site (`ControlPc - 1`)**, not the return address — the off-by-one
+that otherwise skips the destructor state.
+
+**xenia reference dispatcher (`xboxkrnl_eh.cc`, committed).** Faithful two-pass:
+walk the back-chain to the first frame with a C++ handler; match the type; on a
+match set `est = *(sp)`, run the UnwindMap cleanup funclets from `curState` down to
+`tryLow-1` with `r12 = est` (destructors run BEFORE the catch), build the catch
+object, run the catch funclet, then transfer to its continuation IP with
+`r1 = r31 = sp` via `XThread::Reenter`. Verified:
+
+    tc.xex  -> before-throw / caught-int 1234 / after-catch
+    tc2.xex -> before-throw / dtor-7 / caught-int 1234 / after-catch   (single, ordered)
+
+**Clean-room HW runtime (`runtime/xbox/msvc_eh.c`, committed).** `__CxxFrameHandler`
+now implements the same algorithm against the real kernel unwinder: pass-1 match
+gated by ip2state; build catch object; `RtlUnwind2(est, 0, ...)` to unwind inner
+frames; `rxdk_frame_unwind` for this frame's cleanup to the try state; run the
+catch funclet; `RtlUnwind2(est, cont, ...)` to resume. Pass-2 (`EXCEPTION_UNWINDING`)
+runs this frame's cleanup funclets. The single asm primitive
+`rxdk_eh_call_funclet` invokes a funclet with `r12 = establisher` (codegen
+verified: `mr r12,est; mtctr r11; bctrl`). Imports resolve against a title's
+normal libs: `RaiseException` ← xapilib, `RtlUnwind2`/`RtlCaptureContext`/`KeTls*`
+← xboxkrnl. libc.a builds (756 objs); stdlib suite 54/54 · 800/800.
+**Remaining:** on-metal validation of the `RtlUnwind2` re-entry/continuation
+handshake (xenia structurally bypasses the guest handler, so this last step is
+hardware-only).
+
+## Dynamic-runtime direction (PPC DLL / dlopen) — design note
+
+The 360 has kernel-native dynamic modules: a XEX may carry an export table, and
+`XexLoadImage`/`XexGetProcedureAddress`/`XexUnloadImage` are dlopen/dlsym/dlclose.
+This is the faithful version of PrometheOS's hand-rolled PE loader (needed only on
+the OG Xbox). Implications recorded for later:
+- A `dlopen`/`dlsym` shim over `Xex*` upgrades module-backed POSIX stubs to real
+  calls; it does NOT help static `.lib` archives (link-time only).
+- vcomp/129: DLL-ifying does not erase the 186 MS-STL imports, but a *self-
+  contained* `vcomp.xex` (STL linked in once) lets titles import only `omp_*`
+  and never see `std::` — the clean path to 129/129.
+- Our libc/libc++ could ship as a XEX-DLL (dynamic CRT) + an ordinal import lib;
+  C++ EH stays correct across the boundary because each module registers its own
+  `.pdata` (elf2xex emits it) and the kernel dispatcher walks whichever covers the
+  faulting PC. The catch-transfer above is unchanged by static-vs-DLL.
+- `PE_Run` plugin model (call an entry, it runs, host resumes): a straight-line
+  entry returns naturally; an `exit()`-calling plugin resumes cleanly because we
+  own `exit()` — a hosted mode can `longjmp` back to a host `setjmp` instead of
+  `HalReturnToFirmware`.
