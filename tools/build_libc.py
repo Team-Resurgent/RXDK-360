@@ -101,6 +101,7 @@ XBOX_GLUE = [
     os.path.join(ROOT, "runtime", "xbox", "clock.c"),              # clock_gettime over KeQuerySystemTime (for <chrono>)
     os.path.join(ROOT, "runtime", "xbox", "sysconf.c"),            # sysconf(_SC_NPROCESSORS_ONLN)=6 -> std::thread::hardware_concurrency
     os.path.join(ROOT, "runtime", "xbox", "c23_alloc.c"),          # C23 free_sized/free_aligned_sized
+    os.path.join(ROOT, "runtime", "xbox", "atomic64.c"),           # __atomic_*_8 (64-bit atomics: <barrier>/<semaphore>/atomic-wait)
     os.path.join(ROOT, "runtime", "xbox", "setjmp.S"),             # setjmp/longjmp (PPC callee-saved GPR/FPR/LR/CR/SP)
 ]
 

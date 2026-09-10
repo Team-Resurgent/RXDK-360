@@ -6,6 +6,7 @@
 // what non-throwing C++23 needs.
 //
 #include <stddef.h>
+#include <stdint.h>
 
 extern "C" void *malloc(size_t);
 extern "C" void free(void *);
@@ -18,6 +19,32 @@ void operator delete(void *p) noexcept { free(p); }
 void operator delete[](void *p) noexcept { free(p); }
 void operator delete(void *p, size_t) noexcept { free(p); }
 void operator delete[](void *p, size_t) noexcept { free(p); }
+
+// ---- over-aligned operator new / delete (C++17) ----------------------------
+// The console-pool malloc is 16-aligned; an over-aligned request (e.g. the
+// cache-line-aligned state <barrier>/<atomic> allocate) needs more. Over-
+// allocate and align by hand, stashing the original pointer just below the
+// aligned block so the matching delete can recover it. align_val_t is declared
+// locally to avoid pulling <new> into this freestanding glue.
+namespace std { enum class align_val_t : size_t {}; }
+
+static void *rxdk_aligned_new(size_t n, size_t align) {
+    if (align < sizeof(void *)) align = sizeof(void *);
+    size_t total = (n ? n : 1) + align + sizeof(void *);
+    void *raw = malloc(total);
+    if (!raw) return 0;
+    uintptr_t a = ((uintptr_t)raw + sizeof(void *) + (align - 1)) & ~(uintptr_t)(align - 1);
+    ((void **)a)[-1] = raw;
+    return (void *)a;
+}
+static void rxdk_aligned_delete(void *p) { if (p) free(((void **)p)[-1]); }
+
+void *operator new(size_t n, std::align_val_t al) { return rxdk_aligned_new(n, (size_t)al); }
+void *operator new[](size_t n, std::align_val_t al) { return rxdk_aligned_new(n, (size_t)al); }
+void operator delete(void *p, std::align_val_t) noexcept { rxdk_aligned_delete(p); }
+void operator delete[](void *p, std::align_val_t) noexcept { rxdk_aligned_delete(p); }
+void operator delete(void *p, size_t, std::align_val_t) noexcept { rxdk_aligned_delete(p); }
+void operator delete[](void *p, size_t, std::align_val_t) noexcept { rxdk_aligned_delete(p); }
 
 // ---- atexit / static-destructor table (file scope, internal linkage) -------
 

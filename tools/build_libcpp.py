@@ -97,6 +97,10 @@ LIBCXX_SRCS = [
     "condition_variable.cpp", "condition_variable_destructor.cpp",
     "shared_mutex.cpp", "system_error.cpp", "verbose_abort.cpp",
     "future.cpp",   # __assoc_sub_state, pulled by thread.cpp's __thread_struct
+    "atomic.cpp",   # atomic wait/notify (<latch>/<semaphore>/jthread, atomic::wait);
+                    # no futex on 360, so its generic path rides on our cv/mutex
+    "barrier.cpp",  # std::barrier algorithm base (out-of-line)
+    "print.cpp",    # std::print/println (vprint_unicode/nonunicode -> stdout)
     # The out-of-line STL bits <system_error>/<future>/<thread> drag in:
     "stdexcept.cpp",   # logic_error/runtime_error ctors + their typeinfo/vtables
     "string.cpp",      # basic_string out-of-line members (what the errors carry)
