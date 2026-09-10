@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <wchar.h>
 #include <stdlib.h>
@@ -61,6 +62,7 @@ extern unsigned NtWaitForSingleObjectEx(unsigned handle, unsigned mode, unsigned
 extern unsigned NtClose(unsigned handle);
 extern int sscanf_s(const char *, const char *, ...);
 extern int swscanf_s(const wchar_t *, const wchar_t *, ...);
+extern FILE *__iob_func(void);
 
 static volatile int g_thread_ran;
 static unsigned thread_body(void *arg) { g_thread_ran = *(int *)arg; return 0; }
@@ -175,6 +177,14 @@ int main(void) {
     { int wa = 0; wchar_t ws[8];
       int n = swscanf_s(L"7 tag", L"%d %s", &wa, ws, (unsigned)(sizeof ws / sizeof *ws));
       CHECK(n == 2 && wa == 7 && wcscmp(ws, L"tag") == 0, "swscanf_s int + wide string"); }
+
+    /* ---- harder C: __iob_func (MS stdin/stdout/stderr, 32-byte _iobuf stride) ---- */
+    { char *base = (char *)__iob_func();
+      CHECK(base != NULL, "__iob_func returns the iob array");
+      FILE *ms_out = (FILE *)(base + 32 * 1);        /* MS stride: &_iob[1] == stdout */
+      int r = fputs("", ms_out);                     /* delegates to our real stdout */
+      CHECK(r >= 0, "__iob_func()[1] is a usable stream (writes via our stdout)");
+      CHECK(fflush(ms_out) == 0, "__iob_func stdout slot flushes"); }
 
     CHECK_DONE("mscompat");
     return 0;
