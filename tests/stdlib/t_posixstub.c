@@ -22,12 +22,13 @@ int main(void) {
     errno = 0;
     CHECK(fork() == -1 && errno == ENOSYS, "fork -> ENOSYS");
     errno = 0;
-    CHECK(kill(1, 0) == -1, "kill -> error");
+    CHECK(kill(999, 0) == -1, "kill(other pid) -> error (no such process)");
     CHECK(pause() == -1, "pause returns (does not hang)");
-    CHECK_EQI((long)alarm(5), 0, "alarm -> 0");
+    CHECK_EQI((long)alarm(0), 0, "alarm(0) -> 0 (nothing pending)");
 
-    /* signal sets are real bitmasks; handler install is a no-op */
-    CHECK(signal(SIGINT, SIG_DFL) == SIG_ERR, "signal -> SIG_ERR");
+    /* signal registration is real (cooperative) -- returns the previous
+       disposition, not SIG_ERR (full behaviour is exercised in t_signal) */
+    CHECK(signal(SIGINT, SIG_DFL) != SIG_ERR, "signal installs (returns previous)");
     sigset_t set;
     sigemptyset(&set);
     sigaddset(&set, SIGINT);
@@ -52,9 +53,11 @@ int main(void) {
     errno = 0;
     CHECK(tcgetattr(1, &t) == -1 && errno == ENOTTY, "tcgetattr -> ENOTTY");
 
-    /* interval timers */
+    /* interval timers are real for ITIMER_REAL (exercised in t_signal); a
+       fresh getitimer reports a disarmed timer */
     struct itimerval it;
-    CHECK(getitimer(ITIMER_REAL, &it) == -1, "getitimer -> -1");
+    CHECK(getitimer(ITIMER_REAL, &it) == 0 && it.it_value.tv_sec == 0 && it.it_value.tv_usec == 0,
+          "getitimer -> 0, disarmed");
 
     /* permissions: no-op success on the permission-less volumes */
     CHECK(chmod("cache:/whatever", 0644) == 0, "chmod -> 0 (no-op)");

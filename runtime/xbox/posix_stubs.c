@@ -34,9 +34,8 @@ gid_t getegid(void) { return 0; }
 /* ---- no process model --------------------------------------------------- */
 pid_t fork(void)                             { errno = ENOSYS; return -1; }
 pid_t waitpid(pid_t pid, int *st, int opts)  { (void)pid; (void)st; (void)opts; errno = ECHILD; return -1; }
-int   kill(pid_t pid, int sig)               { (void)pid; (void)sig; errno = EPERM; return -1; }
-unsigned int alarm(unsigned int s)           { (void)s; return 0; }   /* no timers -> never fires */
 int   pause(void)                            { errno = ENOSYS; return -1; } /* nothing to wake us */
+/* kill/alarm are real (cooperative) in signals.c. */
 
 extern void HalReturnToFirmware(unsigned int);
 _Noreturn void _exit(int status) {
@@ -45,32 +44,14 @@ _Noreturn void _exit(int status) {
     for (;;) {}
 }
 
-/* ---- signals: the 360 delivers none. The sigset_t set helpers (sigemptyset/
-   sigaddset/sigismember/...) are already real inline bitmask ops in picolibc's
-   <signal.h>, so they are not redefined here. Installing/masking handlers is a
-   no-op that reports there is nothing to do; raise(SIGABRT) still aborts,
-   matching the library. -------------------------------------------------------- */
-extern void abort(void);
-
-_sig_func_ptr signal(int sig, _sig_func_ptr handler) {
-    (void)sig; (void)handler;
-    errno = ENOSYS;
-    return SIG_ERR;
-}
-int sigaction(int sig, const struct sigaction *act, struct sigaction *old) {
-    (void)sig; (void)act; (void)old;
-    errno = ENOSYS;
-    return -1;
-}
+/* ---- signals: signal/sigaction/raise/kill are a cooperative facility in
+   signals.c (handlers run synchronously; no async pre-emption). The sigset_t
+   helpers are picolibc inline macros. Only mask/block state is a no-op here --
+   nothing is ever blocked because nothing is asynchronously delivered. -------- */
 int sigprocmask(int how, const sigset_t *set, sigset_t *old) {
     (void)how; (void)set;
     if (old) *old = 0;               /* nothing is ever blocked */
     return 0;
-}
-int raise(int sig) {
-    if (sig == SIGABRT)
-        abort();
-    return 0;                        /* no delivery; treated as ignored */
 }
 
 /* ---- virtual memory: no mapping API. mprotect succeeds (title memory is
@@ -89,11 +70,8 @@ void *sbrk(intptr_t incr)                         { (void)incr; errno = ENOMEM; 
 int tcgetattr(int fd, struct termios *t)               { (void)fd; (void)t; errno = ENOTTY; return -1; }
 int tcsetattr(int fd, int act, const struct termios *t){ (void)fd; (void)act; (void)t; errno = ENOTTY; return -1; }
 
-/* ---- interval timers: none --------------------------------------------- */
-int setitimer(int which, const struct itimerval *n, struct itimerval *o) {
-    (void)which; (void)n; (void)o; errno = ENOSYS; return -1;
-}
-int getitimer(int which, struct itimerval *o) { (void)which; (void)o; errno = ENOSYS; return -1; }
+/* ---- interval timers: setitimer/getitimer(ITIMER_REAL) are real in signals.c
+   (a helper thread fires the SIGALRM handler). ---------------------------- */
 
 /* ---- permissions: FATX/GDFX have none, so changes "succeed" as no-ops --- */
 int    chmod(const char *path, mode_t mode)             { (void)path; (void)mode; return 0; }
