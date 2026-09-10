@@ -189,6 +189,12 @@ int main(void) {
       CHECK(r >= 0, "__iob_func()[1] is a usable stream (writes via our stdout)");
       CHECK(fflush(ms_out) == 0, "__iob_func stdout slot flushes"); }
 
+    /* ---- MSVC-EH stub personality (for shipped libs that never throw) ---- */
+    { extern int __CxxFrameHandler(void *, void *, void *, void *);
+      CHECK(__CxxFrameHandler(0, 0, 0, 0) == 1, "__CxxFrameHandler -> ExceptionContinueSearch");
+      extern void *ms_lockit_ctor(void *, int) __asm__("??0_Lockit@std@@QAA@H@Z");
+      char obj; CHECK(ms_lockit_ctor(&obj, 0) == &obj, "std::_Lockit ctor is a no-op returning this"); }
+
     CHECK_DONE("mscompat");
     return 0;
 }
