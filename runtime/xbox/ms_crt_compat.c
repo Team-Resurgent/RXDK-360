@@ -104,6 +104,14 @@ void _cexit(void) { __rxdk_run_atexit(); }
 /* the linker marker cl.exe emits into any object that uses floating point */
 int _fltused = 0x9875;
 
+/* MS CRT atexit-table bounds (xapilib and the MS CRT init reference these). Our
+   real teardown is __cxa_atexit + __rxdk_run_atexit (crt_start.c), not this
+   table, so define them as empty bounds for link-completeness; nothing walks
+   them. A C library registering via _onexit would go through our path instead. */
+typedef void (*_PVFV)(void);
+_PVFV *__onexitbegin = (_PVFV *)0;
+_PVFV *__onexitend   = (_PVFV *)0;
+
 /* MS internal block move (dst, src, count). Its libcMT member also defines
    memcpy, which would collide with ours, so provide it here over memmove
    (overlap-safe -- the conservative choice for an internal block mover). */
