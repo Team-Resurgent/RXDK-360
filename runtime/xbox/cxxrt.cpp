@@ -110,21 +110,11 @@ rxdk_PNH rxdk_set_new_handler(rxdk_PNH h) { rxdk_PNH o = g_ms_new_handler; g_ms_
 // libs never originate. A lib that genuinely throws (xav/vcomp) will hit the
 // loud abort until the real .pdata unwinder lands. This is deliberately separate
 // from our Itanium EH -- no MSVC unwind is performed.
+// __CxxFrameHandler / _CxxThrowException are now provided for real by the
+// clean-room MSVC-EH runtime in runtime/xbox/msvc_eh.c (the "replacement obj"):
+// the shipped MS libs reference them as externals and resolve to that object.
 extern "C" {
 extern void abort(void);
-
-// EXCEPTION_DISPOSITION __CxxFrameHandler(EXCEPTION_RECORD*, EstablisherFrame,
-//                                         CONTEXT*, DISPATCHER_CONTEXT*)
-// 1 == ExceptionContinueSearch: "not handled in this frame, keep unwinding".
-int __CxxFrameHandler(void *rec, void *frame, void *ctx, void *disp) {
-    (void)rec; (void)frame; (void)ctx; (void)disp;
-    return 1;
-}
-// A real throw would need the MSVC unwinder; fail loud rather than corrupt.
-void _CxxThrowException(void *object, void *throwinfo) {
-    (void)object; (void)throwinfo;
-    abort();
-}
 // The scalar-deleting destructor slot of the MS type_info vtable (never called
 // unless RTTI is used at runtime, which these libs do not do).
 static void rxdk_ti_dtor(void) {}
