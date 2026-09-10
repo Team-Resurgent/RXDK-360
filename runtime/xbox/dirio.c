@@ -116,6 +116,17 @@ static NTSTATUS nt_open(const char *path, ULONG access, ULONG disp,
 
 /* ---- directory enumeration ------------------------------------------------ */
 
+/* telldir/seekdir position, tracked per open directory. Our readdir enumerates
+   with a restart-then-continue kernel query and the (picolibc) DIR struct has no
+   spare field, so the logical entry index is kept in a side table keyed by the
+   descriptor (opendir installs one in the shared fd table, range [3,32)). */
+#define RXDK_DIRPOS_MAX 32
+static long g_dirpos[RXDK_DIRPOS_MAX];
+
+static void dirpos_reset(int fd) {
+    if (fd >= 0 && fd < RXDK_DIRPOS_MAX) g_dirpos[fd] = 0;
+}
+
 DIR *opendir(const char *path) {
     HANDLE h;
     int fd;
@@ -129,6 +140,7 @@ DIR *opendir(const char *path) {
     d = (DIR *)malloc(sizeof(DIR));
     if (!d) { close(fd); errno = ENOMEM; return NULL; }
     d->fd = fd; d->offset = 0; d->count = 0;
+    dirpos_reset(fd);
     return d;
 }
 
@@ -138,6 +150,7 @@ DIR *fdopendir(int fd) {
     d = (DIR *)malloc(sizeof(DIR));
     if (!d) { errno = ENOMEM; return NULL; }
     d->fd = fd; d->offset = 0; d->count = 0;
+    dirpos_reset(fd);
     return d;
 }
 
@@ -182,6 +195,7 @@ struct dirent *readdir(DIR *d) {
 
     if (fdi->NextEntryOffset) d->offset += fdi->NextEntryOffset;
     else                      d->offset = d->count;
+    if (d->fd >= 0 && d->fd < RXDK_DIRPOS_MAX) g_dirpos[d->fd]++;
     return &d->dirent;
 }
 
@@ -193,7 +207,22 @@ int closedir(DIR *d) {
 }
 
 int dirfd(DIR *d) { if (!d) { errno = EINVAL; return -1; } return d->fd; }
-void rewinddir(DIR *d) { if (d) { d->offset = 0; d->count = 0; } }
+void rewinddir(DIR *d) { if (d) { d->offset = 0; d->count = 0; dirpos_reset(d->fd); } }
+
+/* telldir returns the index of the entry readdir will return next; seekdir
+   restores it by rewinding and re-reading (our enumeration has no cheaper
+   absolute-seek, but this is exact). */
+long telldir(DIR *d) {
+    if (!d || d->fd < 0 || d->fd >= RXDK_DIRPOS_MAX) { errno = EBADF; return -1; }
+    return g_dirpos[d->fd];
+}
+
+void seekdir(DIR *d, long loc) {
+    if (!d || loc < 0 || d->fd < 0 || d->fd >= RXDK_DIRPOS_MAX) return;
+    rewinddir(d);
+    while (g_dirpos[d->fd] < loc && readdir(d) != NULL)
+        ;                               /* readdir advances g_dirpos */
+}
 
 /* ---- rename / truncate ---------------------------------------------------- */
 

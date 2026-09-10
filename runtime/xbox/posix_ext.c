@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 
 /* ---- sleep family: all wait via the C11 thread sleep (threads.c), which does
@@ -92,7 +93,55 @@ int access(const char *__path, int __amode)
     return 0;
 }
 
-/* basename/dirname are deferred: picolibc splits them across the GNU
-   (<string.h>, __gnu_basename, const arg) and XPG/POSIX (<libgen.h>,
-   __xpg_basename, in-place) variants, and defining the plain `basename` symbol
-   collides with the GNU macro. Revisit with the right __asm__ alias if needed. */
+/* ---- mkdtemp / mkostemp: the temp-name makers picolibc's mktemp.c omits
+   (it ships mkstemp/mkstemps/mkostemps but not these two). Both fill the six
+   trailing 'X's with random [a-z0-9] and retry on collision -- mkdtemp creates
+   a directory, mkostemp an O_EXCL file with caller flags. ---------------------- */
+extern long random(void);
+
+static int rxdk_fill_template(char *tmpl) {
+    static const char cset[] = "abcdefghijklmnopqrstuvwxyz0123456789";
+    size_t len = strlen(tmpl);
+    char *x;
+    int i;
+    if (len < 6) { errno = EINVAL; return -1; }
+    x = tmpl + len - 6;
+    for (i = 0; i < 6; i++)
+        if (x[i] != 'X') { errno = EINVAL; return -1; }
+    for (i = 0; i < 6; i++)
+        x[i] = cset[(unsigned long)random() % 36];
+    return 0;
+}
+
+char *mkdtemp(char *tmpl) {
+    int attempt;
+    if (rxdk_fill_template(tmpl) != 0)
+        return NULL;
+    for (attempt = 0; attempt < 128; attempt++) {
+        if (mkdir(tmpl, 0700) == 0)
+            return tmpl;
+        if (errno != EEXIST)
+            return NULL;
+        if (rxdk_fill_template(tmpl) != 0)
+            return NULL;
+    }
+    errno = EEXIST;
+    return NULL;
+}
+
+int mkostemp(char *tmpl, int flags) {
+    int attempt, fd;
+    if (rxdk_fill_template(tmpl) != 0)
+        return -1;
+    for (attempt = 0; attempt < 128; attempt++) {
+        fd = open(tmpl, O_CREAT | O_EXCL | O_RDWR | flags, 0600);
+        if (fd >= 0)
+            return fd;
+        if (errno != EEXIST)
+            return -1;
+        if (rxdk_fill_template(tmpl) != 0)
+            return -1;
+    }
+    errno = EEXIST;
+    return -1;
+}

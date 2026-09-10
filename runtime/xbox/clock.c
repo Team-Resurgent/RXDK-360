@@ -107,6 +107,31 @@ int clock_getres(clockid_t clk_id, struct timespec *tp)
     return 0;
 }
 
+/* clock_nanosleep: relative sleep (flags 0) forwards to nanosleep; an absolute
+   deadline (TIMER_ABSTIME) is turned into the remaining interval off the same
+   clock. Returns 0 or a positive errno (it does NOT set errno), per POSIX. */
+extern int nanosleep(const struct timespec *req, struct timespec *rem);
+
+int clock_nanosleep(clockid_t clk_id, int flags,
+                    const struct timespec *rqtp, struct timespec *rmtp)
+{
+    if (!rqtp || rqtp->tv_nsec < 0 || rqtp->tv_nsec >= 1000000000L)
+        return EINVAL;
+
+    if (flags & TIMER_ABSTIME) {
+        struct timespec now, delta;
+        clock_gettime(clk_id, &now);
+        delta.tv_sec = rqtp->tv_sec - now.tv_sec;
+        delta.tv_nsec = rqtp->tv_nsec - now.tv_nsec;
+        if (delta.tv_nsec < 0) { delta.tv_nsec += 1000000000L; delta.tv_sec--; }
+        if (delta.tv_sec < 0 || (delta.tv_sec == 0 && delta.tv_nsec <= 0))
+            return 0;                       /* deadline already passed */
+        return nanosleep(&delta, NULL) == 0 ? 0 : errno;  /* abs sleep: no remainder */
+    }
+
+    return nanosleep(rqtp, rmtp) == 0 ? 0 : errno;
+}
+
 clock_t clock(void)
 {
     unsigned long long freq = KeQueryPerformanceFrequency();
