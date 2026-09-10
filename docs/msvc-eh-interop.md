@@ -294,6 +294,44 @@ back-chain + fixed LR slot suffices. So `RtlLookupFunctionEntry` +
 Draft (builds + runs, increments 1-2 verified) in
 `xenia:src/xenia/kernel/xboxkrnl/xboxkrnl_eh.cc`.
 
+### INCREMENT 3-4 VERIFIED -- CATCH RUNS CORRECTLY (test bed PASSES)
+
+The dispatcher now catches for real. Full live output on the test bed:
+
+    [T] before-throw
+    [T] caught-int 1234     <-- catch funclet ran with the correct value
+    [T] after-catch
+    [T] ALLDONE
+
+End-to-end host-side dispatch working in xenia (`xboxkrnl_eh.cc`):
+1. RtlLookupFunctionEntry -- scan the exe .pdata for the throw pc.
+2. Frame walk -- back-chain (`caller_sp=*sp`) + LR@`CallerSP-8` up to the exc=1
+   frame.
+3. Parse FuncInfo/TryBlockMap/HandlerType; match the thrown CatchableType(s)
+   against each catch's type_info (address-equal within a module; pType==0 =
+   catch(...)).
+4. Copy the thrown object to `sp + dispCatchObj`.
+5. ⭐ Run the catch funclet with the establisher frame pointer **in r12** (the
+   MSVC PPC funclet does `addi r31,r12,-0x70; lwz r4,0x50(r31)` == reads the
+   catch object at `[r12 + dispCatchObj]`). `ctx->r[12] = sp` + the object at
+   `sp+dispCatchObj` makes it self-consistent. `processor()->Execute` runs it;
+   it returns the continuation IP.
+
+### Remaining refinements (generality; test bed already passes)
+
+- **Honor the continuation IP:** currently the funclet runs via Execute and the
+  stub-return falls through into _CxxThrowException, which returns to just past
+  the try -- which happens to equal the continuation here, so the observable
+  output is correct. For general programs, explicitly resume the guest at the
+  funclet's returned IP with SP=establisher (needs xenia's shim-return redirect).
+- **Second-pass cleanup/unwind:** run destructor funclets (UnwindMap) between the
+  throw state and the catch; multiple/nested try blocks; state from the
+  ip2state map rather than assuming the single try.
+- **Outer-frame catches:** the register-accurate CONTEXT for handlers that read
+  more than the catch object (back-chain gives SP/PC; add nonvol restore).
+- Register RtlLookupFunctionEntry/RtlVirtualUnwind/RtlUnwind in xboxkrnl_table.inc
+  if guest code calls them directly.
+
 ## Open risks
 
 - Exact XEX ↔ PE-exception-directory mechanism on the 360 loader (step 1) — the
