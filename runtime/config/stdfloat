@@ -1,0 +1,32 @@
+// -*- C++ -*-
+/*
+ * 2026 - Team Resurgent
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Part of RXDK - see LICENSE.md for the full GNU GPL v3.
+ */
+
+/*
+ * <stdfloat> (C++23, 17.4) -- fixed-width / extended floating-point types.
+ *
+ * Every std::floatN_t / bfloat16_t is CONDITIONALLY SUPPORTED: an implementation
+ * defines std::floatX_t and __STDCPP_FLOAT_X_T__ only when the target actually
+ * provides that ISO/IEC 60559 interchange type as a DISTINCT type. The Xbox 360
+ * (PowerPC, via clang) supports none of them -- _Float16/_Float32/_Float64/
+ * _Float128/__bf16 are all "not supported on this target", and float/double are
+ * the ordinary (non-extended) types, so aliasing floatN_t to them would be
+ * non-conforming (floatN_t must be distinct). A platform with no extended
+ * floating-point types therefore has an <stdfloat> that declares nothing and
+ * defines none of the macros -- which is what this header is.
+ *
+ * The header still exists so `#include <stdfloat>` compiles; code that names
+ * std::float16_t & co. then fails to resolve the name, the intended result on a
+ * target without those types. RXDK supplies it (runtime/config is on the C++
+ * include path); if the libc++ snapshot later ships its own <stdfloat>, that one
+ * is found first (libcxx/include precedes runtime/config in the search order).
+ */
+#ifndef _RXDK_STDFLOAT
+#define _RXDK_STDFLOAT
+
+// Intentionally empty: no extended floating-point types on this target.
+
+#endif // _RXDK_STDFLOAT
