@@ -243,6 +243,57 @@ Remaining (the build-loop coding, marked TODO in the file):
 The same-frame catch (test bed) should resolve first with 1+2+4; multi-frame
 needs 3.
 
+### INCREMENT 1 VERIFIED (built + ran in xenia)
+
+The dispatcher was built into xenia (Ninja Multi-Config + MSVC, `xb build
+--config release --target xenia-app`; the RECURSIVE glob picks up the new file on
+reconfigure) and run against the test bed. With `--log_level=3` (Debug) it logs:
+
+    EH: throw pc=82016358 func@820162E8 prolog=3 len=32 exc=0
+
+So `LookupFunctionEntry` (the `.pdata` scan) + the RUNTIME_FUNCTION word decode
+WORK on a live throw. IMPORTANT correction it revealed: `pc = ctx->lr` at the
+RtlRaiseException shim points into **`_CxxThrowException`** (`exc=0`, no EH), not
+the throwing function -- the throw is NESTED 2 frames below the catch
+(RaiseException -> _CxxThrowException -> rxdk_eh_test). So `RtlVirtualUnwind` is
+required EVEN for a "same-frame" catch: unwind up from `_CxxThrowException`
+(decode its prolog to recover the caller SP + saved LR = return into
+rxdk_eh_test) until a frame with `exc=1` whose `__CxxFrameHandler` matches. The
+"same-frame resolves without RtlVirtualUnwind" note above was wrong.
+
+Build loop confirmed working (~2 min rebuild + run).
+
+### INCREMENT 2 VERIFIED (frame walk reaches the catching handler)
+
+The dispatcher now walks guest frames from the throw to the catching frame, live:
+
+    EH: frame 0 pc=82016358 func@820162E8 exc=0     (_CxxThrowException)
+    EH: frame 1 pc=820137CC func@82013760 exc=0     (throw helper)
+    EH: frame 2 pc=82010048 func@82010008 exc=1     (rxdk_eh_test)
+    EH: -> catching frame __CxxFrameHandler@820132D8 FuncInfo@82000584
+
+⭐ The MS-PPC unwind is simply the **back-chain** (`caller_sp = *sp`) with the
+**LR save slot at `CallerSP-8`** (`ret_pc = *(caller_sp - 8)`) -- CONFIRMED
+correct (reached the exc=1 frame in 2 hops; `[csp+4]`/`[sp+4]` were 0). So a full
+prolog-instruction decoder is NOT needed for standard framed functions -- the
+back-chain + fixed LR slot suffices. So `RtlLookupFunctionEntry` +
+`RtlVirtualUnwind` + catching-frame handler resolution all WORK.
+
+### Remaining (the final stretch)
+
+1. Marshal a guest `CONTEXT` (the establisher frame's register state) + a
+   `DISPATCHER_CONTEXT` (`{ControlPc, ImageBase, FunctionEntry, EstablisherFrame,
+   ContextRecord, LanguageHandler=__CxxFrameHandler, HandlerData=FuncInfo,
+   TargetIp}`) in guest scratch, then `processor()->Execute(thread_state,
+   handler, {record, establisher_frame, context, dispatcher}, 4)` -- the MSVC
+   __CxxFrameHandler does the type match against the FuncInfo try/catch tables.
+2. `RtlUnwind`: on a catch, the handler calls it -- run cleanup funclets, then set
+   the guest context (PC = catch funclet, SP = establisher) and resume there.
+   Needs the DISPATCHER_CONTEXT/CONTEXT MS layouts (RE next) + control transfer.
+
+Draft (builds + runs, increments 1-2 verified) in
+`xenia:src/xenia/kernel/xboxkrnl/xboxkrnl_eh.cc`.
+
 ## Open risks
 
 - Exact XEX ↔ PE-exception-directory mechanism on the 360 loader (step 1) — the
