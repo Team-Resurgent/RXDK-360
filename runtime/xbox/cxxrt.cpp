@@ -46,6 +46,61 @@ void operator delete[](void *p, std::align_val_t) noexcept { rxdk_aligned_delete
 void operator delete(void *p, size_t, std::align_val_t) noexcept { rxdk_aligned_delete(p); }
 void operator delete[](void *p, size_t, std::align_val_t) noexcept { rxdk_aligned_delete(p); }
 
+// ---- MSVC C++ ABI compat: operator new/delete + array ctor/dtor iterators ---
+// Shipped cl.exe-built XDK libs reference the MSVC-mangled operator new/delete
+// and the "eh vector" array-element iterators. Forward them to our Itanium ones
+// so those libs link against our runtime (47 XDK libs need only this set -- see
+// tools/lib_parity.py). Our operator new is malloc-backed and never throws, so
+// the nothrow form is the same call. The asm() labels carry the MSVC-mangled
+// names, which are not valid C++ identifiers. This is name aliasing only -- no
+// MSVC C++ EH/RTTI/STL ABI is involved (those libs are otherwise C-clean).
+extern "C++" {
+
+void *rxdk_msvc_new(size_t n) asm("??2@YAPAXI@Z");
+void *rxdk_msvc_new(size_t n) { return operator new(n); }
+
+void *rxdk_msvc_new_nothrow(size_t n, const void *) asm("??2@YAPAXIABUnothrow_t@std@@@Z");
+void *rxdk_msvc_new_nothrow(size_t n, const void *) { return operator new(n); }
+
+void *rxdk_msvc_newa(size_t n) asm("??_U@YAPAXI@Z");
+void *rxdk_msvc_newa(size_t n) { return operator new[](n); }
+
+void rxdk_msvc_del(void *p) asm("??3@YAXPAX@Z");
+void rxdk_msvc_del(void *p) { operator delete(p); }
+
+void rxdk_msvc_dela(void *p) asm("??_V@YAXPAX@Z");
+void rxdk_msvc_dela(void *p) { operator delete[](p); }
+
+// eh vector ctor/dtor iterators: construct/destruct `count` elements of `size`
+// bytes each. The MSVC versions also unwind already-built elements if a ctor
+// throws; this glue is -fno-exceptions, so they are plain loops -- matching how
+// the shipped (non-throwing) libs use them.
+void rxdk_ehvec_ctor(void *p, size_t size, int count,
+                     void (*ctor)(void *), void (*)(void *)) asm("??_L@YAXPAXIHP6AX0@Z1@Z");
+void rxdk_ehvec_ctor(void *p, size_t size, int count,
+                     void (*ctor)(void *), void (*)(void *)) {
+    char *e = (char *)p;
+    for (int i = 0; i < count; ++i, e += size) ctor(e);
+}
+
+void rxdk_ehvec_dtor(void *p, size_t size, int count,
+                     void (*dtor)(void *)) asm("??_M@YAXPAXIHP6AX0@Z@Z");
+void rxdk_ehvec_dtor(void *p, size_t size, int count,
+                     void (*dtor)(void *)) {
+    char *e = (char *)p + (size_t)count * size;
+    for (int i = 0; i < count; ++i) { e -= size; dtor(e); }
+}
+
+// MSVC _set_new_handler(_PNH) where _PNH = int(*)(size_t). Our operator new is
+// malloc-backed and never invokes a handler, so store and return the previous
+// one for link + API completeness (it is never called).
+typedef int (*rxdk_PNH)(size_t);
+static rxdk_PNH g_ms_new_handler = 0;
+rxdk_PNH rxdk_set_new_handler(rxdk_PNH h) asm("?_set_new_handler@@YAP6AHI@ZP6AHI@Z@Z");
+rxdk_PNH rxdk_set_new_handler(rxdk_PNH h) { rxdk_PNH o = g_ms_new_handler; g_ms_new_handler = h; return o; }
+
+}  // extern "C++"
+
 // ---- atexit / static-destructor table (file scope, internal linkage) -------
 
 namespace {
