@@ -103,6 +103,7 @@ XBOX_GLUE = [
     os.path.join(ROOT, "runtime", "xbox", "posix_ext.c"),           # sleep family, posix_memalign, isatty, access
     os.path.join(ROOT, "runtime", "xbox", "posix_stubs.c"),         # process/signal/mmap/tty/timer/perm stubs (no console concept)
     os.path.join(ROOT, "runtime", "xbox", "posix_unsupported.c"),   # linkable RXDK-STUB set: spawn/pipe/pty/ipc/timers/sched/identity
+    os.path.join(ROOT, "runtime", "xbox", "syslog.c"),              # syslog -> cache:\syslog.log + DbgPrint mirror
     os.path.join(ROOT, "runtime", "xbox", "posix_glob.c"),          # fnmatch + glob + select/pselect + poll/ppoll (fd never blocks)
     os.path.join(ROOT, "runtime", "xbox", "ftw.c"),                 # ftw/nftw file-tree walk over opendir/readdir
     os.path.join(ROOT, "runtime", "xbox", "posix_string_ext.c"),    # basename/dirname (XPG) + ffs/ffsl/ffsll
