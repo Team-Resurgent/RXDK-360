@@ -52,9 +52,9 @@ SHADERS = [
 ]
 
 
-def run(cmd):
+def run(cmd, cwd=None):
     print("+", " ".join(cmd))
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
     if r.returncode != 0:
         sys.stdout.write(r.stdout); sys.stderr.write(r.stderr)
         sys.exit(f"command failed ({r.returncode})")
@@ -96,6 +96,33 @@ def main():
         else:
             print("WARNING: asset not found:", srcf)
 
+    # Build the XACT audio banks (.xsb sound bank + .xwb XMA wave bank) from the
+    # XDK's XactBasicSound project with xactbld3, then stage them next to the xex.
+    # xactbld3 resolves the .xap's relative paths against the CWD and appends the
+    # project's ..\..\media\sounds\ output subpath to any given output dir, so we
+    # copy the project + its source WAV into a flat temp dir with the paths
+    # flattened and build there -- no XDK writes, no admin.
+    xactbld = os.path.join(args.xdk, "bin", "win32", "xactbld3.exe")
+    xap = os.path.join(args.xdk, "Source", "Samples", "Audio", "XactBasicSound", "XactSounds.xap")
+    wav = os.path.join(media, "Sounds", "MusicMono.wav")
+    if os.path.exists(xactbld) and os.path.exists(xap) and os.path.exists(wav):
+        xdir = os.path.join(args.outdir, "xactbuild")
+        os.makedirs(xdir, exist_ok=True)
+        shutil.copyfile(wav, os.path.join(xdir, "MusicMono.wav"))
+        with open(xap, "r") as f:
+            proj = f.read().replace("..\\..\\media\\sounds\\", "")
+        with open(os.path.join(xdir, "XactSounds.xap"), "w") as f:
+            f.write(proj)
+        run([xactbld, "/F", "/XBOX360", "/X:HEADER", "/X:REPORT", "/X:CUELIST",
+             "XactSounds.xap"], cwd=xdir)
+        snd = os.path.join(args.outdir, "Media", "Sounds")
+        os.makedirs(snd, exist_ok=True)
+        for b in ("XactSounds.xsb", "XactSounds.xwb"):
+            shutil.copyfile(os.path.join(xdir, b), os.path.join(snd, b))
+            print("staged", os.path.join("Media", "Sounds", b))
+    else:
+        print("WARNING: XACT bank sources not found; XACT3 section will be inert")
+
     for src, hdr, profile, var in SHADERS:
         run([fxc, "/nologo", "/T", profile, "/E", "main",
              "/Fh", os.path.join(shdir, hdr), "/Vn", var, os.path.join(shdir, src)])
@@ -108,7 +135,7 @@ def main():
     xex = os.path.join(args.outdir, "dash_spin.xex" if args.spin else "dash.xex")
     run([sys.executable, os.path.join(ROOT, "tools", "mktitle.py"), obj,
          "--lib", "d3d9,d3dx9,xgraphics,xaudio2,xmcore,xnet,xmedia2,x3daudio,xmp,"
-                  "tracerecording,xsim,xonline,xuirun,xuirender",
+                  "xact3,tracerecording,xsim,xonline,xuirun,xuirender",
          "--coff-dir", os.path.join(ROOT, "build", "coff"),
          "--xdk", os.path.join(args.xdk, "lib", "xbox"), "-o", xex])
     print("\nbuilt", xex)
