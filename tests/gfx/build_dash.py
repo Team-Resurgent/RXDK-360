@@ -84,7 +84,8 @@ def main():
     import shutil
     media = os.path.join(args.xdk, "Source", "Samples", "Media")
     ASSETS = [("Video", "Sample.wmv"), ("Sounds", "Electro_1.wav"),
-              ("Sounds", "music1.wma")]   # XMP title-playlist track
+              ("Sounds", "music1.wma"),  # XMP title-playlist track
+              ("Xui", "xarialuni.ttf")]  # XUI typeface
     for sub, name in ASSETS:
         srcf = os.path.join(media, sub, name)
         dstd = os.path.join(args.outdir, "Media", sub)
@@ -107,7 +108,7 @@ def main():
     xex = os.path.join(args.outdir, "dash_spin.xex" if args.spin else "dash.xex")
     run([sys.executable, os.path.join(ROOT, "tools", "mktitle.py"), obj,
          "--lib", "d3d9,d3dx9,xgraphics,xaudio2,xmcore,xnet,xmedia2,x3daudio,xmp,"
-                  "tracerecording,xsim,xonline",
+                  "tracerecording,xsim,xonline,xuirun,xuirender",
          "--coff-dir", os.path.join(ROOT, "build", "coff"),
          "--xdk", os.path.join(args.xdk, "lib", "xbox"), "-o", xex])
     print("\nbuilt", xex)
