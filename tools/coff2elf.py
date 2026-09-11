@@ -314,6 +314,15 @@ def coff_to_elf(obj, warn=print, noncomdat_strong=frozenset()):
         elf_syms.append((0, 0, 0, (STB_LOCAL << 4) | STT_SECTION, 0, elf_idx))
         sym_name_off.append(0)
 
+    # For resolving weak-external fall-backs (below): a COFF index -> Symbol map
+    # (the aux TagIndex names the default symbol by index), and a lookup of names
+    # that are actually *defined* in a kept section of this object.
+    coff_by_index = {ci: s for ci, s in _enumerate_coff_syms(obj)}
+    defined_here = {}
+    for _ci, s in _enumerate_coff_syms(obj):
+        if s.secnum in coff_to_elfshndx:
+            defined_here.setdefault(s.name, s)
+
     coff_to_elfsym = {}
     # locals (STATIC / LABEL) first
     for pass_globals in (False, True):
@@ -348,6 +357,26 @@ def coff_to_elf(obj, warn=print, noncomdat_strong=frozenset()):
                 bind = STB_WEAK
             if sym.secnum == 0:                     # undefined external
                 shndx, value, styp = SHN_UNDEF, 0, STT_NOTYPE
+                # A weak external is "use a strong def if linked, ELSE this
+                # default symbol" (aux[0] TagIndex names the default; MSVC uses
+                # it for the `??_E` vector deleting-dtor thunks, whose default is
+                # the class's `??_G` scalar deleting dtor). Leaving it undefined
+                # makes it resolve to 0 -- fine until such a thunk actually sits
+                # in a vtable slot that gets called (e.g. std::locale facet
+                # teardown), which then branches to 0. When the default is
+                # defined in THIS object (the object that carries the vtable also
+                # defines its `??_G`), emit the weak external as a weak ALIAS of
+                # that default so the slot points at real code.
+                if is_weak_ext and sym.naux >= 1 and len(sym.aux[0]) >= 4:
+                    tagidx = struct.unpack_from("<I", sym.aux[0], 0)[0]
+                    dflt = coff_by_index.get(tagidx)
+                    target = defined_here.get(dflt.name) if dflt else None
+                    if target is not None:
+                        tflags = obj.sections[target.secnum - 1].flags
+                        shndx = coff_to_elfshndx[target.secnum]
+                        value = target.value
+                        styp = (STT_FUNC if (tflags & IMAGE_SCN_MEM_EXECUTE)
+                                else STT_OBJECT)
             elif sym.secnum == 0xFFFF or sym.secnum == 0xFFFFFFFF:
                 shndx, value, styp = SHN_ABS, sym.value, STT_NOTYPE
             elif sym.secnum in coff_to_elfshndx:
