@@ -15,6 +15,8 @@
  * Further components (audio/input/net) are added incrementally.
  */
 #include <xtl.h>
+#include <xaudio2.h>
+#include <math.h>
 
 extern "C" int DbgPrint(const char *, ...);
 
@@ -175,11 +177,67 @@ static Comp g_comps[] = {
     { "XGraphics   (video mode / present)",         "OK",      0xff40ff40 },
     { "Shaders     (fxc precompiled VS/PS)",        "OK",      0xff40ff40 },
     { "Text overlay(A8 font texture)",              "OK",      0xff40ff40 },
-    { "XAudio2     (audio engine)",                 "PENDING", 0xffffc040 },
+    { "XAudio2     (engine + 440Hz voice)",         "PENDING", 0xffffc040 },
     { "XInput      (controller)",                   "PENDING", 0xffffc040 },
     { "XNet        (networking)",                   "PENDING", 0xffffc040 },
 };
+enum { C_D3D9, C_XGFX, C_SHADER, C_TEXT, C_XAUDIO, C_XINPUT, C_XNET };
 static const int NCOMP = sizeof(g_comps) / sizeof(g_comps[0]);
+
+static void SetComp(int i, const char *status, DWORD color)
+{
+    g_comps[i].status = status; g_comps[i].color = color;
+    DbgPrint("[DASH] component %-12s : %s\n", g_comps[i].name, status);
+}
+
+/* ---- XAudio2 bring-up: init engine, play a short 440Hz sine ---------- */
+
+static IXAudio2             *g_xa2;
+static IXAudio2MasteringVoice *g_master;
+static IXAudio2SourceVoice  *g_srcVoice;
+static short                 g_tone[44100];   /* 1s mono 16-bit @ 44.1kHz */
+
+static void InitAudio()
+{
+    HRESULT hr = XAudio2Create(&g_xa2, 0, XAUDIO2_DEFAULT_PROCESSOR);
+    DbgPrint("[DASH] XAudio2Create hr=0x%08x xa2=%p\n", hr, g_xa2);
+    if (FAILED(hr) || !g_xa2) { SetComp(C_XAUDIO, "FAIL create", 0xffff4040); return; }
+
+    hr = g_xa2->CreateMasteringVoice(&g_master, XAUDIO2_DEFAULT_CHANNELS,
+                                     XAUDIO2_DEFAULT_SAMPLERATE, 0, 0, NULL);
+    DbgPrint("[DASH] CreateMasteringVoice hr=0x%08x\n", hr);
+    if (FAILED(hr)) { SetComp(C_XAUDIO, "FAIL master", 0xffff4040); return; }
+
+    /* 440 Hz sine, 16-bit mono */
+    for (int i = 0; i < 44100; ++i) {
+        double t = (double)i / 44100.0;
+        double s = 0.30 * sin(2.0 * 3.14159265358979 * 440.0 * t);
+        g_tone[i] = (short)(s * 32767.0);
+    }
+    WAVEFORMATEX wf; ZeroMemory(&wf, sizeof(wf));
+    wf.wFormatTag = WAVE_FORMAT_PCM; wf.nChannels = 1; wf.nSamplesPerSec = 44100;
+    wf.wBitsPerSample = 16; wf.nBlockAlign = 2; wf.nAvgBytesPerSec = 44100 * 2;
+
+    hr = g_xa2->CreateSourceVoice(&g_srcVoice, &wf, 0, XAUDIO2_DEFAULT_FREQ_RATIO,
+                                  NULL, NULL, NULL);
+    DbgPrint("[DASH] CreateSourceVoice hr=0x%08x\n", hr);
+    if (FAILED(hr)) { SetComp(C_XAUDIO, "FAIL voice", 0xffff4040); return; }
+
+    XAUDIO2_BUFFER buf; ZeroMemory(&buf, sizeof(buf));
+    buf.AudioBytes = sizeof(g_tone);
+    buf.pAudioData = (const BYTE *)g_tone;
+    buf.Flags = XAUDIO2_END_OF_STREAM;
+    buf.LoopCount = XAUDIO2_LOOP_INFINITE;
+    hr = g_srcVoice->SubmitSourceBuffer(&buf, NULL);
+    DbgPrint("[DASH] SubmitSourceBuffer hr=0x%08x\n", hr);
+    if (FAILED(hr)) { SetComp(C_XAUDIO, "FAIL submit", 0xffff4040); return; }
+
+    hr = g_srcVoice->Start(0, XAUDIO2_COMMIT_NOW);
+    DbgPrint("[DASH] SourceVoice Start hr=0x%08x\n", hr);
+    if (FAILED(hr)) { SetComp(C_XAUDIO, "FAIL start", 0xffff4040); return; }
+
+    SetComp(C_XAUDIO, "OK (playing)", 0xff40ff40);
+}
 
 static void RenderTriangle(float angle)
 {
@@ -217,8 +275,7 @@ int main(void)
     DbgPrint("[DASH] start\n");
     if (FAILED(InitD3D()))   { DbgPrint("[DASH] InitD3D FAILED\n");   return 1; }
     if (FAILED(InitScene())) { DbgPrint("[DASH] InitScene FAILED\n"); return 1; }
-    for (int i = 0; i < NCOMP; ++i)
-        DbgPrint("[DASH] component %-12s : %s\n", g_comps[i].name, g_comps[i].status);
+    InitAudio();   /* brings XAudio2 up live -> flips its status */
     DbgPrint("[DASH] scene ready; rendering\n");
 
     int frames = 300;
