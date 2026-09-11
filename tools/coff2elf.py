@@ -562,8 +562,19 @@ def coff_to_elf(obj, warn=print, noncomdat_strong=frozenset()):
     # non-COMDAT section of some object in the archive -- an inline helper one TU
     # emits for real), the COMDAT copies must yield to that strong definition, so
     # its signatures are weak too (noncomdat_strong is passed in by archive mode).
-    signatures = {g["sig"] for g in groups.values()
-                  if g["signame"] not in noncomdat_strong}
+    # Keep a signature STRONG only for CODE groups. The GC hazard the strong
+    # signature guards against -- a group referenced only from another object
+    # being dropped -- is the vtable deleting-dtor thunk case, which is code.
+    # A DATA selectany global (e.g. d3d9.h's `extern const __declspec(selectany)
+    # D3DPRIMITIVEVERTEXCOUNT[][2]`) is also emitted by any title TU that
+    # includes the header, as clang linkonce_odr (weak); a STRONG signature here
+    # loses to nothing yet leaves lld resolving the discarded library copy
+    # ("relocation refers to a symbol in a discarded section"). Emit data
+    # signatures WEAK so they dedup consistently with the title's weak copy.
+    elf_flags = {coff_to_elfshndx[ci]: s.flags for ci, _, s in kept}
+    signatures = {g["sig"] for r_elf, g in groups.items()
+                  if g["signame"] not in noncomdat_strong
+                  and (elf_flags.get(r_elf, 0) & IMAGE_SCN_MEM_EXECUTE)}
     comdat_kept = {coff_to_elfshndx[ci] for ci, _, s in kept
                    if s.flags & IMAGE_SCN_LNK_COMDAT}
     for k, (noff, val, sz, info, other, shndx) in enumerate(elf_syms):
