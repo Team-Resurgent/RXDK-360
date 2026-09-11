@@ -25,6 +25,7 @@
 #include <xmedia2.h>
 #include <xmp.h>
 #include <xui.h>
+#include <xact3.h>
 #include <tracerecording.h>
 #include <xsim.h>
 #include <xonline.h>
@@ -96,6 +97,16 @@ static float                   g_vidFps;
 static XMP_HANDLE              g_xmpPlaylist;
 static bool                    g_xmpReady;
 static DWORD                   g_xmpCreateHr = 0xFFFFFFFF;
+
+/* XACT3: the authored audio engine -- plays a cue from compiled banks
+ * (.xsb sound bank + .xwb XMA wave bank), built offline with xactbld3. */
+static IXACT3Engine   *g_xact;
+static IXACT3SoundBank *g_xactSB;
+static IXACT3WaveBank  *g_xactWB;
+static IXACT3Cue       *g_xactCue;
+static XACTINDEX        g_xactCueIx = XACTINDEX_INVALID;
+static bool            g_xactReady;
+static DWORD           g_xactInitHr = 0xFFFFFFFF;
 
 /* XUI: real UI framework -- immediate-mode scene (fonts, gradient brushes,
  * filled rects, transforms) drawn through xuirun/xuirender on our D3D device. */
@@ -515,6 +526,53 @@ static void InitXmp()
     DbgPrint("[DASH] xmp: CreateTitlePlaylist hr=0x%08x ready=%d\n", g_xmpCreateHr, (int)g_xmpReady);
 }
 
+/* Read a whole file into a buffer. XMA wave banks must sit in physically
+ * contiguous memory (the hardware XMA decoder reads them), so the wave bank uses
+ * XPhysicalAlloc; the sound bank is a plain read. */
+static void *LoadWholeFile(const char *path, DWORD *outSize, bool physical)
+{
+    HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return NULL;
+    DWORD sz = GetFileSize(h, NULL), rd = 0;
+    void *buf = physical ? XPhysicalAlloc(sz, MAXULONG_PTR, 0, PAGE_READWRITE)
+                         : malloc(sz);
+    if (buf && ReadFile(h, buf, sz, &rd, NULL) && rd == sz) { *outSize = sz; }
+    else { if (buf) { if (physical) XPhysicalFree(buf); else free(buf); } buf = NULL; }
+    CloseHandle(h);
+    return buf;
+}
+
+/* Bring up the XACT3 engine and register the compiled banks, then resolve the
+ * "MusicMono" cue. Banks are staged next to the xex from the XactBasicSound
+ * project (built offline with xactbld3). */
+#define XACT_XWB "game:\\Media\\Sounds\\XactSounds.xwb"
+#define XACT_XSB "game:\\Media\\Sounds\\XactSounds.xsb"
+static void InitXact()
+{
+    HRESULT hr = XACT3CreateEngine(0, &g_xact);
+    if (SUCCEEDED(hr)) {
+        XACT_RUNTIME_PARAMETERS rp; ZeroMemory(&rp, sizeof(rp));
+        rp.lookAheadTime = XACT_ENGINE_LOOKAHEAD_DEFAULT;
+        hr = g_xact->Initialize(&rp);
+    }
+    DWORD wbSize = 0, sbSize = 0; void *wb = NULL, *sb = NULL;
+    if (SUCCEEDED(hr)) {
+        wb = LoadWholeFile(XACT_XWB, &wbSize, true);
+        sb = LoadWholeFile(XACT_XSB, &sbSize, false);
+        if (!wb || !sb) hr = E_FAIL;
+    }
+    if (SUCCEEDED(hr)) hr = g_xact->CreateInMemoryWaveBank(wb, wbSize, 0, 0, &g_xactWB);
+    if (SUCCEEDED(hr)) hr = g_xact->CreateSoundBank(sb, sbSize, 0, 0, &g_xactSB);
+    if (SUCCEEDED(hr)) {
+        g_xactCueIx = g_xactSB->GetCueIndex("MusicMono");
+        if (g_xactCueIx == XACTINDEX_INVALID) hr = E_FAIL;
+    }
+    g_xactInitHr = hr;
+    g_xactReady = SUCCEEDED(hr);
+    DbgPrint("[DASH] xact: init hr=0x%08x cue=%u ready=%d\n", hr, g_xactCueIx, (int)g_xactReady);
+}
+
 /* Bring up the XUI framework (shares our D3D device) and build the resources the
  * scene uses: three font sizes, a linear-gradient panel brush, and solid brushes
  * for the header bar and accent underline. */
@@ -648,9 +706,9 @@ static void DrawXuiScene(float t)
 
 #define AUTO_FRAMES 300   /* ~5s per section at 60fps */
 
-enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_X3D, SEC_XMP, SEC_XUI, SEC_INPUT, SEC_NET, SEC_SYSTEM, SEC_COUNT };
+enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_X3D, SEC_XMP, SEC_XACT, SEC_XUI, SEC_INPUT, SEC_NET, SEC_SYSTEM, SEC_COUNT };
 static const char *g_secName[SEC_COUNT] = {
-    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "X3DAUDIO", "XMP MUSIC", "XUI", "XINPUT", "XNET", "SYSTEM",
+    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "X3DAUDIO", "XMP MUSIC", "XACT3", "XUI", "XINPUT", "XNET", "SYSTEM",
 };
 #define XMV_MOVIE "game:\\Media\\Video\\Sample.wmv"
 static int   g_section, g_frameInSec, g_totalFrames, g_cycles;
@@ -694,6 +752,17 @@ static void SectionEnter(int s)
         }
         break;
     }
+    case SEC_XACT:
+        if (g_xactReady) {
+            HRESULT hp = g_xactSB->Play(g_xactCueIx, 0, 0, &g_xactCue);
+            SetStatus(SUCCEEDED(hp) ? COL_OK : COL_FAIL,
+                      SUCCEEDED(hp) ? "XACT3 engine playing cue 'MusicMono' (XMA)"
+                                    : "XACT Play failed");
+            DbgPrint("[DASH] xact: Play hr=0x%08x\n", hp);
+        } else {
+            SetStatus(COL_FAIL, "XACT3 init failed (banks missing?)");
+        }
+        break;
     case SEC_XUI:
         SetStatus(g_xuiReady ? COL_OK : COL_FAIL,
                   g_xuiReady ? "XUI framework -- gradient panel, TTF fonts, brushes"
@@ -715,6 +784,11 @@ static void SectionExit(int s)
 {
     if (s == SEC_AUDIO || s == SEC_X3D) { ToneStop(); DbgPrint("[DASH] audio: stopped\n"); }
     if (s == SEC_XMP && g_xmpReady) { XMPStop(NULL); DbgPrint("[DASH] xmp: stopped\n"); }
+    if (s == SEC_XACT && g_xactReady) {
+        if (g_xactCue) { g_xactCue->Stop(XACT_FLAG_STOP_IMMEDIATE); g_xactCue->Destroy(); g_xactCue = NULL; }
+        g_xact->DoWork();
+        DbgPrint("[DASH] xact: stopped\n");
+    }
     if (s == SEC_X3D && g_audioReady) {   /* undo the 3D pan so later playback is centred */
         float m[8]; for (DWORD i = 0; i < g_dstCh && i < 8; ++i) m[i] = 1.0f;
         g_srcVoice->SetOutputMatrix(NULL, 1, g_dstCh, m, XAUDIO2_COMMIT_NOW);
@@ -840,6 +914,23 @@ static void SectionBody(int s, float tsec, float tglob)
             DrawText(64, 368, 1.25f, COL_DIM, line);
         }
         DrawText(64, 402, 1.0f, COL_DIM, "XMPCreateTitlePlaylist + XMPPlayTitlePlaylist -- real playback");
+        break;
+    }
+    case SEC_XACT: {
+        if (g_xactReady) g_xact->DoWork();   /* pump the XACT engine each frame */
+        DrawText(64, 180, 1.5f, g_xactReady ? COL_OK : COL_FAIL,
+                 g_xactReady ? "XACT3 authored audio engine" : "XACT3 unavailable");
+        DrawText(64, 232, 1.25f, COL_WHITE, "compiled banks: .xsb sound bank + .xwb XMA wave bank");
+        DrawText(64, 266, 1.0f,  COL_DIM,  "built offline with xactbld3 from XactSounds.xap");
+        if (g_xactReady) {
+            wsprintfA(line, "XACT3CreateEngine + CreateSoundBank/WaveBank -> cue 'MusicMono' (#%u)", g_xactCueIx);
+            DrawText(64, 306, 1.25f, COL_OK, line);
+            DrawText(64, 340, 1.25f, COL_WHITE, "SoundBank->Play + engine DoWork() -- XMA decoded on the APU");
+            DrawText(64, 384, 1.0f, COL_DIM, "the middleware audio path most 360 games shipped with");
+        } else {
+            wsprintfA(line, "init hr=0x%08x", g_xactInitHr);
+            DrawText(64, 306, 1.25f, COL_FAIL, line);
+        }
         break;
     }
     case SEC_XUI:
@@ -1090,6 +1181,7 @@ int main(void)
     InitNet();
     InitSmoke();
     InitXmp();
+    InitXact();
     InitXui();
     DbgPrint("[DASH] init complete; running sections\n");
 
