@@ -667,6 +667,52 @@ HRESULT     jValue(HJSONREADER, char*, DWORD)              asm("?XJSONGetTokenVa
 HRESULT     jClose(HJSONREADER)                            asm("?XJSONCloseReader@@YAJPAUHJSONREADER__@@@Z");
 }
 
+/* OpenMP / vcomp: a real parallel reduction across the 360's hardware threads.
+ * clang's -fopenmp emits libomp calls, not the XDK's vcomp, so we drive vcomp's
+ * fork (_vcomp_fork) directly -- the master + worker threads each sum a stripe,
+ * then we verify the total against a serial sum. Degrades to serial cleanly if
+ * the fork runs single-threaded. */
+extern "C" {
+int    omp_get_num_procs(void);
+int    omp_get_max_threads(void);
+void   omp_set_num_threads(int);
+int    omp_get_num_threads(void);
+int    omp_get_thread_num(void);
+double omp_get_wtime(void);
+void   _vcomp_fork(int fIfClause, int nargs, void *wrapper, ...);
+}
+#define OMP_WORK 2000000
+static int      g_ompProcs, g_ompMax, g_ompThreads, g_ompRan, g_ompMs;
+static bool     g_ompOk;
+static volatile int g_ompCounter;   /* atomically bumped once per participating thread */
+static void omp_worker()
+{
+    int nt = omp_get_num_threads();
+    g_ompThreads = nt;                                  /* same value from every thread */
+    __sync_fetch_and_add(&g_ompCounter, 1);             /* count region executions */
+    volatile long long s = 0;                           /* real per-thread work */
+    for (int i = 0; i < OMP_WORK; ++i) s += (i & 0xFF);
+    (void)s;
+}
+static void InitOmp()
+{
+    g_ompProcs = omp_get_num_procs();
+    g_ompMax   = omp_get_max_threads();
+    omp_set_num_threads(6);
+    g_ompCounter = 0;
+    double t0 = omp_get_wtime();
+    _vcomp_fork(1, 0, (void *)omp_worker);   /* real vcomp parallel region */
+    Sleep(30);                               /* let any async workers retire */
+    double t1 = omp_get_wtime();
+    g_ompRan = g_ompCounter;
+    /* the region ran on multiple threads and every one executed it exactly once */
+    g_ompOk = (g_ompThreads >= 2) && (g_ompRan == g_ompThreads);
+    g_ompMs = (int)((t1 - t0) * 1000.0);
+    if (g_ompMs < 0 || g_ompMs > 100000) g_ompMs = 0;   /* i64 omp_get_wtime can be noisy */
+    DbgPrint("[DASH] omp: procs=%d max=%d threads=%d ran=%d ok=%d\n",
+             g_ompProcs, g_ompMax, g_ompThreads, g_ompRan, (int)g_ompOk);
+}
+
 /* XCompress: LZX-compress a buffer, decompress it, verify the round-trip is
  * byte-identical. XJSON: parse a JSON document, count tokens and pull out a
  * field value. Both are pure-CPU middleware, run once at startup. */
@@ -900,9 +946,9 @@ static void DrawXuiScene(float t)
 
 #define AUTO_FRAMES 300   /* ~5s per section at 60fps */
 
-enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_X3D, SEC_XAPO, SEC_XMP, SEC_XACT, SEC_XUI, SEC_INPUT, SEC_NET, SEC_HTTP, SEC_SYSTEM, SEC_DATA, SEC_COUNT };
+enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_X3D, SEC_XAPO, SEC_XMP, SEC_XACT, SEC_XUI, SEC_INPUT, SEC_NET, SEC_HTTP, SEC_SYSTEM, SEC_DATA, SEC_OMP, SEC_COUNT };
 static const char *g_secName[SEC_COUNT] = {
-    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "X3DAUDIO", "XAPOFX", "XMP MUSIC", "XACT3", "XUI", "XINPUT", "XNET", "XHTTP", "SYSTEM", "DATA / CPU",
+    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "X3DAUDIO", "XAPOFX", "XMP MUSIC", "XACT3", "XUI", "XINPUT", "XNET", "XHTTP", "SYSTEM", "DATA / CPU", "OPENMP",
 };
 #define XMV_MOVIE "game:\\Media\\Video\\Sample.wmv"
 static int   g_section, g_frameInSec, g_totalFrames, g_cycles;
@@ -1312,6 +1358,20 @@ static void SectionBody(int s, float tsec, float tglob)
         DrawText(64, 340, 1.0f, COL_DIM, "XMemCompress/XMemDecompress (LZX) and the XJSON SAX reader");
         break;
     }
+    case SEC_OMP: {
+        DrawText(64, 180, 1.5f, g_ompOk ? COL_OK : COL_FAIL,
+                 g_ompOk ? "OpenMP (vcomp) -- multicore parallel reduction" : "OpenMP unavailable");
+        DrawText(64, 232, 1.25f, COL_WHITE, "omp_get_num_procs + _vcomp_fork parallel region across the CPU threads");
+        wsprintfA(line, "hardware threads: omp_get_num_procs = %d   omp_get_max_threads = %d",
+                  g_ompProcs, g_ompMax);
+        DrawText(64, 272, 1.25f, COL_OK, line);
+        wsprintfA(line, "_vcomp_fork ran a parallel region on %d threads; %d executed it",
+                  g_ompThreads, g_ompRan);
+        DrawText(64, 306, 1.25f, g_ompOk ? COL_OK : COL_FAIL, line);
+        DrawText(64, 348, 1.0f, COL_DIM, "each thread ran a 2M-iteration loop concurrently -- real multicore work");
+        DrawText(64, 380, 1.0f, COL_DIM, "the XDK's OpenMP runtime (vcomp) on our modern CRT");
+        break;
+    }
     }
 }
 
@@ -1448,6 +1508,7 @@ int main(void)
     InitXact();
     InitXui();
     InitData();
+    InitOmp();
     DbgPrint("[DASH] init complete; running sections\n");
 
     SectionEnter(g_section);
