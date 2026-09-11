@@ -224,7 +224,12 @@ def link(objects, libs, stubs, layout, out_elf, lld=DEFAULT_LLD, gc=True,
     cmd += objects
     if stubs:
         cmd.append(stubs)
-    cmd += libs
+    # Wrap the archives in a group so lld re-scans them to a fixpoint: the title
+    # libs, the C++ runtime and libc are mutually dependent (e.g. a title lib
+    # object pulled late references __cxa_* in libcpp.a, which a single
+    # left-to-right pass would leave unresolved).
+    if libs:
+        cmd += ["--start-group"] + list(libs) + ["--end-group"]
     cmd += ["-o", out_elf]
     return run(cmd)
 
@@ -309,13 +314,16 @@ def main():
     # --lib in the meantime. --no-default-libs opts out entirely (to link libcMT
     # instead, or to manage the set by hand). User --lib entries go first, the
     # runtime after, matching the official link order (title libs, then CRT).
-    has_cpp = any(os.path.splitext(s)[1].lower() in (".cpp", ".cc", ".cxx", ".c++")
-                  for s in args.sources)
     default_libs = []
     if args.cc == "clang" and not args.no_default_libs:
         libc_dir = os.path.join(ROOT, "build", "libc")
-        if has_cpp:
-            default_libs.append(os.path.join(libc_dir, "libcpp.a"))
+        # Always include libcpp.a: libc.a itself references the C++ runtime (e.g.
+        # xbox_cxxrt.o -> __cxa_uncaught_exceptions), so the two are mutually
+        # dependent and are linked as a group below. On-demand archive extraction
+        # plus --gc-sections means a pure-C title pulls nothing extra from it, so
+        # this cannot be gated on the source extensions (a prebuilt C++ .o has
+        # none to detect anyway).
+        default_libs.append(os.path.join(libc_dir, "libcpp.a"))
         default_libs.append(os.path.join(libc_dir, "libc.a"))
         default_libs.append(os.path.join(args.coff_dir, "xapilib.a"))
 
