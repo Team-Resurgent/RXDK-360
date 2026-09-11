@@ -219,6 +219,7 @@ IMAGE_SCN_MEM_EXECUTE = 0x20000000
 IMAGE_SYM_CLASS_EXTERNAL = 2
 IMAGE_SYM_CLASS_STATIC = 3
 IMAGE_SYM_CLASS_LABEL = 6
+IMAGE_SYM_CLASS_WEAK_EXTERNAL = 105
 
 # relocation types handled or deliberately dropped
 _DROP_RELOCS = {0x0B, 0x0C}          # SECREL, SECTION -- debug only
@@ -317,7 +318,15 @@ def coff_to_elf(obj, warn=print, noncomdat_strong=frozenset()):
     # locals (STATIC / LABEL) first
     for pass_globals in (False, True):
         for csi, sym in _enumerate_coff_syms(obj):
-            is_global = sym.cls == IMAGE_SYM_CLASS_EXTERNAL
+            # A COFF weak external (IMAGE_SYM_CLASS_WEAK_EXTERNAL) is an
+            # externally-visible symbol -- MSVC emits these for inline functions
+            # and the `??_E` vtable deleting-dtor thunks: "use a strong def if one
+            # is linked, else fall back". It is NOT a static local, so it must go
+            # in the global pass and be emitted STB_WEAK (see below); treating it
+            # as local (cls != EXTERNAL) made references unresolvable by a real
+            # global definition.
+            is_weak_ext = sym.cls == IMAGE_SYM_CLASS_WEAK_EXTERNAL
+            is_global = sym.cls == IMAGE_SYM_CLASS_EXTERNAL or is_weak_ext
             if is_global != pass_globals:
                 continue
             # a STATIC symbol whose name is a kept section is that section's
@@ -335,6 +344,8 @@ def coff_to_elf(obj, warn=print, noncomdat_strong=frozenset()):
                 continue
 
             bind = STB_GLOBAL if is_global else STB_LOCAL
+            if is_weak_ext:                          # COFF weak external -> ELF weak
+                bind = STB_WEAK
             if sym.secnum == 0:                     # undefined external
                 shndx, value, styp = SHN_UNDEF, 0, STT_NOTYPE
             elif sym.secnum == 0xFFFF or sym.secnum == 0xFFFFFFFF:
