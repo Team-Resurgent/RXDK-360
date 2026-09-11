@@ -21,6 +21,7 @@
 #include <xinputdefs.h>
 #include <xaudio2.h>
 #include <winsockx.h>
+#include <xmedia2.h>
 #include <math.h>
 
 extern "C" int DbgPrint(const char *, ...);
@@ -74,6 +75,11 @@ static short                   g_tone[44100];
 
 /* net */
 static bool                    g_netStarted;
+
+/* video probe (XMV) */
+static int                     g_vidState;   /* 0 untried, 1 ok, -1 create fail */
+static DWORD                   g_vidW, g_vidH, g_vidDur;
+static float                   g_vidFps;
 
 /* ============================ text overlay ============================ */
 
@@ -241,10 +247,11 @@ static void InitNet()
 
 #define AUTO_FRAMES 300   /* ~5s per section at 60fps */
 
-enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_AUDIO, SEC_INPUT, SEC_NET, SEC_COUNT };
+enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_INPUT, SEC_NET, SEC_COUNT };
 static const char *g_secName[SEC_COUNT] = {
-    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XAUDIO2", "XINPUT", "XNET",
+    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "XINPUT", "XNET",
 };
+#define XMV_MOVIE "game:\\Media\\Video\\Sample.wmv"
 static int   g_section, g_frameInSec, g_totalFrames, g_cycles;
 static bool  g_paused;
 static char  g_status[128];
@@ -252,6 +259,8 @@ static DWORD g_statusCol = COL_OK;
 static int   g_netTried;
 
 static void SetStatus(DWORD col, const char *s) { g_statusCol = col; int i = 0; for (; s[i] && i < 127; ++i) g_status[i] = s[i]; g_status[i] = 0; }
+
+static void ProbeVideo();   /* defined below */
 
 static void SectionEnter(int s)
 {
@@ -261,6 +270,11 @@ static void SectionEnter(int s)
     case SEC_D3D9:    SetStatus(COL_OK, "device HAL 1280x720 X8R8G8B8 / D24S8 -- drawing"); break;
     case SEC_SHADERS: SetStatus(COL_OK, "cycling precompiled PS effects"); break;
     case SEC_TEXT:    SetStatus(COL_OK, "A8 atlas font, screen-space quads"); break;
+    case SEC_VIDEO:
+        ProbeVideo();
+        SetStatus(g_vidState == 1 ? COL_OK : COL_FAIL,
+                  g_vidState == 1 ? "XMedia2 opened the movie (probe)" : "XMedia2 create failed");
+        break;
     case SEC_AUDIO:   ToneStart();
                       SetStatus(g_audioReady ? COL_OK : COL_FAIL,
                                 g_audioReady ? "440Hz voice playing (stops on exit)" : "engine unavailable");
@@ -275,6 +289,42 @@ static void SectionEnter(int s)
 }
 
 static void SectionExit(int s) { if (s == SEC_AUDIO) { ToneStop(); DbgPrint("[DASH] audio: tone stopped\n"); } }
+
+/* Bring up XMedia2 on the movie file: create the player and query the video
+ * descriptor -- this proves xmedia2.lib links and that the .xmv/.wmv is opened
+ * and parsed (streams read off game:\). We do NOT call the blocking Play() by
+ * default: full CPU-decoded playback currently faults this xenia build (host
+ * AV during XMA/VC-1 decode), so it is gated behind XMV_FULL_PLAY for hardware. */
+static void ProbeVideo()
+{
+    XMEDIA_XMV_CREATE_PARAMETERS p; ZeroMemory(&p, sizeof(p));
+    p.createType = XMEDIA_CREATE_FROM_FILE;
+    p.createFromFile.szFileName = XMV_MOVIE;
+    p.dwAudioStreamId = XMEDIA_STREAM_ID_USE_DEFAULT;
+    p.dwVideoStreamId = XMEDIA_STREAM_ID_USE_DEFAULT;
+
+    IXMedia2XmvPlayer *player = NULL;
+    HRESULT hr = XMedia2CreateXmvPlayer(g_dev, g_xa2, &p, &player);
+    DbgPrint("[DASH] XMedia2CreateXmvPlayer hr=0x%08x\n", hr);
+    if (FAILED(hr) || !player) { g_vidState = -1; return; }
+
+    XMEDIA_VIDEO_DESCRIPTOR vd; ZeroMemory(&vd, sizeof(vd));
+    if (SUCCEEDED(player->GetVideoDescriptor(&vd))) {
+        g_vidW = vd.dwWidth; g_vidH = vd.dwHeight;
+        g_vidFps = vd.fFrameRate; g_vidDur = vd.dwClipDuration;
+        DbgPrint("[DASH] XMV descriptor: %ux%u @ %d.%02dfps dur=%ums\n",
+                 vd.dwWidth, vd.dwHeight, (int)vd.fFrameRate,
+                 (int)((vd.fFrameRate - (int)vd.fFrameRate) * 100), vd.dwClipDuration);
+    }
+    g_vidState = 1;
+
+#ifdef XMV_FULL_PLAY
+    DbgPrint("[DASH] XMV: Play (blocking, HW)...\n");
+    player->Play(0, NULL);
+    g_dev->SetRenderState(D3DRS_VIEWPORTENABLE, TRUE);
+#endif
+    player->Release();
+}
 
 static void Goto(int s) { SectionExit(g_section); g_section = s; SectionEnter(s); }
 
@@ -337,6 +387,19 @@ static void SectionBody(int s, float tsec, float tglob)
         DrawText(64, 360, 1.0f,  COL_WHITE,"scales 1.0 / 1.25 / 1.5 / 2.0, half-texel inset");
         break;
     }
+    case SEC_VIDEO:
+        DrawText(64, 180, 1.5f, g_vidState == 1 ? COL_OK : COL_FAIL,
+                 g_vidState == 1 ? "XMedia2 XMV player created" : "XMedia2 create FAILED");
+        DrawText(64, 232, 1.25f, COL_WHITE, "XMedia2CreateXmvPlayer + GetVideoDescriptor");
+        DrawText(64, 266, 1.25f, COL_DIM,  XMV_MOVIE);
+        if (g_vidState == 1) {
+            wsprintfA(line, "movie: %ux%u  @ %dfps  dur %ums",
+                      g_vidW, g_vidH, (int)g_vidFps, g_vidDur);
+            DrawText(64, 300, 1.25f, COL_OK, line);
+        }
+        DrawText(64, 344, 1.0f, COL_DIM,
+                 "full CPU-decoded playback (Play) is HW-only: it faults this xenia build");
+        break;
     case SEC_AUDIO: {
         DrawText(64, 200, 1.5f, g_audioReady ? COL_OK : COL_FAIL,
                  g_audioReady ? "XAudio2 voice PLAYING" : "XAudio2 unavailable");
