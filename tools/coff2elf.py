@@ -235,10 +235,18 @@ def _keep_section(name):
     # linker script can gather them in $-suffix order between __xc_a/__xc_z.
     if name.startswith(".CRT$"):
         return name
+    # .XBLD$V is the COMDAT data word holding a library's own <Lib>BuildNumber
+    # (XNetBuildNumber, XapiBuildNumber, ...), which that library's code reads.
+    # Keep it as data so those symbols resolve to the real build number rather
+    # than being dropped (they are defined only here). The other .XBLD$*
+    # build-stamp metadata (__C1_*/__C2_* compiler stamps in .XBLD$W) is not
+    # referenced and stays dropped.
+    if name == ".XBLD$V":
+        return ".data"
     base = name.split("$")[0]
     if base in (".text", ".data", ".bss", ".pdata", ".xdata"):
         return base
-    return None                       # debug, drectve, XBLD, idata -> dropped
+    return None                       # debug, drectve, XBLD$W, idata -> dropped
 
 
 class StrTab:
