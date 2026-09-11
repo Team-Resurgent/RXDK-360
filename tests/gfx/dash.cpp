@@ -24,6 +24,7 @@
 #include <winsockx.h>
 #include <xmedia2.h>
 #include <xmp.h>
+#include <xui.h>
 #include <tracerecording.h>
 #include <xsim.h>
 #include <xonline.h>
@@ -52,6 +53,7 @@ struct COLORVERTEX { float Position[3]; DWORD Color; };
 struct TEXTVERTEX  { float x, y, z, w; float u, v; DWORD color; };
 
 static D3DDevice            *g_dev;
+static D3DPRESENT_PARAMETERS g_pp;
 static int                   g_bbW = 1280, g_bbH = 720;
 
 /* triangle */
@@ -94,6 +96,14 @@ static float                   g_vidFps;
 static XMP_HANDLE              g_xmpPlaylist;
 static bool                    g_xmpReady;
 static DWORD                   g_xmpCreateHr = 0xFFFFFFFF;
+
+/* XUI: real UI framework -- immediate-mode scene (fonts, gradient brushes,
+ * filled rects, transforms) drawn through xuirun/xuirender on our D3D device. */
+static HXUIDC   g_xuiDC;
+static HXUIFONT g_xuiFontBig, g_xuiFontMed, g_xuiFontSmall;
+static HXUIBRUSH g_xuiGrad, g_xuiPanel, g_xuiAccent, g_xuiBar;
+static bool     g_xuiReady;
+static DWORD    g_xuiInitHr = 0xFFFFFFFF;
 
 /* ============================ text overlay ============================ */
 
@@ -158,7 +168,7 @@ static HRESULT InitD3D()
 {
     Direct3D *d3d = Direct3DCreate9(D3D_SDK_VERSION);
     if (!d3d) return E_FAIL;
-    D3DPRESENT_PARAMETERS pp; ZeroMemory(&pp, sizeof(pp));
+    D3DPRESENT_PARAMETERS &pp = g_pp; ZeroMemory(&pp, sizeof(pp));
     XVIDEO_MODE vm; ZeroMemory(&vm, sizeof(vm)); XGetVideoMode(&vm);
     g_bbW = pp.BackBufferWidth  = vm.dwDisplayWidth  < 1280 ? vm.dwDisplayWidth  : 1280;
     g_bbH = pp.BackBufferHeight = vm.dwDisplayHeight <  720 ? vm.dwDisplayHeight :  720;
@@ -505,13 +515,112 @@ static void InitXmp()
     DbgPrint("[DASH] xmp: CreateTitlePlaylist hr=0x%08x ready=%d\n", g_xmpCreateHr, (int)g_xmpReady);
 }
 
+/* Bring up the XUI framework (shares our D3D device) and build the resources the
+ * scene uses: three font sizes, a linear-gradient panel brush, and solid brushes
+ * for the header bar and accent underline. */
+static void InitXui()
+{
+    XUIInitParams ip; XUI_INIT_PARAMS(ip);
+    TypefaceDescriptor tf; ZeroMemory(&tf, sizeof(tf));
+    tf.szTypeface = L"Arial Unicode MS";
+    tf.szLocator  = L"file://game:/Media/Xui/xarialuni.ttf";
+
+    HRESULT hr = XuiRenderInitShared(g_dev, &g_pp, XuiD3DXTextureLoader);
+    if (SUCCEEDED(hr)) hr = XuiRenderCreateDC(&g_xuiDC);
+    if (SUCCEEDED(hr)) hr = XuiInit(&ip);
+    if (SUCCEEDED(hr)) hr = XuiRegisterTypeface(&tf, TRUE);
+    if (SUCCEEDED(hr)) hr = XuiCreateFont(L"Arial Unicode MS", 44.f, XUI_FONT_STYLE_BOLD, 0, &g_xuiFontBig);
+    if (SUCCEEDED(hr)) hr = XuiCreateFont(L"Arial Unicode MS", 24.f, XUI_FONT_STYLE_NORMAL, 0, &g_xuiFontMed);
+    if (SUCCEEDED(hr)) hr = XuiCreateFont(L"Arial Unicode MS", 18.f, XUI_FONT_STYLE_NORMAL, 0, &g_xuiFontSmall);
+    if (SUCCEEDED(hr)) {
+        XUIGradientStop gs[3];
+        gs[0].dwColor = D3DCOLOR_ARGB(235, 24, 32, 72);  gs[0].fPos = 0.0f;
+        gs[1].dwColor = D3DCOLOR_ARGB(235, 52, 26, 92);  gs[1].fPos = 0.5f;
+        gs[2].dwColor = D3DCOLOR_ARGB(235, 14, 18, 40);  gs[2].fPos = 1.0f;
+        XuiCreateLinearGradientBrush(3, gs, &g_xuiGrad);
+        XuiCreateSolidBrush(D3DCOLOR_ARGB(255, 40, 120, 255), &g_xuiPanel);
+        XuiCreateSolidBrush(D3DCOLOR_ARGB(255, 90, 220, 160), &g_xuiAccent);
+        XuiCreateSolidBrush(D3DCOLOR_ARGB(180, 255, 255, 255), &g_xuiBar);
+    }
+    g_xuiInitHr = hr;
+    g_xuiReady = SUCCEEDED(hr);
+    DbgPrint("[DASH] xui: init hr=0x%08x ready=%d\n", hr, (int)g_xuiReady);
+}
+
+/* Draw one XUI text run at (x,y) with a font, colour and style. */
+static void XuiText(HXUIFONT f, DWORD color, float x, float y, DWORD style, LPCWSTR s)
+{
+    XUIRect clip(0, 0, (float)g_bbW, (float)g_bbH);
+    D3DXMATRIX m; D3DXMatrixIdentity(&m); m._41 = x; m._42 = y;
+    XuiRenderSetTransform(g_xuiDC, &m);
+    XuiSelectFont(g_xuiDC, f);
+    XuiSetColorFactor(g_xuiDC, color);
+    XuiDrawText(g_xuiDC, s, style | XUI_FONT_STYLE_SINGLE_LINE | XUI_FONT_STYLE_NO_WORDWRAP, 0, &clip);
+}
+
+static void XuiRect_(HXUIBRUSH br, DWORD tint, float l, float t, float r, float b)
+{
+    D3DXMATRIX m; D3DXMatrixIdentity(&m); XuiRenderSetTransform(g_xuiDC, &m);
+    XuiSelectBrush(g_xuiDC, br);
+    XuiSetColorFactor(g_xuiDC, tint);
+    XUIRect rc(l, t, r, b);
+    XuiFillRect(g_xuiDC, &rc);
+}
+
+/* The impressive bit: a full XUI scene rendered every frame -- gradient panel,
+ * header bar, animated accent underline + sweeping highlight, drop-shadowed
+ * title, subtitle and a feature list, all via XUI immediate-mode calls. */
+static void DrawXuiScene(float t)
+{
+    XuiRenderBegin(g_xuiDC, D3DCOLOR_ARGB(255, 8, 10, 26));
+    D3DXMATRIX view; D3DXMatrixIdentity(&view); XuiRenderSetViewTransform(g_xuiDC, &view);
+
+    const float PANL = 120, PANT = 150, PANR = g_bbW - 120.f, PANB = g_bbH - 150.f;
+    XuiRect_(g_xuiGrad,  0xFFFFFFFF, PANL, PANT, PANR, PANB);           /* gradient panel   */
+    XuiRect_(g_xuiPanel, 0xFFFFFFFF, PANL, PANT, PANR, PANT + 84);      /* header bar       */
+
+    /* animated accent underline: width sweeps with time */
+    float w = (PANR - PANL - 80) * (0.5f + 0.5f * (float)sin(t * 1.7f));
+    XuiRect_(g_xuiAccent, 0xFFFFFFFF, PANL + 40, PANT + 78, PANL + 40 + w, PANT + 84);
+    /* sweeping vertical highlight bar */
+    float hx = PANL + 40 + (PANR - PANL - 80) * (0.5f + 0.5f * (float)sin(t * 0.8f));
+    XuiRect_(g_xuiBar, D3DCOLOR_ARGB(60, 255, 255, 255), hx, PANT + 90, hx + 3, PANB - 20);
+
+    /* drop-shadowed title, slight pulse via a scaled second pass is overkill --
+       a bold big font with a shadow reads well */
+    XuiSetTextDropShadowColor(g_xuiDC, D3DCOLOR_ARGB(200, 0, 0, 0));
+    XuiText(g_xuiFontBig, D3DCOLOR_ARGB(255, 255, 255, 255), PANL + 40, PANT + 12,
+            XUI_FONT_STYLE_DROPSHADOW, L"RXDK\x2009\x00B7\x2009 XUI");
+    XuiText(g_xuiFontMed, D3DCOLOR_ARGB(255, 150, 210, 255), PANL + 40, PANT + 108,
+            XUI_FONT_STYLE_NORMAL, L"Xbox 360 UI framework \x2014 immediate-mode rendering");
+
+    static const wchar_t *items[] = {
+        L"\x2022  XuiCreateFont / XuiDrawText  \x2014  TrueType glyph atlas",
+        L"\x2022  XuiCreateLinearGradientBrush + XuiFillRect  \x2014  panels",
+        L"\x2022  XuiSetColorFactor / drop shadow / transforms",
+        L"\x2022  xuirun + xuirender on our own D3D device",
+    };
+    for (int i = 0; i < 4; ++i)
+        XuiText(g_xuiFontSmall, D3DCOLOR_ARGB(255, 220, 226, 240),
+                PANL + 48, PANT + 170 + i * 40.f, XUI_FONT_STYLE_NORMAL, items[i]);
+
+    /* live colour-cycled status line, right side */
+    DWORD c = D3DCOLOR_ARGB(255, 120 + (int)(120 * sin(t)), 220, 160 + (int)(80 * cos(t * 1.3f)));
+    XuiText(g_xuiFontMed, c, PANL + 48, PANB - 70, XUI_FONT_STYLE_NORMAL,
+            L"rendered live by XUI \x2014 fixed via -fshort-wchar");
+
+    XuiRenderEnd(g_xuiDC);
+    /* no XuiRenderPresent: the dashboard's Present() flips the frame, and the HUD
+       overlay is drawn on top afterwards. */
+}
+
 /* ============================ sections =============================== */
 
 #define AUTO_FRAMES 300   /* ~5s per section at 60fps */
 
-enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_X3D, SEC_XMP, SEC_INPUT, SEC_NET, SEC_SYSTEM, SEC_COUNT };
+enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_X3D, SEC_XMP, SEC_XUI, SEC_INPUT, SEC_NET, SEC_SYSTEM, SEC_COUNT };
 static const char *g_secName[SEC_COUNT] = {
-    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "X3DAUDIO", "XMP MUSIC", "XINPUT", "XNET", "SYSTEM",
+    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "X3DAUDIO", "XMP MUSIC", "XUI", "XINPUT", "XNET", "SYSTEM",
 };
 #define XMV_MOVIE "game:\\Media\\Video\\Sample.wmv"
 static int   g_section, g_frameInSec, g_totalFrames, g_cycles;
@@ -555,6 +664,11 @@ static void SectionEnter(int s)
         }
         break;
     }
+    case SEC_XUI:
+        SetStatus(g_xuiReady ? COL_OK : COL_FAIL,
+                  g_xuiReady ? "XUI framework -- gradient panel, TTF fonts, brushes"
+                             : "XUI init failed");
+        break;
     case SEC_INPUT:   SetStatus(COL_PEND, "polling XInput port 0..."); break;
     case SEC_NET:
         SetStatus(g_netStarted ? COL_OK : COL_FAIL,
@@ -698,6 +812,11 @@ static void SectionBody(int s, float tsec, float tglob)
         DrawText(64, 402, 1.0f, COL_DIM, "XMPCreateTitlePlaylist + XMPPlayTitlePlaylist -- real playback");
         break;
     }
+    case SEC_XUI:
+        if (g_xuiReady) DrawXuiScene(tglob);
+        else { DrawText(64, 200, 1.5f, COL_FAIL, "XUI unavailable");
+               DrawText(64, 250, 1.25f, COL_DIM, "XuiRenderInitShared / XuiInit failed"); }
+        break;
     case SEC_INPUT: {
         XINPUT_STATE st; ZeroMemory(&st, sizeof(st));
         DWORD r = XInputGetState(0, &st);
@@ -941,6 +1060,7 @@ int main(void)
     InitNet();
     InitSmoke();
     InitXmp();
+    InitXui();
     DbgPrint("[DASH] init complete; running sections\n");
 
     SectionEnter(g_section);
