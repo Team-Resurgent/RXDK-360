@@ -38,6 +38,8 @@ MS_TRIPLE = "powerpc-unknown-xbox360"                  # the patched-clang MS-AB
 DEFAULT_XDK = r"C:\Program Files (x86)\Microsoft Xbox 360 SDK\lib\xbox"
 DEFAULT_CLANG = os.environ.get("RXDK_CLANG",
                                os.path.join(ROOT, "build", "llvm", "bin", "clang.exe"))
+DEFAULT_LLD = os.environ.get("RXDK_LLD",
+                             os.path.join(ROOT, "build", "llvm", "bin", "ld.lld.exe"))
 DEFAULT_BASE = 0x82000000
 CFLAGS = ["-target", TARGET, "-O2", "-fno-sanitize=all"]
 
@@ -196,13 +198,24 @@ def compile_sources(sources, workdir, cc, clang, cflags):
     return objects
 
 
-def link(objects, libs, stubs, layout, out_elf, gc=True, ldflags=()):
-    """Link objects (+ optional stubs .s + libs) into the ELF, return the result."""
-    cmd = [zig(), "cc", "-target", TARGET, "-nostdlib",
-           "-Wl,-T," + layout]
+def link(objects, libs, stubs, layout, out_elf, lld=DEFAULT_LLD, gc=True,
+         ldflags=()):
+    """Link objects (+ optional assembled stubs .o + libs) into the ELF.
+
+    Links with the LLVM lld we ship (ld.lld), not an external driver -- the
+    productised toolchain is self-contained. ld.lld links objects, so the import
+    thunks must already be assembled (see main); the layout script's ENTRY(_start)
+    plus -e _start sets the entry. A caller-supplied -Wl,a,b flag (the old zig
+    driver form) is unwrapped into raw linker arguments for compatibility."""
+    # --error-limit=0: the trial link deliberately fails, and its full undefined
+    # list IS the kernel-import discovery. ld.lld stops after 20 errors by
+    # default, which silently truncates that list -- a title with more than ~20
+    # kernel imports would get an incomplete stub set and still fail to link.
+    cmd = [lld, "-T", layout, "-e", "_start", "--error-limit=0"]
     if gc:
-        cmd.append("-Wl,--gc-sections")
-    cmd += list(ldflags)
+        cmd.append("--gc-sections")
+    for f in ldflags:
+        cmd += f[len("-Wl,"):].split(",") if f.startswith("-Wl,") else [f]
     cmd += objects
     if stubs:
         cmd.append(stubs)
@@ -257,6 +270,8 @@ def main():
                          "default) or zig (legacy PPC EABI, simple titles only)")
     ap.add_argument("--clang", default=DEFAULT_CLANG,
                     help="patched clang path (for --cc clang)")
+    ap.add_argument("--lld", default=DEFAULT_LLD,
+                    help="ld.lld path (the LLVM linker we ship)")
     ap.add_argument("--cflag", action="append", default=[],
                     help="extra compile flag (repeatable), e.g. --cflag -Iinc "
                          "--cflag -fno-exceptions")
@@ -313,17 +328,18 @@ def main():
     elf = out_base + ".elf"
 
     # trial link (no stubs) to discover the undefined kernel imports
-    trial = link(objects, libs, None, layout, elf, gc=True, ldflags=args.ldflag)
+    trial = link(objects, libs, None, layout, elf, lld=args.lld, gc=True,
+                 ldflags=args.ldflag)
     undefined = undefined_from(trial) if trial.returncode != 0 else []
 
     manifest = None
     stubs = None
     if undefined:
-        stubs = out_base + "_stubs.s"
+        stubs_s = out_base + "_stubs.s"
         manifest = out_base + "_stubs.json"
         r = run([sys.executable, os.path.join(HERE, "gen_import_stubs.py"),
                  "--xdk", args.xdk, "--names", ",".join(undefined),
-                 "-o", stubs, "--manifest", manifest])
+                 "-o", stubs_s, "--manifest", manifest])
         sys.stdout.write(r.stdout)
         if r.returncode != 0:
             sys.exit(r.stderr or "gen_import_stubs failed")
@@ -332,9 +348,15 @@ def main():
         m = re.search(r"unresolved \(not kernel imports\): (.+)", r.stdout)
         if m:
             sys.exit(f"unresolved symbols (not kernel imports): {m.group(1).strip()}")
+        # ld.lld links objects, not assembly: assemble the thunks with our clang.
+        stubs = out_base + "_stubs.o"
+        ra = run([args.clang, "--target=" + MS_TRIPLE, "-c", stubs_s, "-o", stubs])
+        if ra.returncode != 0:
+            sys.exit(f"assembling import stubs failed:\n{ra.stderr}")
 
     # final link
-    final = link(objects, libs, stubs, layout, elf, gc=True, ldflags=args.ldflag)
+    final = link(objects, libs, stubs, layout, elf, lld=args.lld, gc=True,
+                 ldflags=args.ldflag)
     if final.returncode != 0:
         sys.exit(f"link failed:\n{final.stdout}{final.stderr}")
 
