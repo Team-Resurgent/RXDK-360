@@ -86,65 +86,58 @@ double __floatundidf(unsigned long long a) {
     return half * 2.0 + (double)(int)(a & 1u);
 }
 
-/* ---- allocator: 16-byte-aligned over the console pool -------------------- */
+/* ---- allocator: the process heap (RtlAllocateHeap over XapiProcessHeap) --- */
 
 /*
- * malloc/free on the kernel pool (xboxkrnl ExAllocatePool/ExFreePool, resolved
- * as imports) -- the allocator the retail CRT's heap sits on, so there is no
- * static reservation.
- *
- * Alignment is 16. The 360 SDK's own malloc.h notes the MS CRT defaults to only
- * 8-byte alignment (16-aligned vectors are meant to use _aligned_malloc), and
- * ExAllocatePool likewise returns 8-aligned user pointers (its 8-byte
- * X_POOL_ALLOC_HEADER over a coarser block). But __vector4 / XNAMath's XMVECTOR
- * are __declspec(align(16)) and the VMX128 load (lvx) needs 16, so a plain `new`
- * of a vector-bearing type would otherwise be under-aligned. We therefore
- * over-allocate and bump the user pointer to a 16-byte boundary, with a header
- * just below it recording the real pool pointer (for free) and the request size
- * (for realloc) -- the same reasoning behind RXDK-Libs' 16-aligning heap.
+ * malloc/free live on the *process heap* (RtlAllocateHeap over XapiProcessHeap,
+ * created in crt_start), exactly like the retail CRT (libcMT) -- NOT a separate
+ * kernel-pool allocator. This is load-bearing: the shipped XDK libraries assume
+ * malloc == HeapAlloc(GetProcessHeap()), and mix `new`/`delete`,
+ * malloc/free, HeapAlloc/HeapFree and XuiAlloc/XuiFree on the same object. If
+ * malloc used a different allocator (e.g. ExAllocatePool), a pointer from one
+ * would be handed to the other's free: RtlFreeHeap walking a foreign pointer
+ * corrupts the heap free list (observed as XUI's XuiInit trashing a HEAP_FREE_
+ * ENTRY.Flink). One heap for everyone keeps the invariant. RtlAllocateHeap on
+ * the 360 process heap returns 16-aligned blocks, so __vector4/XMVECTOR storage
+ * is aligned without extra work.
  */
-extern void *ExAllocatePool(unsigned size);
-extern void ExFreePool(void *base);
-extern void *memcpy(void *d, const void *s, size_t n);
+extern void *XapiProcessHeap;
+extern void *RtlAllocateHeap(void *heap, unsigned flags, size_t size);
+extern int   RtlFreeHeap(void *heap, unsigned flags, void *p);
+extern void *RtlReAllocateHeap(void *heap, unsigned flags, void *p, size_t size);
 
-#define RXDK_MALLOC_ALIGN 16u
-
-typedef struct {
-    void  *raw;                        /* the ExAllocatePool pointer to free */
-    size_t size;                       /* the requested size, for realloc */
-} rxdk_alloc_hdr;
+#define RXDK_HEAP_ZERO_MEMORY 0x00000008u
+/* aligned_alloc (alignment > 16) can't be expressed to RtlAllocateHeap, so it
+   over-allocates a normal block and returns an aligned pointer inside it, with
+   {magic, raw-block} stashed in the two words just below the user pointer so
+   free() can recover and release the real block. The magic plus a bounds/align
+   sanity check on the stashed pointer makes a false positive on an ordinary
+   block's heap header astronomically unlikely. */
+#define RXDK_ALIGN_MAGIC 0xA11C0A11u
 
 void *malloc(size_t n) {
-    size_t total = n + sizeof(rxdk_alloc_hdr) + (RXDK_MALLOC_ALIGN - 1);
-    void *raw = ExAllocatePool((unsigned)total);
-    if (!raw)
-        return 0;
-    uintptr_t base = (uintptr_t)raw + sizeof(rxdk_alloc_hdr);
-    uintptr_t user = (base + (RXDK_MALLOC_ALIGN - 1)) & ~(uintptr_t)(RXDK_MALLOC_ALIGN - 1);
-    rxdk_alloc_hdr *h = (rxdk_alloc_hdr *)(user - sizeof(rxdk_alloc_hdr));
-    h->raw = raw;
-    h->size = n;
-    return (void *)user;
+    return XapiProcessHeap ? RtlAllocateHeap(XapiProcessHeap, 0, n) : 0;
 }
 
 void free(void *p) {
     if (!p)
         return;
-    rxdk_alloc_hdr *h = (rxdk_alloc_hdr *)((uintptr_t)p - sizeof(rxdk_alloc_hdr));
-    ExFreePool(h->raw);
+    void *raw = ((void **)p)[-1];
+    if (((unsigned *)p)[-2] == RXDK_ALIGN_MAGIC &&
+        (uintptr_t)raw < (uintptr_t)p &&
+        (uintptr_t)p - (uintptr_t)raw < 0x10000u &&
+        ((uintptr_t)raw & 15u) == 0)
+        RtlFreeHeap(XapiProcessHeap, 0, raw);      /* over-aligned block */
+    else
+        RtlFreeHeap(XapiProcessHeap, 0, p);
 }
 
 void *calloc(size_t nmemb, size_t size) {
     if (size && nmemb > (size_t)-1 / size)   /* overflow */
         return 0;
-    size_t n = nmemb * size;
-    void *p = malloc(n);
-    if (p) {
-        char *c = (char *)p;
-        for (size_t i = 0; i < n; i++)
-            c[i] = 0;
-    }
-    return p;
+    return XapiProcessHeap
+               ? RtlAllocateHeap(XapiProcessHeap, RXDK_HEAP_ZERO_MEMORY, nmemb * size)
+               : 0;
 }
 
 void *realloc(void *p, size_t n) {
@@ -154,14 +147,7 @@ void *realloc(void *p, size_t n) {
         free(p);
         return 0;
     }
-    rxdk_alloc_hdr *h = (rxdk_alloc_hdr *)((uintptr_t)p - sizeof(rxdk_alloc_hdr));
-    size_t old = h->size;
-    void *np = malloc(n);
-    if (np) {
-        memcpy(np, p, old < n ? old : n);
-        free(p);
-    }
-    return np;
+    return RtlReAllocateHeap(XapiProcessHeap, 0, p, n);
 }
 
 /* ---- MSVC compiler-version guards ---------------------------------------- */
@@ -186,24 +172,25 @@ void abort(void) {
     for (;;) {}
 }
 
-/* C11 aligned_alloc, honouring alignments larger than the 16-byte malloc gives
-   (posix_memalign, std::aligned_alloc, over-aligned types). Over-allocate,
-   align the user pointer up, and place the alloc header immediately below it --
-   which is exactly what free() reads, so the result frees like any malloc block
-   (no separate aligned-free needed). Unlike C11's aligned_alloc, size need not
-   be a multiple of alignment here. */
+/* C11 aligned_alloc, honouring alignments larger than the 16 bytes the process
+   heap already guarantees (posix_memalign, std::aligned_alloc, over-aligned
+   types). alignment <= 16 is a plain heap block (freeable normally). For a
+   larger alignment, over-allocate on the process heap, align the user pointer
+   up, and stash {magic, raw-block} in the two words below it so free() recovers
+   the real block -- keeping everything on the one process heap. Unlike C11's
+   aligned_alloc, size need not be a multiple of alignment here. */
 void *aligned_alloc(size_t alignment, size_t size) {
-    if (alignment < RXDK_MALLOC_ALIGN)
-        alignment = RXDK_MALLOC_ALIGN;
-    size_t total = size + alignment + sizeof(rxdk_alloc_hdr);
-    void *raw = ExAllocatePool((unsigned)total);
+    if (!XapiProcessHeap)
+        return 0;
+    if (alignment <= 16u)
+        return RtlAllocateHeap(XapiProcessHeap, 0, size);
+    size_t total = size + alignment + 8u;        /* room for the {magic,raw} tag */
+    void *raw = RtlAllocateHeap(XapiProcessHeap, 0, total);
     if (!raw)
         return 0;
-    uintptr_t base = (uintptr_t)raw + sizeof(rxdk_alloc_hdr);
-    uintptr_t user = (base + (alignment - 1)) & ~(uintptr_t)(alignment - 1);
-    rxdk_alloc_hdr *h = (rxdk_alloc_hdr *)(user - sizeof(rxdk_alloc_hdr));
-    h->raw  = raw;
-    h->size = size;
+    uintptr_t user = ((uintptr_t)raw + 8u + (alignment - 1)) & ~(uintptr_t)(alignment - 1);
+    ((unsigned *)user)[-2] = RXDK_ALIGN_MAGIC;
+    ((void **)user)[-1]    = raw;
     return (void *)user;
 }
 
