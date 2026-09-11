@@ -211,7 +211,12 @@ def link(objects, libs, stubs, layout, out_elf, lld=DEFAULT_LLD, gc=True,
     # list IS the kernel-import discovery. ld.lld stops after 20 errors by
     # default, which silently truncates that list -- a title with more than ~20
     # kernel imports would get an incomplete stub set and still fail to link.
-    cmd = [lld, "-T", layout, "-e", "_start", "--error-limit=0"]
+    # --no-demangle: ld.lld demangles C++ names in "undefined symbol:" errors by
+    # default, which splits a name like foo(unsigned int, void*) across spaces --
+    # undefined_from() then parses fragments ("unsigned", "void") and
+    # gen_import_stubs looks those up as symbols. Keep the raw mangled names so
+    # the kernel-import discovery and the error text are both correct.
+    cmd = [lld, "-T", layout, "-e", "_start", "--error-limit=0", "--no-demangle"]
     if gc:
         cmd.append("--gc-sections")
     for f in ldflags:
