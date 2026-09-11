@@ -243,6 +243,12 @@ def _keep_section(name):
     # referenced and stays dropped.
     if name == ".XBLD$V":
         return ".data"
+    # .XBMOVIE$* holds movie-capture data globals (?XBM__CaptureCompletionSignal*)
+    # that d3d9/xaudio2's capture path defines and references; like .XBLD$V it is
+    # an ordinary Xbox-specific data section, kept as .data so those symbols
+    # resolve (its member is pulled only by a title that uses movie capture).
+    if name.startswith(".XBMOVIE"):
+        return ".data"
     base = name.split("$")[0]
     if base in (".text", ".data", ".bss", ".pdata", ".xdata"):
         return base
