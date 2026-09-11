@@ -101,7 +101,7 @@ static DWORD                   g_xmpCreateHr = 0xFFFFFFFF;
  * filled rects, transforms) drawn through xuirun/xuirender on our D3D device. */
 static HXUIDC   g_xuiDC;
 static HXUIFONT g_xuiFontBig, g_xuiFontMed, g_xuiFontSmall;
-static HXUIBRUSH g_xuiGrad, g_xuiPanel, g_xuiAccent, g_xuiBar;
+static HXUIBRUSH g_xuiGrad, g_xuiPanel, g_xuiAccent, g_xuiBar, g_xuiGlow;
 static bool     g_xuiReady;
 static DWORD    g_xuiInitHr = 0xFFFFFFFF;
 
@@ -541,6 +541,11 @@ static void InitXui()
         XuiCreateSolidBrush(D3DCOLOR_ARGB(255, 40, 120, 255), &g_xuiPanel);
         XuiCreateSolidBrush(D3DCOLOR_ARGB(255, 90, 220, 160), &g_xuiAccent);
         XuiCreateSolidBrush(D3DCOLOR_ARGB(180, 255, 255, 255), &g_xuiBar);
+        /* radial glow behind the title: bright centre fading to transparent */
+        XUIGradientStop rg[2];
+        rg[0].dwColor = D3DCOLOR_ARGB(150, 90, 160, 255); rg[0].fPos = 0.0f;
+        rg[1].dwColor = D3DCOLOR_ARGB(0,  90, 160, 255);  rg[1].fPos = 1.0f;
+        XuiCreateRadialGradientBrush(2, rg, &g_xuiGlow);
     }
     g_xuiInitHr = hr;
     g_xuiReady = SUCCEEDED(hr);
@@ -570,41 +575,66 @@ static void XuiRect_(HXUIBRUSH br, DWORD tint, float l, float t, float r, float 
 /* The impressive bit: a full XUI scene rendered every frame -- gradient panel,
  * header bar, animated accent underline + sweeping highlight, drop-shadowed
  * title, subtitle and a feature list, all via XUI immediate-mode calls. */
+/* draw a text run with a uniform scale about its own origin (pulsing title) */
+static void XuiTextScaled(HXUIFONT f, DWORD color, float x, float y, float scale,
+                          DWORD style, LPCWSTR s)
+{
+    XUIRect clip(0, 0, g_bbW / scale, g_bbH / scale);
+    D3DXMATRIX m; D3DXMatrixScaling(&m, scale, scale, 1.f); m._41 = x; m._42 = y;
+    XuiRenderSetTransform(g_xuiDC, &m);
+    XuiSelectFont(g_xuiDC, f);
+    XuiSetColorFactor(g_xuiDC, color);
+    XuiDrawText(g_xuiDC, s, style | XUI_FONT_STYLE_SINGLE_LINE | XUI_FONT_STYLE_NO_WORDWRAP, 0, &clip);
+}
+
 static void DrawXuiScene(float t)
 {
     XuiRenderBegin(g_xuiDC, D3DCOLOR_ARGB(255, 8, 10, 26));
     D3DXMATRIX view; D3DXMatrixIdentity(&view); XuiRenderSetViewTransform(g_xuiDC, &view);
 
     const float PANL = 120, PANT = 150, PANR = g_bbW - 120.f, PANB = g_bbH - 150.f;
+
+    /* slowly rotate the panel's linear gradient so it shimmers */
+    D3DXMATRIX gm; D3DXMatrixRotationZ(&gm, t * 0.25f);
+    XuiBrushSetXForm(g_xuiGrad, &gm);
     XuiRect_(g_xuiGrad,  0xFFFFFFFF, PANL, PANT, PANR, PANB);           /* gradient panel   */
+
+    /* radial glow that breathes behind the header */
+    float g = 0.7f + 0.3f * (float)sin(t * 1.3f);
+    XuiRect_(g_xuiGlow, D3DCOLOR_ARGB((int)(180 * g), 255, 255, 255),
+             PANL + 40, PANT - 10, PANL + 560, PANT + 150);
+
     XuiRect_(g_xuiPanel, 0xFFFFFFFF, PANL, PANT, PANR, PANT + 84);      /* header bar       */
 
-    /* animated accent underline: width sweeps with time */
+    /* rainbow-cycled accent underline whose width sweeps with time */
     float w = (PANR - PANL - 80) * (0.5f + 0.5f * (float)sin(t * 1.7f));
-    XuiRect_(g_xuiAccent, 0xFFFFFFFF, PANL + 40, PANT + 78, PANL + 40 + w, PANT + 84);
+    DWORD ac = D3DCOLOR_ARGB(255, 128 + (int)(127 * sin(t * 2.0f)),
+                             128 + (int)(127 * sin(t * 2.0f + 2.09f)),
+                             128 + (int)(127 * sin(t * 2.0f + 4.19f)));
+    XuiRect_(g_xuiAccent, ac, PANL + 40, PANT + 78, PANL + 40 + w, PANT + 84);
     /* sweeping vertical highlight bar */
     float hx = PANL + 40 + (PANR - PANL - 80) * (0.5f + 0.5f * (float)sin(t * 0.8f));
     XuiRect_(g_xuiBar, D3DCOLOR_ARGB(60, 255, 255, 255), hx, PANT + 90, hx + 3, PANB - 20);
 
-    /* drop-shadowed title, slight pulse via a scaled second pass is overkill --
-       a bold big font with a shadow reads well */
+    /* drop-shadowed title that gently pulses in scale */
     XuiSetTextDropShadowColor(g_xuiDC, D3DCOLOR_ARGB(200, 0, 0, 0));
-    XuiText(g_xuiFontBig, D3DCOLOR_ARGB(255, 255, 255, 255), PANL + 40, PANT + 12,
-            XUI_FONT_STYLE_DROPSHADOW, L"RXDK \x00B7 XUI");
+    float ts = 1.0f + 0.035f * (float)sin(t * 2.2f);
+    XuiTextScaled(g_xuiFontBig, D3DCOLOR_ARGB(255, 255, 255, 255), PANL + 40, PANT + 12, ts,
+                  XUI_FONT_STYLE_DROPSHADOW, L"RXDK \x00B7 XUI");
     XuiText(g_xuiFontMed, D3DCOLOR_ARGB(255, 150, 210, 255), PANL + 40, PANT + 108,
             XUI_FONT_STYLE_NORMAL, L"Xbox 360 UI framework \x2014 immediate-mode rendering");
 
     static const wchar_t *items[] = {
         L"\x2022  XuiCreateFont / XuiDrawText  \x2014  TrueType glyph atlas",
-        L"\x2022  XuiCreateLinearGradientBrush + XuiFillRect  \x2014  panels",
-        L"\x2022  XuiSetColorFactor / drop shadow / transforms",
+        L"\x2022  Linear + radial gradient brushes, animated XForms",
+        L"\x2022  XuiSetColorFactor / drop shadow / scale transforms",
         L"\x2022  xuirun + xuirender on our own D3D device",
     };
     for (int i = 0; i < 4; ++i)
         XuiText(g_xuiFontSmall, D3DCOLOR_ARGB(255, 220, 226, 240),
                 PANL + 48, PANT + 170 + i * 40.f, XUI_FONT_STYLE_NORMAL, items[i]);
 
-    /* live colour-cycled status line, right side */
+    /* live colour-cycled status line */
     DWORD c = D3DCOLOR_ARGB(255, 120 + (int)(120 * sin(t)), 220, 160 + (int)(80 * cos(t * 1.3f)));
     XuiText(g_xuiFontMed, c, PANL + 48, PANB - 70, XUI_FONT_STYLE_NORMAL,
             L"rendered live by XUI \x2014 fixed via -fshort-wchar");
