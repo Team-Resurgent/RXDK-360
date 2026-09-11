@@ -157,13 +157,19 @@ by-value-avoidance guidance:
 - Wrap the few i64-*by-value* kernel exports —
   `KeQueryPerformanceFrequency`, `KeQueryPerformanceCounter`,
   `KeQueryInterruptTime` — to write through a pointer if our clang code needs them.
-  **Done for the frequency:** `runtime/xbox/ke_perf.S`
-  `rxdk_query_perf_freq64(unsigned long long *out)` calls the kernel export and
-  captures the single-register result with a 64-bit `std`, which our *assembler*
-  emits on the 32-bit target even though the *compiler* will not (a C wrapper is
-  not an option — our clang would re-read the return as an r3:r4 pair). clock.c
-  routes `clock_gettime(CLOCK_MONOTONIC)`/`clock()` through it. The same thunk
-  pattern covers the counter/interrupt-time exports if needed.
+  **Done:** `runtime/xbox/ke_perf.S` provides three pointer-out accessors that
+  capture the single-register result with a 64-bit `std`/`mftb` (which our
+  *assembler* emits on the 32-bit target even though the *compiler* will not — a
+  C wrapper cannot, it would re-read the return as an r3:r4 pair):
+  `rxdk_query_perf_freq64` (→ `KeQueryPerformanceFrequency`, wired into clock.c's
+  `clock_gettime(CLOCK_MONOTONIC)`/`clock()`), `rxdk_query_interrupt_time64`
+  (→ `KeQueryInterruptTime`, ord 0x82), and `rxdk_query_perf_counter64` (a single
+  64-bit `mftb` — the 360 has **no** `KeQueryPerformanceCounter` export; the perf
+  counter *is* the time-base register, which the XDK's own
+  `QueryPerformanceCounter` reads the same way). ⚠ xenia's `ResultBase::Store`
+  truncates `qword_result_t` returns to 32 bits, so `KeQueryInterruptTime` reads
+  back with a garbage high word under xenia once it exceeds 31 bits; the thunk is
+  hardware-correct.
 
 Schedule Phases 0–4 only when i64-by-value interop becomes a real requirement.
 
