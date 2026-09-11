@@ -28,6 +28,9 @@ TRIPLE = "powerpc-unknown-xbox360"
 CFLAGS = [
     "-std=c++11", "-O2", "-fms-extensions", "-fms-compatibility", "-fdeclspec",
     "-fno-exceptions", "-fno-rtti",
+    # Xbox WCHAR is 16-bit UTF-16; match it so L"..." typeface locators are read
+    # correctly by XUI (see build_dash.py).
+    "-fshort-wchar",
     "-D_WIN32=1", "-D_M_PPCBE=1", "-D_M_PPC=1", "-D_XBOX=1", "-D_XBOX_VER=200",
     "-D__export=", "-D_SIZE_T_DEFINED", "-D_XM_NO_INTRINSICS_", "-Wno-pragma-pack",
     "-Wno-invalid-token-paste",
