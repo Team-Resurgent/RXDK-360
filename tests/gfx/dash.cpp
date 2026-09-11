@@ -26,6 +26,8 @@
 #include <xmp.h>
 #include <xui.h>
 #include <xact3.h>
+#include <xcompress.h>
+#include <xjson.h>
 #include <tracerecording.h>
 #include <xsim.h>
 #include <xonline.h>
@@ -97,6 +99,11 @@ static float                   g_vidFps;
 static XMP_HANDLE              g_xmpPlaylist;
 static bool                    g_xmpReady;
 static DWORD                   g_xmpCreateHr = 0xFFFFFFFF;
+
+/* DATA / CPU libs: XCompress (LZX) round-trip + XJSON parse -- pure CPU, so
+ * fully verifiable headless. */
+static DWORD g_zSrc, g_zComp; static bool g_zOk;
+static int   g_jTokens, g_jStrings; static char g_jName[48];
 
 /* XACT3: the authored audio engine -- plays a cue from compiled banks
  * (.xsb sound bank + .xwb XMA wave bank), built offline with xactbld3. */
@@ -526,6 +533,71 @@ static void InitXmp()
     DbgPrint("[DASH] xmp: CreateTitlePlaylist hr=0x%08x ready=%d\n", g_xmpCreateHr, (int)g_xmpReady);
 }
 
+/* xjson.h declares XJSON* as overloaded C++ functions, so xjson.lib exports them
+ * MSVC-mangled -- names our clang's Itanium mangling won't match. Bridge the few
+ * we use by their exact MSVC-mangled symbols via asm() labels (the char* reader
+ * overloads); the types still come from xjson.h. */
+extern "C" {
+HJSONREADER jCreate()                                      asm("?XJSONCreateReader@@YAPAUHJSONREADER__@@XZ");
+HRESULT     jSetBuf(HJSONREADER, const char*, DWORD, BOOL) asm("?XJSONSetBuffer@@YAJPAUHJSONREADER__@@PBDKH@Z");
+HRESULT     jRead(HJSONREADER, JSONTOKENTYPE*, DWORD*, DWORD*) asm("?XJSONReadToken@@YAJPAUHJSONREADER__@@PAW4_JSONTokenType@@PAK2@Z");
+HRESULT     jValue(HJSONREADER, char*, DWORD)              asm("?XJSONGetTokenValue@@YAJPAUHJSONREADER__@@PADK@Z");
+HRESULT     jClose(HJSONREADER)                            asm("?XJSONCloseReader@@YAJPAUHJSONREADER__@@@Z");
+}
+
+/* XCompress: LZX-compress a buffer, decompress it, verify the round-trip is
+ * byte-identical. XJSON: parse a JSON document, count tokens and pull out a
+ * field value. Both are pure-CPU middleware, run once at startup. */
+static void InitData()
+{
+    /* --- XCompress (LZX) --- */
+    static char src[2048];
+    for (int i = 0; i < (int)sizeof(src); ++i)
+        src[i] = "RXDK-360 component test harness / XCompress LZX round-trip. "[i % 59];
+    g_zSrc = sizeof(src);
+    static char comp[4096], back[2048];
+    XMEMCOMPRESSION_CONTEXT cctx = 0;
+    if (XMemCreateCompressionContext(XMEMCODEC_LZX, NULL, 0, &cctx) == S_OK) {
+        SIZE_T cs = sizeof(comp);
+        if (XMemCompress(cctx, comp, &cs, src, g_zSrc) == S_OK) {
+            g_zComp = (DWORD)cs;
+            XMEMDECOMPRESSION_CONTEXT dctx = 0;
+            if (XMemCreateDecompressionContext(XMEMCODEC_LZX, NULL, 0, &dctx) == S_OK) {
+                SIZE_T ds = sizeof(back);
+                if (XMemDecompress(dctx, back, &ds, comp, cs) == S_OK)
+                    g_zOk = (ds == g_zSrc) && (memcmp(back, src, g_zSrc) == 0);
+                XMemDestroyDecompressionContext(dctx);
+            }
+        }
+        XMemDestroyCompressionContext(cctx);
+    }
+
+    /* --- XJSON --- */
+    static const char *json =
+        "{\"title\":\"RXDK-360\",\"platform\":360,\"libs\":[\"d3d9\",\"xui\",\"xact3\"],"
+        "\"working\":true}";
+    HJSONREADER r = jCreate();
+    if (r) {
+        int len = 0; while (json[len]) ++len;
+        jSetBuf(r, json, len, TRUE);
+        JSONTOKENTYPE tt; DWORD tl, tp; bool grab = false;
+        for (int i = 0; i < 256; ++i) {
+            if (jRead(r, &tt, &tl, &tp) != S_OK) break;
+            g_jTokens++;
+            if (tt == Json_FieldName) {
+                char fn[24] = ""; jValue(r, fn, sizeof(fn));
+                grab = (fn[0] == 't' && fn[1] == 'i');   /* "title" */
+            } else if (tt == Json_String) {
+                g_jStrings++;
+                if (grab) { jValue(r, g_jName, sizeof(g_jName)); grab = false; }
+            }
+        }
+        jClose(r);
+    }
+    DbgPrint("[DASH] data: LZX %u->%u ok=%d ; JSON tokens=%d strings=%d title='%s'\n",
+             g_zSrc, g_zComp, (int)g_zOk, g_jTokens, g_jStrings, g_jName);
+}
+
 /* Read a whole file into a buffer. XMA wave banks must sit in physically
  * contiguous memory (the hardware XMA decoder reads them), so the wave bank uses
  * XPhysicalAlloc; the sound bank is a plain read. */
@@ -706,9 +778,9 @@ static void DrawXuiScene(float t)
 
 #define AUTO_FRAMES 300   /* ~5s per section at 60fps */
 
-enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_X3D, SEC_XMP, SEC_XACT, SEC_XUI, SEC_INPUT, SEC_NET, SEC_SYSTEM, SEC_COUNT };
+enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_X3D, SEC_XMP, SEC_XACT, SEC_XUI, SEC_INPUT, SEC_NET, SEC_SYSTEM, SEC_DATA, SEC_COUNT };
 static const char *g_secName[SEC_COUNT] = {
-    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "X3DAUDIO", "XMP MUSIC", "XACT3", "XUI", "XINPUT", "XNET", "SYSTEM",
+    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "X3DAUDIO", "XMP MUSIC", "XACT3", "XUI", "XINPUT", "XNET", "SYSTEM", "DATA / CPU",
 };
 #define XMV_MOVIE "game:\\Media\\Video\\Sample.wmv"
 static int   g_section, g_frameInSec, g_totalFrames, g_cycles;
@@ -1058,6 +1130,24 @@ static void SectionBody(int s, float tsec, float tglob)
         DrawText(C1, 396, 1.0f, COL_DIM, "probes run once at startup; side-effecting inits torn back down");
         break;
     }
+    case SEC_DATA: {
+        DrawText(64, 172, 1.4f, COL_WHITE, "data / CPU middleware -- pure-CPU, fully verifiable");
+        const float C1 = 64, C2 = 300;
+
+        DrawText(C1, 240, 1.25f, COL_BLUE, "xcompress");
+        wsprintfA(line, "XMemCompress LZX  %u -> %u bytes (%d%%)   decompress round-trip: %s",
+                  g_zSrc, g_zComp, g_zSrc ? (int)(100 - g_zComp * 100 / g_zSrc) : 0,
+                  g_zOk ? "MATCH" : "FAIL");
+        DrawText(C2, 240, 1.25f, g_zOk ? COL_OK : COL_FAIL, line);
+
+        DrawText(C1, 284, 1.25f, COL_BLUE, "xjson");
+        wsprintfA(line, "XJSONReadToken  %d tokens, %d strings   title = \"%s\"",
+                  g_jTokens, g_jStrings, g_jName);
+        DrawText(C2, 284, 1.25f, g_jTokens > 0 ? COL_OK : COL_FAIL, line);
+
+        DrawText(64, 340, 1.0f, COL_DIM, "XMemCompress/XMemDecompress (LZX) and the XJSON SAX reader");
+        break;
+    }
     }
 }
 
@@ -1183,6 +1273,7 @@ int main(void)
     InitXmp();
     InitXact();
     InitXui();
+    InitData();
     DbgPrint("[DASH] init complete; running sections\n");
 
     SectionEnter(g_section);
