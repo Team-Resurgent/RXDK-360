@@ -23,6 +23,7 @@
 #include <x3daudio.h>
 #include <winsockx.h>
 #include <xmedia2.h>
+#include <xmp.h>
 #include <math.h>
 
 extern "C" int DbgPrint(const char *, ...);
@@ -457,9 +458,9 @@ static void InitNet()
 
 #define AUTO_FRAMES 300   /* ~5s per section at 60fps */
 
-enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_X3D, SEC_INPUT, SEC_NET, SEC_COUNT };
+enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_X3D, SEC_XMP, SEC_INPUT, SEC_NET, SEC_COUNT };
 static const char *g_secName[SEC_COUNT] = {
-    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "X3DAUDIO", "XINPUT", "XNET",
+    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "X3DAUDIO", "XMP MUSIC", "XINPUT", "XNET",
 };
 #define XMV_MOVIE "game:\\Media\\Video\\Sample.wmv"
 static int   g_section, g_frameInSec, g_totalFrames, g_cycles;
@@ -490,6 +491,16 @@ static void SectionEnter(int s)
                       SetStatus(g_x3dReady ? COL_OK : COL_FAIL,
                                 g_x3dReady ? "3D-panning the sample around the listener" : "X3DAudio unavailable");
                       break;
+    case SEC_XMP: {
+        XMP_STATE stt = XMP_STATE_IDLE; FLOAT vol = 0;
+        DWORD hs = XMPGetStatus(&stt), hv = XMPGetVolume(&vol);
+        SetStatus((hs == ERROR_SUCCESS) ? COL_OK : COL_FAIL,
+                  (hs == ERROR_SUCCESS) ? "XMP background-music service responding"
+                                        : "XMP service unavailable");
+        DbgPrint("[DASH] xmp: GetStatus hr=0x%08x state=%d  GetVolume hr=0x%08x vol=%d%%\n",
+                 hs, (int)stt, hv, (int)(vol * 100));
+        break;
+    }
     case SEC_INPUT:   SetStatus(COL_PEND, "polling XInput port 0..."); break;
     case SEC_NET:
         SetStatus(g_netStarted ? COL_OK : COL_FAIL,
@@ -599,6 +610,33 @@ static void SectionBody(int s, float tsec, float tglob)
         DrawText(64, 284, 1.25f, COL_DIM, line);
         wsprintfA(line, "final mix: %u channels", g_dstCh);
         DrawText(64, 318, 1.25f, COL_DIM, line);
+        break;
+    }
+    case SEC_XMP: {
+        XMP_STATE stt = XMP_STATE_IDLE; FLOAT vol = 0;
+        XMP_PLAYBACKMODE pm = XMP_PLAYBACKMODE_INORDER; XMP_REPEATMODE rm = XMP_REPEATMODE_PLAYLIST;
+        DWORD pbFlags = 0;
+        DWORD hs = XMPGetStatus(&stt), hv = XMPGetVolume(&vol);
+        DWORD hb = XMPGetPlaybackBehavior(&pm, &rm, &pbFlags);
+        bool ok = (hs == ERROR_SUCCESS);
+        DrawText(64, 180, 1.5f, ok ? COL_OK : COL_FAIL,
+                 ok ? "XMP music player (xmp.lib)" : "XMP unavailable");
+        DrawText(64, 232, 1.25f, COL_WHITE, "the user's dashboard background music -- titles query + duck it");
+        const char *sn = stt == XMP_STATE_PLAYING ? "PLAYING" :
+                         stt == XMP_STATE_PAUSED  ? "PAUSED"  : "IDLE (no user music)";
+        wsprintfA(line, "XMPGetStatus -> %s", sn);
+        DrawText(64, 272, 1.25f, stt == XMP_STATE_PLAYING ? COL_OK : COL_DIM, line);
+        if (hv == ERROR_SUCCESS) {
+            wsprintfA(line, "XMPGetVolume -> %d%%", (int)(vol * 100));
+            DrawText(64, 306, 1.25f, COL_WHITE, line);
+        }
+        if (hb == ERROR_SUCCESS) {
+            wsprintfA(line, "playback: %s / %s",
+                      pm == XMP_PLAYBACKMODE_SHUFFLE ? "shuffle" : "in-order",
+                      rm == XMP_REPEATMODE_NOREPEAT  ? "no-repeat" : "repeat-playlist");
+            DrawText(64, 340, 1.25f, COL_DIM, line);
+        }
+        DrawText(64, 384, 1.0f, COL_DIM, "serviced by xam's XMP app -- a real round-trip, not a stub");
         break;
     }
     case SEC_INPUT: {
