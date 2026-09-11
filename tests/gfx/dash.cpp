@@ -20,6 +20,7 @@
 #include <xtl.h>
 #include <xinputdefs.h>
 #include <xaudio2.h>
+#include <x3daudio.h>
 #include <winsockx.h>
 #include <xmedia2.h>
 #include <math.h>
@@ -72,6 +73,9 @@ static IXAudio2MasteringVoice *g_master;
 static IXAudio2SourceVoice    *g_srcVoice;
 static bool                    g_audioReady, g_tonePlaying;
 static short                   g_tone[44100];
+static X3DAUDIO_HANDLE         g_x3dHandle;
+static bool                    g_x3dReady;
+static DWORD                   g_dstCh = 2;
 
 /* net */
 static bool                    g_netStarted;
@@ -283,6 +287,37 @@ static void InitAudioEngine()
     g_srcVoice->SubmitSourceBuffer(&b, NULL);
     g_audioReady = true;
     DbgPrint("[DASH] audio engine ready\n");
+
+    /* X3DAudio: init against the mastering voice's channel layout (the final
+     * mix). dst channel count must match for SetOutputMatrix. */
+    XAUDIO2_VOICE_DETAILS det; ZeroMemory(&det, sizeof(det));
+    g_master->GetVoiceDetails(&det);
+    g_dstCh = det.InputChannels ? det.InputChannels : 2;
+    DWORD mask = (g_dstCh == 1) ? 0x4 : (g_dstCh == 6) ? 0x3F : (g_dstCh == 8) ? 0xFF : 0x3;
+    X3DAudioInitialize(mask, X3DAUDIO_SPEED_OF_SOUND, g_x3dHandle);
+    g_x3dReady = true;
+    DbgPrint("[DASH] X3DAudio init: dstChannels=%u mask=0x%X\n", g_dstCh, mask);
+}
+
+/* Per-frame 3D pan: orbit a mono emitter around the listener and apply the
+ * computed matrix to the WAV voice, so the sample circles the speakers. */
+static void X3DUpdate(float t)
+{
+    if (!g_x3dReady || !g_audioReady) return;
+    X3DAUDIO_LISTENER L; ZeroMemory(&L, sizeof(L));
+    L.OrientFront.z = 1.0f; L.OrientTop.y = 1.0f;
+    X3DAUDIO_EMITTER E; ZeroMemory(&E, sizeof(E));
+    E.OrientFront.z = 1.0f; E.OrientTop.y = 1.0f;
+    E.ChannelCount = 1; E.CurveDistanceScaler = 6.0f; E.DopplerScaler = 0.0f;
+    E.Position.x = 5.0f * (float)sin(t);   /* orbit radius 5, in the XZ plane */
+    E.Position.z = 5.0f * (float)cos(t);
+
+    float matrix[8]; ZeroMemory(matrix, sizeof(matrix));
+    X3DAUDIO_DSP_SETTINGS dsp; ZeroMemory(&dsp, sizeof(dsp));
+    dsp.SrcChannelCount = 1; dsp.DstChannelCount = g_dstCh;
+    dsp.pMatrixCoefficients = matrix;
+    X3DAudioCalculate(g_x3dHandle, &L, &E, X3DAUDIO_CALCULATE_MATRIX, &dsp);
+    g_srcVoice->SetOutputMatrix(NULL, 1, g_dstCh, matrix, XAUDIO2_COMMIT_NOW);
 }
 
 static void ToneStart() { if (g_audioReady && !g_tonePlaying) { g_srcVoice->Start(0, XAUDIO2_COMMIT_NOW); g_tonePlaying = true; } }
@@ -422,9 +457,9 @@ static void InitNet()
 
 #define AUTO_FRAMES 300   /* ~5s per section at 60fps */
 
-enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_INPUT, SEC_NET, SEC_COUNT };
+enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_X3D, SEC_INPUT, SEC_NET, SEC_COUNT };
 static const char *g_secName[SEC_COUNT] = {
-    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "XINPUT", "XNET",
+    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "X3DAUDIO", "XINPUT", "XNET",
 };
 #define XMV_MOVIE "game:\\Media\\Video\\Sample.wmv"
 static int   g_section, g_frameInSec, g_totalFrames, g_cycles;
@@ -451,6 +486,10 @@ static void SectionEnter(int s)
                                 g_audioReady ? "playing WAV sample (stops on exit)" : "engine unavailable");
                       DbgPrint("[DASH] audio: %s %s\n", g_wavIsSample ? "sample" : "tone",
                                g_audioReady ? "started" : "unavailable"); break;
+    case SEC_X3D:     ToneStart();
+                      SetStatus(g_x3dReady ? COL_OK : COL_FAIL,
+                                g_x3dReady ? "3D-panning the sample around the listener" : "X3DAudio unavailable");
+                      break;
     case SEC_INPUT:   SetStatus(COL_PEND, "polling XInput port 0..."); break;
     case SEC_NET:
         SetStatus(g_netStarted ? COL_OK : COL_FAIL,
@@ -460,7 +499,14 @@ static void SectionEnter(int s)
     }
 }
 
-static void SectionExit(int s) { if (s == SEC_AUDIO) { ToneStop(); DbgPrint("[DASH] audio: tone stopped\n"); } }
+static void SectionExit(int s)
+{
+    if (s == SEC_AUDIO || s == SEC_X3D) { ToneStop(); DbgPrint("[DASH] audio: stopped\n"); }
+    if (s == SEC_X3D && g_audioReady) {   /* undo the 3D pan so later playback is centred */
+        float m[8]; for (DWORD i = 0; i < g_dstCh && i < 8; ++i) m[i] = 1.0f;
+        g_srcVoice->SetOutputMatrix(NULL, 1, g_dstCh, m, XAUDIO2_COMMIT_NOW);
+    }
+}
 
 static void Goto(int s) { SectionExit(g_section); g_section = s; SectionEnter(s); }
 
@@ -541,6 +587,18 @@ static void SectionBody(int s, float tsec, float tglob)
         DrawText(64, 284, 1.25f, COL_DIM,  g_wavIsSample
                  ? "PCM WAV sample from game:\\Media\\Sounds (starts on enter, stops on exit)"
                  : "440Hz fallback tone (WAV not found)");
+        break;
+    }
+    case SEC_X3D: {
+        X3DUpdate(tglob * 1.5f);
+        DrawText(64, 200, 1.5f, g_x3dReady ? COL_OK : COL_FAIL,
+                 g_x3dReady ? "X3DAudio: sample orbiting the listener" : "X3DAudio unavailable");
+        DrawText(64, 250, 1.25f, COL_WHITE, "X3DAudioCalculate -> SetOutputMatrix each frame");
+        float ang = tglob * 1.5f;
+        wsprintfA(line, "emitter: x=%d z=%d  (orbit radius 5)", (int)(5 * sin(ang)), (int)(5 * cos(ang)));
+        DrawText(64, 284, 1.25f, COL_DIM, line);
+        wsprintfA(line, "final mix: %u channels", g_dstCh);
+        DrawText(64, 318, 1.25f, COL_DIM, line);
         break;
     }
     case SEC_INPUT: {
