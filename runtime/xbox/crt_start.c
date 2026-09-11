@@ -32,12 +32,42 @@ extern void *XapiProcessHeap;
 extern void *RtlCreateHeap(unsigned flags, void *base,
                            unsigned long reserve, unsigned long commit,
                            void *lock, void *parameters);
+extern unsigned XexGetModuleHandle(const char *name, void **out_handle);
 
+static unsigned rd_le32(const unsigned char *p) {
+    return (unsigned)p[0] | ((unsigned)p[1] << 8) |
+           ((unsigned)p[2] << 16) | ((unsigned)p[3] << 24);
+}
+
+/* Heap reserve/commit are a *build* setting: the linker's /HEAP option, which
+   the Xbox 360 Image Conversion "Heap Size" field feeds and which lands in the
+   image's PE optional header (SizeOfHeapReserve/Commit). The console's real
+   XapiInitProcess sizes the process heap from there rather than a constant, so
+   we do the same -- read this module's PE header and honour the build value,
+   falling back to the MSVC /HEAP default (1MB/4KB) only if it can't be read. */
 static void init_process_heap(void) {
-    if (!XapiProcessHeap)
-        /* HEAP_GROWABLE (0x2): grows on demand from the reserve. Matching the
-           XDK's process-heap creation; sizes are the conventional defaults. */
-        XapiProcessHeap = RtlCreateHeap(0x2, 0, 0x40000, 0x10000, 0, 0);
+    if (XapiProcessHeap)
+        return;
+    unsigned long reserve = 0x100000, commit = 0x1000;   /* /HEAP default */
+    void *hmod = 0;
+    if (XexGetModuleHandle(0, &hmod) == 0 && hmod) {
+        /* the handle is an LDR_DATA_TABLE_ENTRY; DllBase is at +0x18 (a native
+           big-endian guest pointer -- an ordinary load reads it correctly). */
+        const unsigned char *base =
+            (const unsigned char *)(unsigned long)
+                *(const volatile unsigned *)((const unsigned char *)hmod + 0x18);
+        /* PE headers are little-endian even on this big-endian console, so pull
+           the dwords out byte-wise. e_lfanew @ DOS+0x3C; optional header follows
+           the 4-byte PE signature and 20-byte COFF header; SizeOfHeapReserve @
+           optional+0x50, SizeOfHeapCommit @ +0x54. */
+        if (base && base[0] == 'M' && base[1] == 'Z') {
+            const unsigned char *opt = base + rd_le32(base + 0x3C) + 4 + 20;
+            unsigned r = rd_le32(opt + 0x50), c = rd_le32(opt + 0x54);
+            if (r) { reserve = r; if (c) commit = c; }
+        }
+    }
+    /* HEAP_GROWABLE (0x2): grows on demand from the reserve. */
+    XapiProcessHeap = RtlCreateHeap(0x2, 0, reserve, commit, 0, 0);
 }
 
 typedef void (*init_fn)(void);
