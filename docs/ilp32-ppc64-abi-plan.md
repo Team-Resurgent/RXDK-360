@@ -157,8 +157,13 @@ by-value-avoidance guidance:
 - Wrap the few i64-*by-value* kernel exports —
   `KeQueryPerformanceFrequency`, `KeQueryPerformanceCounter`,
   `KeQueryInterruptTime` — to write through a pointer if our clang code needs them.
-  (A pure-asm re-pack shim is not an option: it would need the 64-bit
-  `std`/`rldicl` the current 32-bit target cannot emit.)
+  **Done for the frequency:** `runtime/xbox/ke_perf.S`
+  `rxdk_query_perf_freq64(unsigned long long *out)` calls the kernel export and
+  captures the single-register result with a 64-bit `std`, which our *assembler*
+  emits on the 32-bit target even though the *compiler* will not (a C wrapper is
+  not an option — our clang would re-read the return as an r3:r4 pair). clock.c
+  routes `clock_gettime(CLOCK_MONOTONIC)`/`clock()` through it. The same thunk
+  pattern covers the counter/interrupt-time exports if needed.
 
 Schedule Phases 0–4 only when i64-by-value interop becomes a real requirement.
 
