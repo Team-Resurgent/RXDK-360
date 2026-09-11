@@ -24,11 +24,14 @@ $g.Clear([System.Drawing.Color]::FromArgb(0, 0, 0, 0))
 $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAliasGridFit
 $font = New-Object System.Drawing.Font("Consolas", 12, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
 $fmt = [System.Drawing.StringFormat]::GenericTypographic
+# Small left/top margin so glyph ink is padded inside its cell -- otherwise the
+# half-texel UV inset in the renderer clips the left column of each glyph.
+$padX = 2; $padY = 1
 for ($i = 0; $i -lt 96; $i++) {
     $c = [char]($i + 32)
     $cx = ($i % $cols) * $cw
     $cy = [Math]::Floor($i / $cols) * $ch
-    $g.DrawString([string]$c, $font, [System.Drawing.Brushes]::White, ($cx - 1), $cy, $fmt)
+    $g.DrawString([string]$c, $font, [System.Drawing.Brushes]::White, ($cx + $padX), ($cy + $padY), $fmt)
 }
 $g.Flush()
 
