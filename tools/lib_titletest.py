@@ -43,6 +43,12 @@ DEPS = {
     "xaudio2": ["xmcore"],     # XLFQueue* live in xmcore
 }
 
+# Tests whose link set is not "<name> + DEPS" -- e.g. a combined title touching
+# several middleware libraries at once (the realistic multi-lib case).
+LIBS = {
+    "multi": ["d3d9", "d3dx9", "xgraphics", "xaudio2", "x3daudio", "xnet", "xmcore"],
+}
+
 PRINT = 'extern int DbgPrint(const char*,...);\n'
 
 # name -> (source, runnable). Link-only entries take the address of an exported
@@ -96,6 +102,29 @@ extern void XNetStartup(void);
 void*volatile s;
 int main(void){ DbgPrint("[LT] SECT xnet\n"); s=(void*)&XNetStartup;
     DbgPrint("[LT] DONE xnet\n"); return 0; }''', False),
+
+    # A realistic title touching several middleware libs at once: links them all
+    # together (cross-lib deps must resolve, no duplicate-symbol collisions) and
+    # runs -- so the combined static initialisers of d3d9/xaudio2/xgraphics/...
+    # all execute on our runtime, which a single-lib or link-only test misses.
+    "multi": (PRINT + r'''
+extern float* D3DXMatrixMultiply(float*,const float*,const float*);
+extern int    X3DAudioInitialize(unsigned,float,unsigned char*);
+extern void   Direct3D_CreateDevice(void);
+extern void   XGGetTextureLayout(void);
+extern void   XAudio2Create(void);
+extern void   XNetStartup(void);
+void*volatile sink[4];
+int main(void){
+    DbgPrint("[LT] SECT multi\n");
+    static float I[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1}, m[16];
+    D3DXMatrixMultiply(m,I,I);
+    unsigned char h[64]; int hr=X3DAudioInitialize(3,343.0f,h);
+    sink[0]=(void*)&Direct3D_CreateDevice; sink[1]=(void*)&XGGetTextureLayout;
+    sink[2]=(void*)&XAudio2Create; sink[3]=(void*)&XNetStartup;
+    DbgPrint("[LT] %s m00=%d hr=%d\n",(m[0]==1.0f&&hr>=0)?"PASS":"FAIL",(int)m[0],hr);
+    DbgPrint("[LT] DONE multi\n"); return 0;
+}''', True),
 }
 
 
@@ -108,7 +137,8 @@ def build(name, src, runnable):
     c = os.path.join(BUILD, name + ".c")
     open(c, "w", newline="\n").write(src)
     out = os.path.join(BUILD, name + ".xex")
-    libspec = ",".join([name] + DEPS.get(name, []) + [LIBCPP])
+    libs = LIBS.get(name, [name] + DEPS.get(name, []))
+    libspec = ",".join(libs + [LIBCPP])
     r = sh([sys.executable, os.path.join(HERE, "mktitle.py"), c,
             "--lib", libspec, "-o", out])
     if r.returncode != 0 or not os.path.exists(out):
