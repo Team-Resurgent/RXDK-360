@@ -28,6 +28,7 @@
 #include <xact3.h>
 #include <xcompress.h>
 #include <xjson.h>
+#include <xhttp.h>
 #include <tracerecording.h>
 #include <xsim.h>
 #include <xonline.h>
@@ -99,6 +100,13 @@ static float                   g_vidFps;
 static XMP_HANDLE              g_xmpPlaylist;
 static bool                    g_xmpReady;
 static DWORD                   g_xmpCreateHr = 0xFFFFFFFF;
+
+/* XHTTP: a real HTTP GET over the (working) xenia socket layer */
+#define HTTP_HOST "example.com"
+static DWORD       g_httpStatus;
+static bool        g_httpDone, g_httpOk;
+static const char *g_httpStep = "not run";
+static char        g_httpBody[72];
 
 /* DATA / CPU libs: XCompress (LZX) round-trip + XJSON parse -- pure CPU, so
  * fully verifiable headless. */
@@ -533,6 +541,43 @@ static void InitXmp()
     DbgPrint("[DASH] xmp: CreateTitlePlaylist hr=0x%08x ready=%d\n", g_xmpCreateHr, (int)g_xmpReady);
 }
 
+/* One real HTTP GET through XHTTP (WinHTTP-style) over xenia's socket layer:
+ * open session -> connect -> GET / -> read the status code + a little body.
+ * Runs once; each step is recorded so the section shows exactly how far it got
+ * even if the host is unreachable. XNetStartup already ran in InitNet. */
+static void InitHttp()
+{
+    if (g_httpDone) return;
+    g_httpDone = true;
+    if (!XHttpStartup(0, NULL)) { g_httpStep = "XHttpStartup"; return; }
+    HINTERNET hs = XHttpOpen("RXDK-360/1.0", XHTTP_ACCESS_TYPE_DEFAULT_PROXY, NULL, NULL, 0);
+    if (!hs) { g_httpStep = "XHttpOpen"; return; }
+    HINTERNET hc = XHttpConnect(hs, HTTP_HOST, INTERNET_DEFAULT_HTTP_PORT, 0);
+    HINTERNET hr = hc ? XHttpOpenRequest(hc, "GET", "/", NULL, XHTTP_NO_REFERRER, NULL, 0) : NULL;
+    if (!hc) g_httpStep = "XHttpConnect";
+    else if (!hr) g_httpStep = "XHttpOpenRequest";
+    else if (!XHttpSendRequest(hr, XHTTP_NO_ADDITIONAL_HEADERS, 0, XHTTP_NO_REQUEST_DATA, 0, 0, 0))
+        g_httpStep = "XHttpSendRequest";
+    else if (!XHttpReceiveResponse(hr, NULL))
+        g_httpStep = "XHttpReceiveResponse";
+    else {
+        DWORD len = sizeof(g_httpStatus);
+        XHttpQueryHeaders(hr, XHTTP_QUERY_STATUS_CODE | XHTTP_QUERY_FLAG_NUMBER,
+                          NULL, &g_httpStatus, &len, NULL);
+        DWORD rd = 0;
+        XHttpReadData(hr, g_httpBody, sizeof(g_httpBody) - 1, &rd);
+        g_httpBody[rd < sizeof(g_httpBody) ? rd : sizeof(g_httpBody) - 1] = 0;
+        for (DWORD i = 0; i < rd; ++i) if (g_httpBody[i] < 32) g_httpBody[i] = ' ';
+        g_httpOk = (g_httpStatus == HTTP_STATUS_OK);
+        g_httpStep = "done";
+    }
+    if (hr) XHttpCloseHandle(hr);
+    if (hc) XHttpCloseHandle(hc);
+    XHttpCloseHandle(hs);
+    DbgPrint("[DASH] http: GET http://%s/ -> status=%u step=%s ok=%d\n",
+             HTTP_HOST, g_httpStatus, g_httpStep, (int)g_httpOk);
+}
+
 /* xjson.h declares XJSON* as overloaded C++ functions, so xjson.lib exports them
  * MSVC-mangled -- names our clang's Itanium mangling won't match. Bridge the few
  * we use by their exact MSVC-mangled symbols via asm() labels (the char* reader
@@ -778,9 +823,9 @@ static void DrawXuiScene(float t)
 
 #define AUTO_FRAMES 300   /* ~5s per section at 60fps */
 
-enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_X3D, SEC_XMP, SEC_XACT, SEC_XUI, SEC_INPUT, SEC_NET, SEC_SYSTEM, SEC_DATA, SEC_COUNT };
+enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_X3D, SEC_XMP, SEC_XACT, SEC_XUI, SEC_INPUT, SEC_NET, SEC_HTTP, SEC_SYSTEM, SEC_DATA, SEC_COUNT };
 static const char *g_secName[SEC_COUNT] = {
-    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "X3DAUDIO", "XMP MUSIC", "XACT3", "XUI", "XINPUT", "XNET", "SYSTEM", "DATA / CPU",
+    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "X3DAUDIO", "XMP MUSIC", "XACT3", "XUI", "XINPUT", "XNET", "XHTTP", "SYSTEM", "DATA / CPU",
 };
 #define XMV_MOVIE "game:\\Media\\Video\\Sample.wmv"
 static int   g_section, g_frameInSec, g_totalFrames, g_cycles;
@@ -1130,6 +1175,27 @@ static void SectionBody(int s, float tsec, float tglob)
         DrawText(C1, 396, 1.0f, COL_DIM, "probes run once at startup; side-effecting inits torn back down");
         break;
     }
+    case SEC_HTTP: {
+        DrawText(64, 180, 1.5f, g_httpOk ? COL_OK : COL_PEND, "XHTTP -- real HTTP client");
+        DrawText(64, 232, 1.25f, COL_WHITE, "XHttpOpen -> Connect -> OpenRequest(GET) -> SendRequest -> ReceiveResponse");
+        wsprintfA(line, "GET  http://%s/", HTTP_HOST);
+        DrawText(64, 266, 1.25f, COL_DIM, line);
+        if (g_httpStatus) {
+            wsprintfA(line, "HTTP status: %u %s", g_httpStatus, g_httpOk ? "OK" : "");
+            DrawText(64, 306, 1.5f, g_httpOk ? COL_OK : COL_PEND, line);
+            wsprintfA(line, "body[0..]: %s", g_httpBody);
+            DrawText(64, 348, 1.0f, COL_DIM, line);
+            DrawText(64, 384, 1.0f, COL_DIM, "a real request over xenia's TCP socket layer (XNet)");
+        } else if (g_httpStep[0] == 'd') {   /* "done": API ran, no real response */
+            DrawText(64, 306, 1.25f, COL_PEND, "no status -- xenia stubs the NetDll_XHttp* provider");
+            DrawText(64, 344, 1.0f, COL_DIM, "xhttp.lib links + the full API flow runs; the request needs the");
+            DrawText(64, 372, 1.0f, COL_DIM, "console's system HTTP service, which xenia does not implement");
+        } else {
+            wsprintfA(line, "stopped at %s", g_httpStep);
+            DrawText(64, 306, 1.25f, COL_FAIL, line);
+        }
+        break;
+    }
     case SEC_DATA: {
         DrawText(64, 172, 1.4f, COL_WHITE, "data / CPU middleware -- pure-CPU, fully verifiable");
         const float C1 = 64, C2 = 300;
@@ -1269,6 +1335,7 @@ int main(void)
     InitFx();
     InitAudioEngine();
     InitNet();
+    InitHttp();
     InitSmoke();
     InitXmp();
     InitXact();
