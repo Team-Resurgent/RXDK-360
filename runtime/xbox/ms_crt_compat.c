@@ -686,6 +686,14 @@ int _CrtDbgReportW(int reportType, const wchar_t *file, int line,
 }
 int _chvalidator(int c) { return c; }
 
+/* __IsIntConst is an Xbox 360 compiler intrinsic (ppcintrinsics.h:
+   `int __IsIntConst(int)`) that reports whether its argument was a
+   compile-time constant; d3d9.h's D3DISINTCONST fast-paths use it to pick an
+   optimised state-set path. The MS compiler folds it at compile time; clang
+   does not, so it emits a real call. A runtime call means "not a constant", so
+   return 0 -- the caller then takes its general (non-constant) path. */
+int __IsIntConst(int val) { (void)val; return 0; }
+
 /* ---- version-stamp + XAPI globals referenced by vcomp / the MS CRT ----
    Data symbols the shipped libs expect the CRT/XAPI to define. XapiProcessHeap
    is the process heap handle GetProcessHeap() returns; it is initialised to a
