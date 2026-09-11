@@ -167,6 +167,33 @@ Schedule Phases 0–4 only when i64-by-value interop becomes a real requirement.
 - `docs/abi-spike.md`, `docs/abi-complete.md`, `docs/base-target-correction.md`,
   `docs/llvm-patch-design.md` — the existing MS-PPC ABI work and its fixtures.
 - Prior clang ABI fix: the printf/va_list frame-lowering bug (LR slot).
-- Separate open item surfaced alongside this: variadic **floating-point** args to
-  the MS kernel `DbgPrint` (`%g`/`%f`) print wrong — a vararg-FP placement
-  mismatch, independent of the i64 integer ABI.
+
+## Same root cause: variadic floating-point (`DbgPrint %g`)
+
+The `DbgPrint("%g", d)` misprint is **not** a separate bug — it is this same
+64-bit-GPR gap in the variadic path. For a variadic call the MS ABI homes an FP
+argument into its positional **64-bit GPR**, not an FPR. cl.exe:
+
+```
+stfd fr1, 0x18(r1)     ; spill the double
+mr   r5, r4            ; next positional arg
+ld   r4, 0x18(r1)      ; reload the double's 64 bits into r4 (its slot's GPR)
+bl   DbgPrint
+```
+
+Our 32-bit clang leaves the double in `f1` and leaves the shadow GPR undefined
+(it sets `creqv 6,6,6` and reserves the slot but never fills it), so the MS
+kernel `DbgPrint`, reading the value from the GPR, gets garbage — the observed
+`5.3e-315`/`9.29e-315` denormals.
+
+Confirmed in xenia: our own libc `snprintf("%g | %.3f | %e", …)` prints
+`2e-08 | 3.142 | 5.000000e+07` (correct — our clang's FP-vararg pass and our
+libc's `va_arg` are mutually consistent, so titles using `<stdio.h>` are fine),
+while a *direct* `DbgPrint("%g", d)` prints garbage.
+
+Impact is the same narrow boundary: only our-clang code calling an MS variadic
+function (the kernel `DbgPrint`) with a floating-point argument **by value**. The
+ILP32-on-ppc64 target fixes it for free (the `ld` into a 64-bit slot GPR is
+exactly what a 64-bit-register target emits). **Interim workaround:** format with
+our own libc (`snprintf` into a buffer) and pass the resulting **string** to
+`DbgPrint` — never a raw FP value.
