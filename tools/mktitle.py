@@ -79,6 +79,26 @@ SECTIONS {{
        section count -- and the header -- small for every title, automatically. */
     *(.gcc_except_table .gcc_except_table.*)
   }}
+  .pdata : {{                        /* RUNTIME_FUNCTION table from the retail MS
+                                        libs. Gather it into one named .pdata
+                                        section so the packer fills the PE exception
+                                        directory and xenia -- and the HW unwinder --
+                                        get exact function boundaries. Without it
+                                        xenia's heuristic analyser merges functions
+                                        into multi-MB blobs: ~40x slower JIT warmup
+                                        and the arena "oversized alloc" overflows.
+                                        No KEEP: each .pdata is grouped with its
+                                        function's .text, so --gc-sections keeps it
+                                        iff the function survives (KEEP would instead
+                                        root every function's .pdata and drag in dead
+                                        code that calls unlinked libs). */
+    *(.pdata)
+    *(.pdata.*)
+  }}
+  .xdata : {{                        /* unwind info the .pdata entries point at */
+    *(.xdata)
+    *(.xdata.*)
+  }}
   . = ALIGN(0x{page:X});             /* DWARF EH tables on their own read-only page:
                                         libunwind recovers the section's true length
                                         from the PE section table at runtime, so it
