@@ -100,7 +100,7 @@ def main():
 
     xex = os.path.join(args.outdir, "dash_spin.xex" if args.spin else "dash.xex")
     run([sys.executable, os.path.join(ROOT, "tools", "mktitle.py"), obj,
-         "--lib", "d3d9,d3dx9,xgraphics,xaudio2,xmcore,xnet,xmedia2",
+         "--lib", "d3d9,d3dx9,xgraphics,xaudio2,xmcore,xnet,xmedia2,x3daudio",
          "--coff-dir", os.path.join(ROOT, "build", "coff"),
          "--xdk", os.path.join(args.xdk, "lib", "xbox"), "-o", xex])
     print("\nbuilt", xex)
