@@ -210,8 +210,12 @@ R_PPC_ADDR32, R_PPC_ADDR16_LO, R_PPC_ADDR16_HI, R_PPC_ADDR16_HA, R_PPC_REL24 = \
 
 # COFF section characteristics
 IMAGE_SCN_CNT_CODE = 0x00000020
+IMAGE_SCN_CNT_INITIALIZED_DATA = 0x00000040
 IMAGE_SCN_CNT_UNINITIALIZED_DATA = 0x00000080
+IMAGE_SCN_LNK_INFO = 0x00000200            # .drectve and other linker-only info
+IMAGE_SCN_LNK_REMOVE = 0x00000800          # not carried into the image
 IMAGE_SCN_LNK_COMDAT = 0x00001000
+IMAGE_SCN_MEM_DISCARDABLE = 0x02000000     # debug etc.: dropped before load
 IMAGE_SCN_MEM_WRITE = 0x80000000
 IMAGE_SCN_MEM_EXECUTE = 0x20000000
 
@@ -226,33 +230,55 @@ _DROP_RELOCS = {0x0B, 0x0C}          # SECREL, SECTION -- debug only
 _IMPORT_RELOCS = {0x0A}              # ADDR32NB -- import descriptors, packer's job
 
 
-def _keep_section(name):
-    """Sections carried into the ELF, and the name they take there."""
+def _keep_section(name, flags=0):
+    """The ELF section a COFF section is carried into, or None to drop it.
+
+    Kept by CONTENT rather than a per-name allow-list: an executable section
+    becomes .text, uninitialised data .bss, initialised data .data (writable)
+    or .rodata (read-only). This preserves the MS libraries' many Xbox-specific
+    named data/code sections -- .XBLD$V (a lib's <Lib>BuildNumber), .XBMOVIE$*
+    (movie-capture globals), and any others a library defines and references --
+    without chasing each name, while dropping the host-only metadata families
+    (debug, linker directives, import/export/resource tables). A few names keep
+    a canonical target: .rdata -> .rodata, the .CRT$X* ctor/dtor tables keep
+    their grouped name for the linker script, and the unwind tables keep their
+    own .pdata/.xdata so the EH machinery still finds them.
+    """
     if name == ".rdata" or name.startswith(".rdata$"):
         return ".rodata"
-    # MS CRT initializer/terminator tables (.CRT$XCA..XCZ etc.) carry the pre-main
-    # constructor pointers of prebuilt libs. Keep the grouped name so the title's
-    # linker script can gather them in $-suffix order between __xc_a/__xc_z.
     if name.startswith(".CRT$"):
         return name
-    # .XBLD$V is the COMDAT data word holding a library's own <Lib>BuildNumber
-    # (XNetBuildNumber, XapiBuildNumber, ...), which that library's code reads.
-    # Keep it as data so those symbols resolve to the real build number rather
-    # than being dropped (they are defined only here). The other .XBLD$*
-    # build-stamp metadata (__C1_*/__C2_* compiler stamps in .XBLD$W) is not
-    # referenced and stays dropped.
-    if name == ".XBLD$V":
-        return ".data"
-    # .XBMOVIE$* holds movie-capture data globals (?XBM__CaptureCompletionSignal*)
-    # that d3d9/xaudio2's capture path defines and references; like .XBLD$V it is
-    # an ordinary Xbox-specific data section, kept as .data so those symbols
-    # resolve (its member is pulled only by a title that uses movie capture).
-    if name.startswith(".XBMOVIE"):
-        return ".data"
     base = name.split("$")[0]
+    # host-only metadata never carried into the image. Imports come from the
+    # short-import members / gen_import_stubs, not .idata; debug and .drectve
+    # are compiler/linker bookkeeping.
+    if base in (".debug", ".drectve", ".idata", ".didat", ".edata", ".rsrc",
+                ".sxdata", ".gfids", ".giats", ".gljmp"):
+        return None
+    # .XBLD$W is the compiler build stamp (__C1_<ver>/__C2_<ver>), emitted into
+    # every object by a given cl.exe -- unreferenced metadata that would collide
+    # as duplicate symbols across libraries. Drop it (unlike .XBLD$V, whose
+    # <Lib>BuildNumber word is referenced and kept by the content rule below).
+    if name == ".XBLD$W":
+        return None
+    # .drectve / other linker-only info, and sections explicitly marked remove.
+    # Note MEM_DISCARDABLE is NOT a drop signal: MS marks .XBLD$V (the referenced
+    # <Lib>BuildNumber word) discardable, and we need the symbols it defines --
+    # anything genuinely unused is removed by --gc-sections instead.
+    if flags & (IMAGE_SCN_LNK_INFO | IMAGE_SCN_LNK_REMOVE):
+        return None
+    # the standard families keep their canonical name (unwind tables must stay
+    # .pdata/.xdata rather than fold into .rodata).
     if base in (".text", ".data", ".bss", ".pdata", ".xdata"):
         return base
-    return None                       # debug, drectve, XBLD$W, idata -> dropped
+    # everything else that carries real content is kept by what it holds.
+    if flags & IMAGE_SCN_CNT_CODE:
+        return ".text"
+    if flags & IMAGE_SCN_CNT_UNINITIALIZED_DATA:
+        return ".bss"
+    if flags & IMAGE_SCN_CNT_INITIALIZED_DATA:
+        return ".data" if (flags & IMAGE_SCN_MEM_WRITE) else ".rodata"
+    return None                       # no content (or unknown flags) -> drop
 
 
 class StrTab:
@@ -295,7 +321,7 @@ def coff_to_elf(obj, warn=print, noncomdat_strong=frozenset()):
     kept = []                          # (coff_index, elf_name, Section)
     coff_to_elfshndx = {}              # 1-based COFF secnum -> ELF section index
     for ci, s in enumerate(obj.sections, start=1):
-        elf_name = _keep_section(s.name)
+        elf_name = _keep_section(s.name, s.flags)
         if elf_name is None:
             continue
         coff_to_elfshndx[ci] = 1 + len(kept)
@@ -355,7 +381,8 @@ def coff_to_elf(obj, warn=print, noncomdat_strong=frozenset()):
             # a STATIC symbol whose name is a kept section is that section's
             # definition -- fold it onto the ELF section symbol
             if (sym.cls == IMAGE_SYM_CLASS_STATIC and sym.secnum in coff_to_elfshndx
-                    and _keep_section(sym.name) is not None
+                    and _keep_section(sym.name,
+                                      obj.sections[sym.secnum - 1].flags) is not None
                     and sym.name.split("$")[0] == obj.sections[sym.secnum - 1].name.split("$")[0]):
                 coff_to_elfsym[csi] = section_sym_of[coff_to_elfshndx[sym.secnum]]
                 continue
@@ -546,7 +573,7 @@ def _enumerate_coff_syms(obj):
 def defined_globals(obj):
     """Names of the global symbols this object defines (for the archive index)."""
     kept = {ci for ci, s in enumerate(obj.sections, start=1)
-            if _keep_section(s.name) is not None}
+            if _keep_section(s.name, s.flags) is not None}
     out = []
     for _, sym in _enumerate_coff_syms(obj):
         if sym.cls == IMAGE_SYM_CLASS_EXTERNAL and sym.secnum in kept:
