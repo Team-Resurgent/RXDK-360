@@ -20,6 +20,26 @@
 extern int  DbgPrint(const char *, ...);
 extern void HalReturnToFirmware(unsigned int routine);
 
+/* The process heap. The XDK's RtlAllocateHeap-based allocators -- GetProcessHeap,
+   and the many shipped libraries that call HeapAlloc(GetProcessHeap(), ...), vcomp
+   among them for its OpenMP lock objects -- read the heap handle from the data
+   symbol XapiProcessHeap. On console the real XapiInitProcess creates it early with
+   RtlCreateHeap; our minimal startup mirrors that here. RtlCreateHeap and
+   XapiProcessHeap come from the XDK's own xapilib (translated), so the heap layout
+   matches exactly what RtlAllocateHeap/RtlFreeHeap expect -- our own malloc uses
+   the kernel pool (ExAllocatePool) and is unaffected. */
+extern void *XapiProcessHeap;
+extern void *RtlCreateHeap(unsigned flags, void *base,
+                           unsigned long reserve, unsigned long commit,
+                           void *lock, void *parameters);
+
+static void init_process_heap(void) {
+    if (!XapiProcessHeap)
+        /* HEAP_GROWABLE (0x2): grows on demand from the reserve. Matching the
+           XDK's process-heap creation; sizes are the conventional defaults. */
+        XapiProcessHeap = RtlCreateHeap(0x2, 0, 0x40000, 0x10000, 0, 0);
+}
+
 typedef void (*init_fn)(void);
 extern init_fn __init_array_start[];
 extern init_fn __init_array_end[];
@@ -115,6 +135,7 @@ _Noreturn void exit(int code) {
 }
 
 void _start(void) {
+    init_process_heap();              /* before init: C++/CRT ctors may allocate */
     run_init();
     int argc = build_args();
     exit(main(argc, g_argv));         /* g_argv is always NULL-terminated */

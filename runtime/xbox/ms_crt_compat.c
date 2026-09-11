@@ -697,3 +697,10 @@ __attribute__((weak)) unsigned VCOMPBuildNumber = 0;
 __attribute__((weak)) unsigned __CrtBuildNumber = 0;
 __attribute__((weak)) void *XapiProcessHeap = 0;          /* startup sets a real heap */
 __attribute__((weak)) void *XapiCurrentTopLevelFilter = 0;
+/* NtGlobalFlag is an xboxkrnl data export the heap manager (RtlCreateHeap/
+   RtlAllocateHeap) reads to enable debug-heap behaviour (tail checking, free
+   fill, stack traces). The public XDK import libraries do not export it, so a
+   title cannot import it; a normal retail process runs with it clear. Provide it
+   as zero -- the ordinary, non-instrumented value -- so the heap manager takes
+   its normal path on both console and xenia. */
+__attribute__((weak)) unsigned NtGlobalFlag = 0;
