@@ -72,6 +72,23 @@ def main():
     shdir = os.path.join(HERE, "shaders")
     os.makedirs(args.outdir, exist_ok=True)
 
+    # Stage the media assets next to the xex so a loose xenia run resolves them
+    # via game:\ (xenia symlinks game:\ to the xex's folder). The same layout is
+    # what goes into the XDVDFS ISO for hardware. Assets come from the user's
+    # own XDK sample media -- nothing proprietary is committed to the repo.
+    import shutil
+    media = os.path.join(args.xdk, "Source", "Samples", "Media")
+    ASSETS = [("Video", "Sample.wmv"), ("Sounds", "Electro_1.wav")]
+    for sub, name in ASSETS:
+        srcf = os.path.join(media, sub, name)
+        dstd = os.path.join(args.outdir, "Media", sub)
+        os.makedirs(dstd, exist_ok=True)
+        if os.path.exists(srcf):
+            shutil.copyfile(srcf, os.path.join(dstd, name))
+            print("staged", os.path.join("Media", sub, name))
+        else:
+            print("WARNING: asset not found:", srcf)
+
     for src, hdr, profile, var in SHADERS:
         run([fxc, "/nologo", "/T", profile, "/E", "main",
              "/Fh", os.path.join(shdir, hdr), "/Vn", var, os.path.join(shdir, src)])
@@ -83,7 +100,7 @@ def main():
 
     xex = os.path.join(args.outdir, "dash_spin.xex" if args.spin else "dash.xex")
     run([sys.executable, os.path.join(ROOT, "tools", "mktitle.py"), obj,
-         "--lib", "d3d9,d3dx9,xgraphics,xaudio2,xmcore,xnet",
+         "--lib", "d3d9,d3dx9,xgraphics,xaudio2,xmcore,xnet,xmedia2",
          "--coff-dir", os.path.join(ROOT, "build", "coff"),
          "--xdk", os.path.join(args.xdk, "lib", "xbox"), "-o", xex])
     print("\nbuilt", xex)
