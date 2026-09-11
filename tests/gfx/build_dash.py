@@ -28,6 +28,11 @@ TRIPLE = "powerpc-unknown-xbox360"
 CFLAGS = [
     "-std=c++11", "-O2", "-fms-extensions", "-fms-compatibility", "-fdeclspec",
     "-fno-exceptions", "-fno-rtti",
+    # Xbox 360 WCHAR is 16-bit UTF-16 (MSVC default); our clang would otherwise
+    # emit 32-bit wide-char literals, so any L"..." handed to a Unicode API (XMP
+    # song paths, XUI typeface locators, ...) reads back empty/garbled on the BE
+    # console. Match the platform ABI.
+    "-fshort-wchar",
     "-D_WIN32=1", "-D_M_PPCBE=1", "-D_M_PPC=1", "-D_XBOX=1", "-D_XBOX_VER=200",
     "-D__export=", "-D_SIZE_T_DEFINED", "-D_XM_NO_INTRINSICS_", "-Wno-pragma-pack",
     # xaudio2.h builds its GUIDs with the MSVC non-standard `##-##` token paste
@@ -78,7 +83,8 @@ def main():
     # own XDK sample media -- nothing proprietary is committed to the repo.
     import shutil
     media = os.path.join(args.xdk, "Source", "Samples", "Media")
-    ASSETS = [("Video", "Sample.wmv"), ("Sounds", "Electro_1.wav")]
+    ASSETS = [("Video", "Sample.wmv"), ("Sounds", "Electro_1.wav"),
+              ("Sounds", "music1.wma")]   # XMP title-playlist track
     for sub, name in ASSETS:
         srcf = os.path.join(media, sub, name)
         dstd = os.path.join(args.outdir, "Media", sub)
@@ -100,7 +106,8 @@ def main():
 
     xex = os.path.join(args.outdir, "dash_spin.xex" if args.spin else "dash.xex")
     run([sys.executable, os.path.join(ROOT, "tools", "mktitle.py"), obj,
-         "--lib", "d3d9,d3dx9,xgraphics,xaudio2,xmcore,xnet,xmedia2,x3daudio,xmp",
+         "--lib", "d3d9,d3dx9,xgraphics,xaudio2,xmcore,xnet,xmedia2,x3daudio,xmp,"
+                  "tracerecording,xsim,xonline",
          "--coff-dir", os.path.join(ROOT, "build", "coff"),
          "--xdk", os.path.join(args.xdk, "lib", "xbox"), "-o", xex])
     print("\nbuilt", xex)

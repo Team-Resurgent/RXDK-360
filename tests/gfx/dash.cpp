@@ -24,6 +24,9 @@
 #include <winsockx.h>
 #include <xmedia2.h>
 #include <xmp.h>
+#include <tracerecording.h>
+#include <xsim.h>
+#include <xonline.h>
 #include <math.h>
 
 extern "C" int DbgPrint(const char *, ...);
@@ -85,6 +88,12 @@ static bool                    g_netStarted;
 static int                     g_vidState;   /* 0 untried, 1 ok, -1 create fail */
 static DWORD                   g_vidW, g_vidH, g_vidDur;
 static float                   g_vidFps;
+
+/* XMP background music: a title playlist over a staged WMA */
+#define XMP_WMA_W L"game:\\Media\\Sounds\\music1.wma"
+static XMP_HANDLE              g_xmpPlaylist;
+static bool                    g_xmpReady;
+static DWORD                   g_xmpCreateHr = 0xFFFFFFFF;
 
 /* ============================ text overlay ============================ */
 
@@ -454,13 +463,55 @@ static void InitNet()
     if (g_netStarted) { NetTest(); NetExternalTest(); }  /* loopback + real internet */
 }
 
+/* ---- system / online lib "smoke" probes ------------------------------ *
+ * The system + online libs cannot fully function without a real console /
+ * Xbox Live, so we cover them with one benign link+init+query each, run once
+ * at startup (side-effecting inits are torn straight back down). Every probe
+ * here was first verified fault-free in the standalone tests/gfx/smoketest.cpp.
+ *   xam            system info (language / game region) -- xam.xex, real values
+ *   tracerecording XTraceIsRecording -- thin thunk to xenia's xbdm DmTrace*
+ *   xsim           XSimInitialize/Uninitialize -- controller input simulation
+ *   xonline        XOnlineStartup/Cleanup -- the Live runtime (needs XNet up) */
+static DWORD   g_smLang, g_smRegion;
+static int     g_smTrace = -1;
+static HRESULT g_smSim = E_FAIL;
+static DWORD   g_smOnline = 0xFFFFFFFF;
+static void InitSmoke()
+{
+    g_smLang   = XGetLanguage();
+    g_smRegion = XGetGameRegion();
+    g_smTrace  = (int)XTraceIsRecording();
+    g_smSim    = XSimInitialize(60);
+    if (SUCCEEDED(g_smSim)) XSimUninitialize();
+    g_smOnline = XOnlineStartup();   /* XNetStartup already ran in InitNet */
+    if (g_smOnline == ERROR_SUCCESS) XOnlineCleanup();
+    DbgPrint("[DASH] smoke: lang=%u region=0x%04X trace=%d xsim=0x%08x xonline=0x%08x\n",
+             g_smLang, g_smRegion, g_smTrace, g_smSim, g_smOnline);
+}
+
+/* Build a one-track XMP *title playlist* over a staged WMA so the XMP section
+ * can actually play audible music (background-music playback goes through the
+ * system media player -- xenia decodes the WMA via ffmpeg). Playback is started
+ * on section enter and stopped on exit, like the XAudio2 tone/WAV. */
+static void InitXmp()
+{
+    static XMP_SONGDESCRIPTOR song = {
+        XMP_WMA_W, L"RXDK Sample Track", L"RXDK", L"Component Harness",
+        L"RXDK", L"Demo", 1, 0, XMP_SONGFORMAT_WMA
+    };
+    g_xmpCreateHr = XMPCreateTitlePlaylist(&song, 1, XMP_CREATETITLEPLAYLISTFLAG_NONE,
+                                           L"RXDK Dashboard", NULL, &g_xmpPlaylist);
+    g_xmpReady = (g_xmpCreateHr == ERROR_SUCCESS);
+    DbgPrint("[DASH] xmp: CreateTitlePlaylist hr=0x%08x ready=%d\n", g_xmpCreateHr, (int)g_xmpReady);
+}
+
 /* ============================ sections =============================== */
 
 #define AUTO_FRAMES 300   /* ~5s per section at 60fps */
 
-enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_X3D, SEC_XMP, SEC_INPUT, SEC_NET, SEC_COUNT };
+enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_X3D, SEC_XMP, SEC_INPUT, SEC_NET, SEC_SYSTEM, SEC_COUNT };
 static const char *g_secName[SEC_COUNT] = {
-    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "X3DAUDIO", "XMP MUSIC", "XINPUT", "XNET",
+    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "X3DAUDIO", "XMP MUSIC", "XINPUT", "XNET", "SYSTEM",
 };
 #define XMV_MOVIE "game:\\Media\\Video\\Sample.wmv"
 static int   g_section, g_frameInSec, g_totalFrames, g_cycles;
@@ -492,13 +543,16 @@ static void SectionEnter(int s)
                                 g_x3dReady ? "3D-panning the sample around the listener" : "X3DAudio unavailable");
                       break;
     case SEC_XMP: {
-        XMP_STATE stt = XMP_STATE_IDLE; FLOAT vol = 0;
-        DWORD hs = XMPGetStatus(&stt), hv = XMPGetVolume(&vol);
-        SetStatus((hs == ERROR_SUCCESS) ? COL_OK : COL_FAIL,
-                  (hs == ERROR_SUCCESS) ? "XMP background-music service responding"
-                                        : "XMP service unavailable");
-        DbgPrint("[DASH] xmp: GetStatus hr=0x%08x state=%d  GetVolume hr=0x%08x vol=%d%%\n",
-                 hs, (int)stt, hv, (int)(vol * 100));
+        if (g_xmpReady) {
+            XMPSetVolume(1.0f, NULL);
+            DWORD hp = XMPPlayTitlePlaylist(g_xmpPlaylist, NULL, NULL);
+            SetStatus(hp == ERROR_SUCCESS ? COL_OK : COL_FAIL,
+                      hp == ERROR_SUCCESS ? "playing WMA title playlist (stops on exit)"
+                                          : "XMPPlayTitlePlaylist failed");
+            DbgPrint("[DASH] xmp: PlayTitlePlaylist hr=0x%08x\n", hp);
+        } else {
+            SetStatus(COL_PEND, "no title playlist (WMA missing) -- querying status only");
+        }
         break;
     }
     case SEC_INPUT:   SetStatus(COL_PEND, "polling XInput port 0..."); break;
@@ -507,12 +561,16 @@ static void SectionEnter(int s)
                   g_netStarted ? "XNet up -- querying address / link" : "XNetStartup failed");
         DbgPrint("[DASH] net: started=%d\n", (int)g_netStarted);
         break;
+    case SEC_SYSTEM:
+        SetStatus(COL_OK, "system / online libs: link + init + query smoke test");
+        break;
     }
 }
 
 static void SectionExit(int s)
 {
     if (s == SEC_AUDIO || s == SEC_X3D) { ToneStop(); DbgPrint("[DASH] audio: stopped\n"); }
+    if (s == SEC_XMP && g_xmpReady) { XMPStop(NULL); DbgPrint("[DASH] xmp: stopped\n"); }
     if (s == SEC_X3D && g_audioReady) {   /* undo the 3D pan so later playback is centred */
         float m[8]; for (DWORD i = 0; i < g_dstCh && i < 8; ++i) m[i] = 1.0f;
         g_srcVoice->SetOutputMatrix(NULL, 1, g_dstCh, m, XAUDIO2_COMMIT_NOW);
@@ -621,22 +679,23 @@ static void SectionBody(int s, float tsec, float tglob)
         bool ok = (hs == ERROR_SUCCESS);
         DrawText(64, 180, 1.5f, ok ? COL_OK : COL_FAIL,
                  ok ? "XMP music player (xmp.lib)" : "XMP unavailable");
-        DrawText(64, 232, 1.25f, COL_WHITE, "the user's dashboard background music -- titles query + duck it");
+        DrawText(64, 232, 1.25f, COL_WHITE, "playing a title playlist over a WMA (system media player)");
+        DrawText(64, 266, 1.0f, COL_DIM,  XMP_WMA_W ? "game:\\Media\\Sounds\\music1.wma" : "");
         const char *sn = stt == XMP_STATE_PLAYING ? "PLAYING" :
-                         stt == XMP_STATE_PAUSED  ? "PAUSED"  : "IDLE (no user music)";
+                         stt == XMP_STATE_PAUSED  ? "PAUSED"  : "IDLE";
         wsprintfA(line, "XMPGetStatus -> %s", sn);
-        DrawText(64, 272, 1.25f, stt == XMP_STATE_PLAYING ? COL_OK : COL_DIM, line);
+        DrawText(64, 300, 1.25f, stt == XMP_STATE_PLAYING ? COL_OK : COL_DIM, line);
         if (hv == ERROR_SUCCESS) {
             wsprintfA(line, "XMPGetVolume -> %d%%", (int)(vol * 100));
-            DrawText(64, 306, 1.25f, COL_WHITE, line);
+            DrawText(64, 334, 1.25f, COL_WHITE, line);
         }
         if (hb == ERROR_SUCCESS) {
             wsprintfA(line, "playback: %s / %s",
                       pm == XMP_PLAYBACKMODE_SHUFFLE ? "shuffle" : "in-order",
                       rm == XMP_REPEATMODE_NOREPEAT  ? "no-repeat" : "repeat-playlist");
-            DrawText(64, 340, 1.25f, COL_DIM, line);
+            DrawText(64, 368, 1.25f, COL_DIM, line);
         }
-        DrawText(64, 384, 1.0f, COL_DIM, "serviced by xam's XMP app -- a real round-trip, not a stub");
+        DrawText(64, 402, 1.0f, COL_DIM, "XMPCreateTitlePlaylist + XMPPlayTitlePlaylist -- real playback");
         break;
     }
     case SEC_INPUT: {
@@ -727,6 +786,36 @@ static void SectionBody(int s, float tsec, float tglob)
             wsprintfA(line, "internet: %s -> no reply (offline, or host blocks UDP:53)", g_dnsHost);
             DrawText(64, 392, 1.25f, COL_PEND, line);
         }
+        break;
+    }
+    case SEC_SYSTEM: {
+        DrawText(64, 172, 1.4f, COL_WHITE, "system / online libs -- link + init + query");
+        DrawText(64, 206, 1.0f, COL_DIM,  "one benign probe each; the libs that can't fully run without a console/Live");
+
+        static const char *langs[] = { "?", "English", "Japanese", "German", "French",
+                                       "Spanish", "Italian", "Korean", "T-Chinese",
+                                       "Portuguese", "S-Chinese", "Polish", "Russian" };
+        const char *ln = (g_smLang < (sizeof(langs) / sizeof(langs[0]))) ? langs[g_smLang] : "?";
+        const float C1 = 64, C2 = 320;   /* two aligned columns: lib | probe + result */
+
+        DrawText(C1, 250, 1.25f, COL_BLUE, "xam");
+        wsprintfA(line, "XGetLanguage -> %u (%s)   XGetGameRegion -> 0x%04X", g_smLang, ln, g_smRegion);
+        DrawText(C2, 250, 1.25f, COL_OK, line);
+
+        DrawText(C1, 284, 1.25f, COL_BLUE, "tracerecording");
+        wsprintfA(line, "XTraceIsRecording -> %s   (thunks to xbdm DmTrace*)", g_smTrace > 0 ? "yes" : "no");
+        DrawText(C2, 284, 1.25f, COL_OK, line);
+
+        DrawText(C1, 318, 1.25f, COL_BLUE, "xsim");
+        wsprintfA(line, "XSimInitialize ran (no fault)   [xenia has no XSim backend]");
+        DrawText(C2, 318, 1.25f, COL_DIM, line);
+
+        DrawText(C1, 352, 1.25f, COL_BLUE, "xonline");
+        wsprintfA(line, "XOnlineStartup -> 0x%08x  %s", g_smOnline,
+                  g_smOnline == ERROR_SUCCESS ? "(Live runtime up)" : "(unavailable)");
+        DrawText(C2, 352, 1.25f, g_smOnline == ERROR_SUCCESS ? COL_OK : COL_PEND, line);
+
+        DrawText(C1, 396, 1.0f, COL_DIM, "probes run once at startup; side-effecting inits torn back down");
         break;
     }
     }
@@ -850,6 +939,8 @@ int main(void)
     InitFx();
     InitAudioEngine();
     InitNet();
+    InitSmoke();
+    InitXmp();
     DbgPrint("[DASH] init complete; running sections\n");
 
     SectionEnter(g_section);
