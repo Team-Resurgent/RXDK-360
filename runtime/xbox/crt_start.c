@@ -26,8 +26,10 @@ extern void HalReturnToFirmware(unsigned int routine);
    symbol XapiProcessHeap. On console the real XapiInitProcess creates it early with
    RtlCreateHeap; our minimal startup mirrors that here. RtlCreateHeap and
    XapiProcessHeap come from the XDK's own xapilib (translated), so the heap layout
-   matches exactly what RtlAllocateHeap/RtlFreeHeap expect -- our own malloc uses
-   the kernel pool (ExAllocatePool) and is unaffected. */
+   matches exactly what RtlAllocateHeap/RtlFreeHeap expect. Our own malloc/free/
+   new/delete run on THIS heap too (see rt_support.c) -- one heap for the whole
+   image, so a pointer from any allocator is valid to any free, as libcMT assumes.
+   It must therefore exist before any allocation, i.e. before ctors. */
 extern void *XapiProcessHeap;
 extern void *RtlCreateHeap(unsigned flags, void *base,
                            unsigned long reserve, unsigned long commit,
