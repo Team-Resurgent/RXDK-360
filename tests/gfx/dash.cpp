@@ -1276,6 +1276,7 @@ static void Present() { g_dev->Present(NULL, NULL, NULL, NULL); }
 /* Per-frame callback during XMV Play(): poll the pad and stop the clip early on
  * A/B/Start, so a controller can skip the movie (Play() otherwise blocks until
  * the clip ends). ctx is the player. */
+static DWORD g_xmvStart;
 static void XmvFrameCallback(PVOID ctx)
 {
     XINPUT_STATE st; ZeroMemory(&st, sizeof(st));
@@ -1284,6 +1285,12 @@ static void XmvFrameCallback(PVOID ctx)
         if (b & (XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_B | XINPUT_GAMEPAD_START))
             ((IXMedia2XmvPlayer *)ctx)->Stop(XMEDIA_STOP_IMMEDIATE);
     }
+#ifndef DASH_SPIN_FOREVER
+    /* Quick (headless / one-cycle) build: cap the clip so a self-test run isn't
+       held up for the whole movie. The windowed --spin demo plays it in full. */
+    if (GetTickCount() - g_xmvStart > 4000)
+        ((IXMedia2XmvPlayer *)ctx)->Stop(XMEDIA_STOP_IMMEDIATE);
+#endif
 }
 
 /* XMV video: create the player, show a labelled pre-roll frame, then Play() the
@@ -1317,6 +1324,7 @@ static void DoVideoSection()
 
     pl->SetCallback(XMEDIA_NOTIFY_END_OF_FRAME, XmvFrameCallback, pl);
     DbgPrint("[DASH] XMV Play...\n");
+    g_xmvStart = GetTickCount();
     hr = pl->Play(0, NULL);   /* blocks until the clip ends (or A/B/Start skips) */
     DbgPrint("[DASH] XMV Play hr=0x%08x\n", hr);
     pl->Release();
