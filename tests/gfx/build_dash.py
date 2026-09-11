@@ -30,6 +30,10 @@ CFLAGS = [
     "-fno-exceptions", "-fno-rtti",
     "-D_WIN32=1", "-D_M_PPCBE=1", "-D_M_PPC=1", "-D_XBOX=1", "-D_XBOX_VER=200",
     "-D__export=", "-D_SIZE_T_DEFINED", "-D_XM_NO_INTRINSICS_", "-Wno-pragma-pack",
+    # xaudio2.h builds its GUIDs with the MSVC non-standard `##-##` token paste
+    # (comdecl.h); clang's MS-compat concatenates the spellings once this is not
+    # an error. Belongs in the clean generated header layer eventually.
+    "-Wno-invalid-token-paste",
 ]
 
 SHADERS = [
@@ -76,7 +80,7 @@ def main():
 
     xex = os.path.join(args.outdir, "dash_spin.xex" if args.spin else "dash.xex")
     run([sys.executable, os.path.join(ROOT, "tools", "mktitle.py"), obj,
-         "--lib", "d3d9,d3dx9,xgraphics",
+         "--lib", "d3d9,d3dx9,xgraphics,xaudio2,xmcore",
          "--coff-dir", os.path.join(ROOT, "build", "coff"),
          "--xdk", os.path.join(args.xdk, "lib", "xbox"), "-o", xex])
     print("\nbuilt", xex)
