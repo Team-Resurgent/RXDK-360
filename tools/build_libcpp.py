@@ -32,6 +32,9 @@ TRIPLE = "powerpc-unknown-xbox360"
 # So COMMON carries no include paths; each flag set orders its own.
 COMMON = [
     "--target=" + TRIPLE, "-O2", "-ffreestanding",
+    # 2-byte wchar_t to match the platform's 16-bit WCHAR (see build_libc.py):
+    # std::wstring / char_traits<wchar_t> and the XDK libraries must agree.
+    "-fshort-wchar",
     "-fno-stack-protector", "-fno-sanitize=all", "-fno-builtin", "-Wno-everything",
     "-D__Picolibc__", "-include", "picolibc.h",
     "-I" + CONFIG,
