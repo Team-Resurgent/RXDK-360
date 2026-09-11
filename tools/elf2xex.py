@@ -26,8 +26,14 @@ KEY_IMAGE_BASE_ADDRESS = 0x00010201
 KEY_IMPORT_LIBRARIES = 0x000103FF
 KEY_ORIGINAL_BASE_ADDRESS = 0x00010001
 KEY_STACK_SIZE = 0x00020200
+KEY_EXECUTION_INFO = 0x00040006     # low byte 0x06 == 6 dwords (the 0x18 struct)
 
 DEFAULT_STACK_SIZE = 0x40000        # what a real XDK title carries
+
+# Default title id stamped into the execution-info header. A real title needs a
+# non-zero id: emulators/loaders key content, caches and (in xenia) the F12
+# screenshot folder off it, and a zero id makes xenia skip those paths entirely.
+DEFAULT_TITLE_ID = 0x52584401       # 'RXD\x01' -- RXDK homebrew namespace
 
 # module / image flags
 MODULEFLAG_TITLE_MODULE = 0x00000001
@@ -271,6 +277,16 @@ def build_basefile_format(image_size, zero_size):
     return info
 
 
+def build_execution_info(title_id):
+    """xex2_opt_execution_info (0x18 bytes): the title identity xenia reads.
+
+    Layout: media_id, version, base_version, title_id, platform, exec_table,
+    disc_number, disc_count, savegame_id. Only title_id matters here (it must be
+    non-zero); disc 1/1 is the sensible default for a single-file title."""
+    return struct.pack(">IIII", 0, 0, 0, title_id) + \
+           struct.pack(">BBBB", 0, 0, 1, 1) + struct.pack(">I", 0)
+
+
 def read_elf_symbol_addrs(blob):
     """Map global/defined symbol name -> virtual address, from the ELF symtab."""
     (e_shoff,) = struct.unpack_from(">I", blob, 0x20)
@@ -495,7 +511,8 @@ def pack(elf_path, out_path, base_override=None, imports=None):
     ]
     # (key, data) blocks placed after the security info; the directory records
     # the file offset of each.
-    offset_blocks = [(KEY_BASEFILE_FORMAT, basefile_format)]
+    offset_blocks = [(KEY_BASEFILE_FORMAT, basefile_format),
+                     (KEY_EXECUTION_INFO, build_execution_info(DEFAULT_TITLE_ID))]
     if import_block is not None:
         offset_blocks.append((KEY_IMPORT_LIBRARIES, import_block))
 
