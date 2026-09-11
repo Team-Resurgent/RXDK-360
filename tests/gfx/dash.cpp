@@ -288,6 +288,122 @@ static void InitAudioEngine()
 static void ToneStart() { if (g_audioReady && !g_tonePlaying) { g_srcVoice->Start(0, XAUDIO2_COMMIT_NOW); g_tonePlaying = true; } }
 static void ToneStop()  { if (g_audioReady &&  g_tonePlaying) { g_srcVoice->Stop(0, XAUDIO2_COMMIT_NOW); g_tonePlaying = false; } }
 
+/* real socket-path test results (filled by NetTest) */
+static int g_netSockOk = 0, g_netBindOk = 0, g_netEchoOk = 0, g_netPort = 0;
+
+/* A genuine networking test over the working socket layer (xenia backs these
+ * with real host sockets): open a UDP socket, bind it, send a datagram to
+ * ourselves on 127.0.0.1 and receive it back -- a full round-trip that proves
+ * socket/bind/sendto/recvfrom actually work, independent of the status APIs. */
+static void NetTest()
+{
+    SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == INVALID_SOCKET) { DbgPrint("[DASH] net: socket() failed\n"); return; }
+    g_netSockOk = 1;
+
+    sockaddr_in a; ZeroMemory(&a, sizeof(a));
+    a.sin_family = AF_INET; a.sin_addr.s_addr = inet_addr("127.0.0.1"); a.sin_port = 0;
+    if (bind(s, (const sockaddr *)&a, sizeof(a)) == SOCKET_ERROR) {
+        DbgPrint("[DASH] net: bind() failed\n"); closesocket(s); return;
+    }
+    g_netBindOk = 1;
+
+    int alen = sizeof(a);
+    getsockname(s, (sockaddr *)&a, &alen);
+    g_netPort = ntohs(a.sin_port);
+
+    u_long nb = 1; ioctlsocket(s, FIONBIO, &nb);   /* non-blocking recv */
+
+    sockaddr_in dst; ZeroMemory(&dst, sizeof(dst));
+    dst.sin_family = AF_INET; dst.sin_addr.s_addr = inet_addr("127.0.0.1");
+    dst.sin_port = a.sin_port;
+    const char *msg = "RXDK-NET-PING";
+    int mlen = (int)strlen(msg);
+    sendto(s, msg, mlen, 0, (const sockaddr *)&dst, sizeof(dst));
+
+    char buf[64];
+    for (int i = 0; i < 200; ++i) {           /* poll ~400ms for the loopback datagram */
+        sockaddr_in from; int flen = sizeof(from);
+        int n = recvfrom(s, buf, sizeof(buf), 0, (sockaddr *)&from, &flen);
+        if (n == mlen && !memcmp(buf, msg, mlen)) { g_netEchoOk = 1; break; }
+        Sleep(2);
+    }
+    closesocket(s);
+    DbgPrint("[DASH] net: socket=%d bind=%d port=%d echo=%d\n",
+             g_netSockOk, g_netBindOk, g_netPort, g_netEchoOk);
+}
+
+/* external test: resolve a hostname against a public DNS resolver (8.8.8.8:53)
+ * with a hand-built UDP DNS A-query. xenia routes sockets to the real host
+ * network, so this reaches the actual internet -- proving genuine outbound
+ * connectivity, not just loopback. (XNetDnsLookup is stubbed in xenia, so we do
+ * the query ourselves rather than rely on it.) */
+static const char *g_dnsHost = "google.com";
+static int g_dnsOk = 0; static unsigned char g_dnsIp[4];
+
+static int DnsBuildQuery(unsigned char *q, const char *host)
+{
+    int p = 0;
+    q[p++] = 0x12; q[p++] = 0x34;          /* id */
+    q[p++] = 0x01; q[p++] = 0x00;          /* flags: standard query, recursion desired */
+    q[p++] = 0x00; q[p++] = 0x01;          /* QDCOUNT = 1 */
+    q[p++] = 0; q[p++] = 0; q[p++] = 0; q[p++] = 0; q[p++] = 0; q[p++] = 0;  /* AN/NS/AR = 0 */
+    const char *s = host;                  /* QNAME: length-prefixed labels */
+    while (*s) {
+        const char *dot = s; while (*dot && *dot != '.') ++dot;
+        int len = (int)(dot - s); q[p++] = (unsigned char)len;
+        for (int i = 0; i < len; ++i) q[p++] = (unsigned char)s[i];
+        s = *dot ? dot + 1 : dot;
+    }
+    q[p++] = 0;                            /* root label */
+    q[p++] = 0x00; q[p++] = 0x01;          /* QTYPE = A */
+    q[p++] = 0x00; q[p++] = 0x01;          /* QCLASS = IN */
+    return p;
+}
+
+static void NetExternalTest()
+{
+    SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == INVALID_SOCKET) return;
+    u_long nb = 1; ioctlsocket(s, FIONBIO, &nb);
+    sockaddr_in dns; ZeroMemory(&dns, sizeof(dns));
+    dns.sin_family = AF_INET; dns.sin_addr.s_addr = inet_addr("8.8.8.8"); dns.sin_port = htons(53);
+    unsigned char q[128]; int qn = DnsBuildQuery(q, g_dnsHost);
+    sendto(s, (const char *)q, qn, 0, (const sockaddr *)&dns, sizeof(dns));
+
+    unsigned char r[512];
+    for (int i = 0; i < 750 && !g_dnsOk; ++i) {    /* ~1.5s */
+        sockaddr_in from; int fl = sizeof(from);
+        int n = recvfrom(s, (char *)r, sizeof(r), 0, (sockaddr *)&from, &fl);
+        if (n > 12) {
+            int an = (r[6] << 8) | r[7], off = 12;
+            while (off < n) {                       /* skip question name */
+                if (r[off] == 0) { ++off; break; }
+                if ((r[off] & 0xC0) == 0xC0) { off += 2; break; }
+                off += r[off] + 1;
+            }
+            off += 4;                               /* qtype + qclass */
+            for (int a = 0; a < an && off + 10 <= n; ++a) {
+                if ((r[off] & 0xC0) == 0xC0) off += 2;
+                else { while (off < n && r[off]) off += r[off] + 1; ++off; }
+                int type = (r[off] << 8) | r[off + 1];
+                int rdl  = (r[off + 8] << 8) | r[off + 9];
+                off += 10;
+                if (type == 1 && rdl == 4 && off + 4 <= n) {
+                    g_dnsIp[0] = r[off]; g_dnsIp[1] = r[off + 1];
+                    g_dnsIp[2] = r[off + 2]; g_dnsIp[3] = r[off + 3]; g_dnsOk = 1; break;
+                }
+                off += rdl;
+            }
+            break;
+        }
+        Sleep(2);
+    }
+    closesocket(s);
+    DbgPrint("[DASH] net: DNS %s -> %d.%d.%d.%d (ok=%d)\n", g_dnsHost,
+             g_dnsIp[0], g_dnsIp[1], g_dnsIp[2], g_dnsIp[3], g_dnsOk);
+}
+
 static void InitNet()
 {
     XNetStartupParams xnsp; ZeroMemory(&xnsp, sizeof(xnsp));
@@ -295,6 +411,11 @@ static void InitNet()
     INT r = XNetStartup(&xnsp);   /* address acquisition is async after this */
     g_netStarted = (r == 0);
     DbgPrint("[DASH] XNetStartup r=%d\n", r);
+    /* Also WSAStartup: the socket layer needs it (xenia's socket() calls the host
+     * socket(), which returns WSANOTINITIALISED until WSAStartup runs). */
+    WSADATA wsd; int wr = WSAStartup(0x0202, &wsd);
+    DbgPrint("[DASH] WSAStartup r=%d\n", wr);
+    if (g_netStarted) { NetTest(); NetExternalTest(); }  /* loopback + real internet */
 }
 
 /* ============================ sections =============================== */
@@ -490,13 +611,26 @@ static void SectionBody(int s, float tsec, float tglob)
                   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
         DrawText(64, 300, 1.25f, COL_WHITE, line);
 
-        /* flag summary */
-        wsprintfA(line, "flags: %s%s%s%s0x%08X",
-                  (f & XNET_GET_XNADDR_DNS)    ? "DNS "    : "",
-                  (f & XNET_GET_XNADDR_GATEWAY)? "GATEWAY ": "",
-                  (f & XNET_GET_XNADDR_ONLINE) ? "ONLINE " : "",
-                  (f & XNET_GET_XNADDR_TROUBLESHOOT) ? "TROUBLESHOOT " : "", f);
-        DrawText(64, 334, 1.0f, COL_DIM, line);
+        /* real socket-path test: the working part of xenia's networking */
+        wsprintfA(line, "UDP socket: %s   bind: %s   loopback echo: %s",
+                  g_netSockOk ? "OK" : "FAIL",
+                  g_netBindOk ? "OK" : "FAIL",
+                  g_netEchoOk ? "OK" : (g_netBindOk ? "no reply" : "-"));
+        DrawText(64, 334, 1.25f,
+                 (g_netSockOk && g_netBindOk && g_netEchoOk) ? COL_OK : COL_PEND, line);
+        if (g_netBindOk) {
+            wsprintfA(line, "socket()/bind()/sendto()/recvfrom() round-trip on 127.0.0.1:%d", g_netPort);
+            DrawText(64, 364, 1.0f, COL_DIM, line);
+        }
+        /* external: real internet DNS resolve via 8.8.8.8 */
+        if (g_dnsOk) {
+            wsprintfA(line, "internet: %s -> %d.%d.%d.%d  (DNS via 8.8.8.8)",
+                      g_dnsHost, g_dnsIp[0], g_dnsIp[1], g_dnsIp[2], g_dnsIp[3]);
+            DrawText(64, 392, 1.25f, COL_OK, line);
+        } else {
+            wsprintfA(line, "internet: %s -> no reply (offline, or host blocks UDP:53)", g_dnsHost);
+            DrawText(64, 392, 1.25f, COL_PEND, line);
+        }
         break;
     }
     }
