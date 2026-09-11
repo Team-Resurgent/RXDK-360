@@ -590,7 +590,7 @@ static void DrawXuiScene(float t)
        a bold big font with a shadow reads well */
     XuiSetTextDropShadowColor(g_xuiDC, D3DCOLOR_ARGB(200, 0, 0, 0));
     XuiText(g_xuiFontBig, D3DCOLOR_ARGB(255, 255, 255, 255), PANL + 40, PANT + 12,
-            XUI_FONT_STYLE_DROPSHADOW, L"RXDK\x2009\x00B7\x2009 XUI");
+            XUI_FONT_STYLE_DROPSHADOW, L"RXDK \x00B7 XUI");
     XuiText(g_xuiFontMed, D3DCOLOR_ARGB(255, 150, 210, 255), PANL + 40, PANT + 108,
             XUI_FONT_STYLE_NORMAL, L"Xbox 360 UI framework \x2014 immediate-mode rendering");
 
