@@ -123,6 +123,7 @@ XBOX_GLUE = [
     os.path.join(ROOT, "runtime", "xbox", "c23_alloc.c"),          # C23 free_sized/free_aligned_sized
     os.path.join(ROOT, "runtime", "xbox", "atomic64.c"),           # __atomic_*_8 (64-bit atomics: <barrier>/<semaphore>/atomic-wait)
     os.path.join(ROOT, "runtime", "xbox", "setjmp.S"),             # setjmp/longjmp (PPC callee-saved GPR/FPR/LR/CR/SP)
+    os.path.join(ROOT, "runtime", "xbox", "ke_perf.S"),            # 64-bit-safe KeQueryPerformanceFrequency wrapper (single-r3 MS return -> pointer)
 ]
 
 # C++ runtime glue: no picolibc config force-include; freestanding, no EH/RTTI yet.

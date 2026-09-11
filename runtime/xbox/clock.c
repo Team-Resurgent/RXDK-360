@@ -34,8 +34,13 @@
 #include <sys/times.h>
 #include <time.h>
 
-void     KeQuerySystemTime(unsigned long long *out);   /* 100ns ticks since 1601 */
-unsigned KeQueryPerformanceFrequency(void);            /* time-base rate (Hz) */
+void KeQuerySystemTime(unsigned long long *out);       /* 100ns ticks since 1601 */
+
+/* KeQueryPerformanceFrequency returns a full 64-bit rate in a single register
+   (MS ABI). This ILP32 clang target would mis-read a `long long` return as an
+   r3:r4 pair, so read it through the assembly thunk (ke_perf.S), which captures
+   the whole register and writes it to memory. See docs/ilp32-ppc64-abi-plan.md. */
+void rxdk_query_perf_freq64(unsigned long long *out);  /* time-base rate (Hz) */
 
 /* 100ns intervals between 1601-01-01 and 1970-01-01 (FILETIME -> Unix epoch). */
 #define RXDK_EPOCH_DIFF_100NS 116444736000000000ULL
@@ -80,7 +85,7 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp)
     if (!tp) { errno = EFAULT; return -1; }
 
     if (clk_id == CLOCK_MONOTONIC) {
-        unsigned long long freq = KeQueryPerformanceFrequency();
+        unsigned long long freq; rxdk_query_perf_freq64(&freq);
         unsigned long long c = read_timebase();
         if (freq == 0) { tp->tv_sec = 0; tp->tv_nsec = 0; return 0; }
         tp->tv_sec = (time_t)(c / freq);
@@ -134,7 +139,7 @@ int clock_nanosleep(clockid_t clk_id, int flags,
 
 clock_t clock(void)
 {
-    unsigned long long freq = KeQueryPerformanceFrequency();
+    unsigned long long freq; rxdk_query_perf_freq64(&freq);
     unsigned long long c, sec, rem;
 
     if (freq == 0)
