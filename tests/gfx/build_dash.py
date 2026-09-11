@@ -41,6 +41,9 @@ SHADERS = [
     ("tri_ps.hlsl",  "tri_ps.h",  "ps_3_0", "g_ps_bin"),
     ("text_vs.hlsl", "text_vs.h", "vs_3_0", "g_text_vs_bin"),
     ("text_ps.hlsl", "text_ps.h", "ps_3_0", "g_text_ps_bin"),
+    ("fx_gradient_ps.hlsl", "fx_gradient_ps.h", "ps_3_0", "g_gradient_bin"),
+    ("fx_plasma_ps.hlsl",   "fx_plasma_ps.h",   "ps_3_0", "g_plasma_bin"),
+    ("fx_rings_ps.hlsl",    "fx_rings_ps.h",    "ps_3_0", "g_rings_bin"),
 ]
 
 
