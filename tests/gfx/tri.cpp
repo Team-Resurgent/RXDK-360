@@ -13,20 +13,16 @@
 
 extern "C" int DbgPrint(const char *, ...);
 
-static const char *g_vs =
-    " float4x4 matWVP : register(c0);                 "
-    " struct VS_IN  { float4 Pos : POSITION; float4 Color : COLOR; }; "
-    " struct VS_OUT { float4 Pos : POSITION; float4 Color : COLOR; }; "
-    " VS_OUT main( VS_IN In ) {                       "
-    "     VS_OUT Out;                                 "
-    "     Out.Pos = mul( matWVP, In.Pos );            "
-    "     Out.Color = In.Color;                       "
-    "     return Out;                                 "
-    " }                                               ";
-
-static const char *g_ps =
-    " struct PS_IN { float4 Color : COLOR; };         "
-    " float4 main( PS_IN In ) : COLOR { return In.Color; } ";
+/*
+ * Shaders are precompiled offline with the XDK's fxc.exe into GPU microcode
+ * (shaders/tri_{vs,ps}.h). We deliberately avoid the runtime D3DXCompileShader
+ * HLSL compiler: that path is enormous and, under xenia's JIT, hangs on this
+ * bring-up. Shipping 360 titles precompile their shaders too, so this both
+ * matches real practice and isolates the D3D9 render/present path we want to
+ * prove here.
+ */
+#include "shaders/tri_vs.h"   /* const DWORD g_vs_bin[] */
+#include "shaders/tri_ps.h"   /* const DWORD g_ps_bin[] */
 
 struct COLORVERTEX { float Position[3]; DWORD Color; };
 
@@ -70,18 +66,14 @@ static HRESULT InitD3D()
 
 static HRESULT InitScene()
 {
-    ID3DXBuffer *code = NULL, *err = NULL;
-    HRESULT hr = D3DXCompileShader(g_vs, (UINT)strlen(g_vs), NULL, NULL,
-                                   "main", "vs_3_0", 0, &code, &err, NULL);
-    DbgPrint("[TRI] compile VS hr=0x%08x\n", hr);
-    if (FAILED(hr)) { if (err) DbgPrint("[TRI] VS err: %s\n", (char*)err->GetBufferPointer()); return hr; }
-    g_dev->CreateVertexShader((DWORD*)code->GetBufferPointer(), &g_vsh);
+    DbgPrint("[TRI] InitScene: creating precompiled shaders...\n");
+    HRESULT hr = g_dev->CreateVertexShader((const DWORD*)g_vs_bin, &g_vsh);
+    DbgPrint("[TRI] CreateVertexShader hr=0x%08x vsh=%p\n", hr, g_vsh);
+    if (FAILED(hr)) return hr;
 
-    hr = D3DXCompileShader(g_ps, (UINT)strlen(g_ps), NULL, NULL,
-                           "main", "ps_3_0", 0, &code, &err, NULL);
-    DbgPrint("[TRI] compile PS hr=0x%08x\n", hr);
-    if (FAILED(hr)) { if (err) DbgPrint("[TRI] PS err: %s\n", (char*)err->GetBufferPointer()); return hr; }
-    g_dev->CreatePixelShader((DWORD*)code->GetBufferPointer(), &g_psh);
+    hr = g_dev->CreatePixelShader((const DWORD*)g_ps_bin, &g_psh);
+    DbgPrint("[TRI] CreatePixelShader hr=0x%08x psh=%p\n", hr, g_psh);
+    if (FAILED(hr)) return hr;
 
     D3DVERTEXELEMENT9 elems[] = {
         { 0,  0, D3DDECLTYPE_FLOAT3,   D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0 },
@@ -135,7 +127,11 @@ int main(void)
     if (FAILED(InitD3D()))  { DbgPrint("[TRI] InitD3D FAILED\n");  return 1; }
     if (FAILED(InitScene())){ DbgPrint("[TRI] InitScene FAILED\n"); return 1; }
     DbgPrint("[TRI] scene ready; rendering\n");
-    for (int f = 0; f < 240; ++f) {
+    int frames = 240;
+#ifdef TRI_SPIN_FOREVER
+    frames = 0x7fffffff;   /* windowed screenshot build: keep spinning */
+#endif
+    for (int f = 0; f < frames; ++f) {
         Render((float)f * 0.03f);
         if (f % 60 == 0) DbgPrint("[TRI] frame %d presented\n", f);
     }
