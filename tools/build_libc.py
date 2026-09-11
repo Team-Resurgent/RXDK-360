@@ -37,6 +37,13 @@ TRIPLE = "powerpc-unknown-xbox360"
 # self-recursion; -include picolibc.h force-includes the config.
 FLAGS = [
     "--target=" + TRIPLE, "-std=c17", "-O2", "-ffreestanding",
+    # Xbox 360 WCHAR is 16-bit UTF-16 (MSVC ABI). Our libc's wide-char routines
+    # (wcslen, wcscpy_s, wmem*, ...) MUST use a 2-byte wchar_t so they agree with
+    # the XDK libraries that call them -- otherwise wcslen miscounts a UTF-16
+    # string and callers like XUI's XuiCopyString under-size a buffer, and the
+    # 4-byte-wchar copy overruns it into adjacent heap metadata (a heap-corrupting
+    # bug that surfaced as XUI's XuiInit trashing the process-heap free list).
+    "-fshort-wchar",
     "-fno-stack-protector", "-fno-zero-initialized-in-bss",
     "-fno-sanitize=all", "-fno-builtin", "-Wno-everything",
     "-D__Picolibc__", "-D__TINY_STDIO",
@@ -129,6 +136,7 @@ XBOX_GLUE = [
 # C++ runtime glue: no picolibc config force-include; freestanding, no EH/RTTI yet.
 CPP_FLAGS = [
     "--target=" + TRIPLE, "-std=c++23", "-O2", "-ffreestanding",
+    "-fshort-wchar",   # 2-byte wchar_t to match the platform WCHAR (see FLAGS)
     "-fno-exceptions", "-fno-rtti", "-fno-stack-protector",
     "-fno-sanitize=all", "-fno-builtin", "-Wno-everything",
 ]
