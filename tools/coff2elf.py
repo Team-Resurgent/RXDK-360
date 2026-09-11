@@ -202,7 +202,7 @@ GRP_COMDAT = 0x1
 IMAGE_COMDAT_SELECT_ASSOCIATIVE = 5
 STB_LOCAL, STB_GLOBAL, STB_WEAK = 0, 1, 2
 STT_NOTYPE, STT_OBJECT, STT_FUNC, STT_SECTION = 0, 1, 2, 3
-SHN_UNDEF, SHN_ABS = 0, 0xFFF1
+SHN_UNDEF, SHN_ABS, SHN_COMMON = 0, 0xFFF1, 0xFFF2
 
 # PPC ELF relocation types
 R_PPC_ADDR32, R_PPC_ADDR16_LO, R_PPC_ADDR16_HI, R_PPC_ADDR16_HA, R_PPC_REL24 = \
@@ -396,8 +396,21 @@ def coff_to_elf(obj, warn=print, noncomdat_strong=frozenset()):
             bind = STB_GLOBAL if is_global else STB_LOCAL
             if is_weak_ext:                          # COFF weak external -> ELF weak
                 bind = STB_WEAK
-            if sym.secnum == 0:                     # undefined external
+            size = 0
+            if sym.secnum == 0:                     # undefined / common / weak
                 shndx, value, styp = SHN_UNDEF, 0, STT_NOTYPE
+                # A COFF COMMON symbol is an uninitialised tentative definition:
+                # class EXTERNAL, no section, and value = the size in bytes. ELF
+                # expresses it as SHN_COMMON (st_size = size, st_value =
+                # alignment); the linker allocates it in .bss and merges the many
+                # objects that legally declare the same common. Without this it
+                # stayed a plain undefined and never resolved.
+                if sym.cls == IMAGE_SYM_CLASS_EXTERNAL and sym.value > 0:
+                    size = sym.value
+                    align = 1
+                    while align * 2 <= size and align < 16:
+                        align *= 2
+                    shndx, value, styp = SHN_COMMON, align, STT_OBJECT
                 # A weak external is "use a strong def if linked, ELSE this
                 # default symbol" (aux[0] TagIndex names the default; MSVC uses
                 # it for the `??_E` vector deleting-dtor thunks, whose default is
@@ -440,7 +453,7 @@ def coff_to_elf(obj, warn=print, noncomdat_strong=frozenset()):
                 # symbol in a dropped section (debug etc.) -- keep as a name only
                 shndx, value, styp = SHN_UNDEF, 0, STT_NOTYPE
             coff_to_elfsym[csi] = len(elf_syms)
-            elf_syms.append((strtab.add(sym.name), value, 0, (bind << 4) | styp, 0, shndx))
+            elf_syms.append((strtab.add(sym.name), value, size, (bind << 4) | styp, 0, shndx))
             sym_name_off.append(0)
 
     # .symtab sh_info must be the index of the first non-local symbol -- weak
@@ -577,6 +590,10 @@ def defined_globals(obj):
     out = []
     for _, sym in _enumerate_coff_syms(obj):
         if sym.cls == IMAGE_SYM_CLASS_EXTERNAL and sym.secnum in kept:
+            out.append(sym.name)
+        # a COMMON symbol (secnum 0, value = size) is a tentative definition
+        # that satisfies a reference, so it belongs in the archive index too.
+        elif sym.cls == IMAGE_SYM_CLASS_EXTERNAL and sym.secnum == 0 and sym.value > 0:
             out.append(sym.name)
     return out
 
