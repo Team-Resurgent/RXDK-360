@@ -29,6 +29,8 @@
 #include <xcompress.h>
 #include <xjson.h>
 #include <xhttp.h>
+#include <xapo.h>
+#include <xapofx.h>
 #include <tracerecording.h>
 #include <xsim.h>
 #include <xonline.h>
@@ -100,6 +102,15 @@ static float                   g_vidFps;
 static XMP_HANDLE              g_xmpPlaylist;
 static bool                    g_xmpReady;
 static DWORD                   g_xmpCreateHr = 0xFFFFFFFF;
+
+/* XAPOFX: run a built-in echo effect's DSP (IXAPO::Process) over a beep pattern,
+ * then PLAY the echoed result on a float XAudio2 voice so it's audible -- pure
+ * guest CPU DSP, so it works in xenia (no effect-chain routing needed). */
+#define APO_NSAMP (512 * 206)   /* ~2.2s at 48kHz */
+static bool    g_apoOk; static HRESULT g_apoHr = 0xFFFFFFFF;
+static int     g_apoChanged;
+static IXAudio2SourceVoice *g_apoVoice;
+static float   g_apoBuf[APO_NSAMP];
 
 /* XHTTP: a real HTTP GET over the (working) xenia socket layer */
 #define HTTP_HOST "example.com"
@@ -541,6 +552,72 @@ static void InitXmp()
     DbgPrint("[DASH] xmp: CreateTitlePlaylist hr=0x%08x ready=%d\n", g_xmpCreateHr, (int)g_xmpReady);
 }
 
+/* xapo.h/xapofx.h declare these GUIDs extern (INITGUID not set); provide the ones
+ * we use. Values from the DEFINE_IID/DEFINE_CLSID in the headers. */
+extern "C" const GUID IID_IXAPO =
+    { 0xA90BC001, 0xE897, 0xE897, { 0x55, 0xE4, 0x9E, 0x47, 0x00, 0x00, 0x00, 0x00 } };
+extern "C" const GUID IID_IXAPOParameters =
+    { 0xA90BC001, 0xE897, 0xE897, { 0x55, 0xE4, 0x9E, 0x47, 0x00, 0x00, 0x00, 0x01 } };
+extern "C" const GUID CLSID_FXEcho =
+    { 0xA90BC001, 0xE897, 0xE897, { 0x74, 0x39, 0x43, 0x55, 0x00, 0x00, 0x00, 0x03 } };
+
+/* Create a built-in XAPOFX effect (a mastering limiter) and run its DSP over a
+ * deliberately-clipping float signal via IXAPO::Process, then check the output
+ * was actually altered (peak reduced / samples changed). This exercises the
+ * effect's processing directly, so it doesn't depend on xenia routing an effect
+ * chain through a voice. */
+static void InitXapo()
+{
+    enum { FR = 512 };
+    /* dry beep pattern: 80ms 440Hz tones every 450ms (leaves gaps for the echo) */
+    for (int i = 0; i < APO_NSAMP; ++i) {
+        int ph = i % (48000 * 45 / 100);       /* 450ms period */
+        g_apoBuf[i] = (ph < 48000 * 8 / 100)   /* 80ms on */
+            ? 0.35f * (float)sin(i * (2.0 * 3.14159265 * 440.0 / 48000.0)) : 0.0f;
+    }
+
+    IUnknown *u = NULL;
+    g_apoHr = CreateFX(CLSID_FXEcho, &u, NULL, 0);
+    if (FAILED(g_apoHr) || !u) return;
+    IXAPO *xapo = NULL;
+    if (FAILED(u->QueryInterface(IID_IXAPO, (void **)&xapo)) || !xapo) { u->Release(); return; }
+    IXAPOParameters *xp = NULL;
+    if (SUCCEEDED(u->QueryInterface(IID_IXAPOParameters, (void **)&xp)) && xp) {
+        FXECHO_PARAMETERS ep; ep.WetDryMix = 0.6f; ep.Feedback = 0.45f; ep.Delay = 300.0f;
+        xp->SetParameters(&ep, sizeof(ep));
+    }
+
+    WAVEFORMATEX wfx; ZeroMemory(&wfx, sizeof(wfx));
+    wfx.wFormatTag = WAVE_FORMAT_IEEE_FLOAT; wfx.nChannels = 1;
+    wfx.nSamplesPerSec = 48000; wfx.wBitsPerSample = 32;
+    wfx.nBlockAlign = 4; wfx.nAvgBytesPerSec = 48000 * 4;
+    XAPO_LOCKFORPROCESS_BUFFER_PARAMETERS lp; lp.pFormat = &wfx; lp.MaxFrameCount = FR;
+    if (SUCCEEDED(xapo->LockForProcess(1, &lp, 1, &lp))) {
+        int chg = 0;
+        for (int off = 0; off + FR <= APO_NSAMP; off += FR) {       /* echo in-place, chunk by chunk */
+            float before = g_apoBuf[off + FR / 2];
+            XAPO_PROCESS_BUFFER_PARAMETERS ip = { g_apoBuf + off, XAPO_BUFFER_VALID, FR };
+            xapo->Process(1, &ip, 1, &ip, TRUE);
+            if (g_apoBuf[off + FR / 2] != before) ++chg;
+        }
+        g_apoChanged = chg;
+        g_apoOk = (chg > 0);
+        xapo->UnlockForProcess();
+        /* play the echoed buffer on a dedicated float voice */
+        if (g_apoOk && g_xa2 &&
+            SUCCEEDED(g_xa2->CreateSourceVoice(&g_apoVoice, &wfx, 0, 1.0f, NULL, NULL, NULL))) {
+            XAUDIO2_BUFFER b; ZeroMemory(&b, sizeof(b));
+            b.pAudioData = (const BYTE *)g_apoBuf; b.AudioBytes = APO_NSAMP * 4;
+            b.Flags = XAUDIO2_END_OF_STREAM; b.LoopCount = XAUDIO2_LOOP_INFINITE;
+            g_apoVoice->SubmitSourceBuffer(&b, NULL);
+        }
+    }
+    if (xp) xp->Release();
+    xapo->Release(); u->Release();
+    DbgPrint("[DASH] xapo: CreateFX(FXEcho) hr=0x%08x chunks-changed=%d voice=%p ok=%d\n",
+             g_apoHr, g_apoChanged, g_apoVoice, (int)g_apoOk);
+}
+
 /* One real HTTP GET through XHTTP (WinHTTP-style) over xenia's socket layer:
  * open session -> connect -> GET / -> read the status code + a little body.
  * Runs once; each step is recorded so the section shows exactly how far it got
@@ -823,9 +900,9 @@ static void DrawXuiScene(float t)
 
 #define AUTO_FRAMES 300   /* ~5s per section at 60fps */
 
-enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_X3D, SEC_XMP, SEC_XACT, SEC_XUI, SEC_INPUT, SEC_NET, SEC_HTTP, SEC_SYSTEM, SEC_DATA, SEC_COUNT };
+enum { SEC_D3D9, SEC_SHADERS, SEC_TEXT, SEC_VIDEO, SEC_AUDIO, SEC_X3D, SEC_XAPO, SEC_XMP, SEC_XACT, SEC_XUI, SEC_INPUT, SEC_NET, SEC_HTTP, SEC_SYSTEM, SEC_DATA, SEC_COUNT };
 static const char *g_secName[SEC_COUNT] = {
-    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "X3DAUDIO", "XMP MUSIC", "XACT3", "XUI", "XINPUT", "XNET", "XHTTP", "SYSTEM", "DATA / CPU",
+    "D3D9 CORE", "SHADERS", "TEXT / FONT", "XMV VIDEO", "XAUDIO2", "X3DAUDIO", "XAPOFX", "XMP MUSIC", "XACT3", "XUI", "XINPUT", "XNET", "XHTTP", "SYSTEM", "DATA / CPU",
 };
 #define XMV_MOVIE "game:\\Media\\Video\\Sample.wmv"
 static int   g_section, g_frameInSec, g_totalFrames, g_cycles;
@@ -855,6 +932,11 @@ static void SectionEnter(int s)
     case SEC_X3D:     ToneStart();
                       SetStatus(g_x3dReady ? COL_OK : COL_FAIL,
                                 g_x3dReady ? "3D-panning the sample around the listener" : "X3DAudio unavailable");
+                      break;
+    case SEC_XAPO:    if (g_apoVoice) g_apoVoice->Start(0, XAUDIO2_COMMIT_NOW);
+                      SetStatus(g_apoOk ? COL_OK : COL_FAIL,
+                                g_apoOk ? "playing beeps run through the FXEcho DSP -- listen for the echoes"
+                                        : "XAPOFX effect unavailable");
                       break;
     case SEC_XMP: {
         if (g_xmpReady) {
@@ -900,6 +982,7 @@ static void SectionEnter(int s)
 static void SectionExit(int s)
 {
     if (s == SEC_AUDIO || s == SEC_X3D) { ToneStop(); DbgPrint("[DASH] audio: stopped\n"); }
+    if (s == SEC_XAPO && g_apoVoice) { g_apoVoice->Stop(0, XAUDIO2_COMMIT_NOW); DbgPrint("[DASH] xapo: stopped\n"); }
     if (s == SEC_XMP && g_xmpReady) { XMPStop(NULL); DbgPrint("[DASH] xmp: stopped\n"); }
     if (s == SEC_XACT && g_xactReady) {
         if (g_xactCue) { g_xactCue->Stop(XACT_FLAG_STOP_IMMEDIATE); g_xactCue->Destroy(); g_xactCue = NULL; }
@@ -1003,6 +1086,21 @@ static void SectionBody(int s, float tsec, float tglob)
         DrawText(64, 284, 1.25f, COL_DIM, line);
         wsprintfA(line, "final mix: %u channels", g_dstCh);
         DrawText(64, 318, 1.25f, COL_DIM, line);
+        break;
+    }
+    case SEC_XAPO: {
+        DrawText(64, 180, 1.5f, g_apoOk ? COL_OK : COL_FAIL,
+                 g_apoOk ? "XAPOFX audio effect -- FXEcho (audible)" : "XAPOFX unavailable");
+        DrawText(64, 232, 1.25f, COL_WHITE, "CreateFX(FXEcho) -> SetParameters -> IXAPO::Process over a beep pattern");
+        DrawText(64, 266, 1.0f,  COL_DIM,  "the effect DSP runs in guest CPU; the echoed buffer plays on a float voice");
+        if (g_apoHr == S_OK) {
+            wsprintfA(line, "echo: 300ms delay, 45%% feedback, 60%% wet   chunks altered: %d", g_apoChanged);
+            DrawText(64, 306, 1.25f, g_apoOk ? COL_OK : COL_PEND, line);
+            DrawText(64, 348, 1.25f, COL_OK, "listen: each beep repeats, decaying -- that's the XAPO echo");
+        } else {
+            wsprintfA(line, "CreateFX hr=0x%08x", g_apoHr);
+            DrawText(64, 306, 1.25f, COL_FAIL, line);
+        }
         break;
     }
     case SEC_XMP: {
@@ -1342,6 +1440,7 @@ int main(void)
     InitTriangle();
     InitFx();
     InitAudioEngine();
+    InitXapo();
     InitNet();
     InitHttp();
     InitSmoke();
