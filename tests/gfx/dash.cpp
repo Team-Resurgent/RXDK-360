@@ -209,6 +209,49 @@ static void InitFx()
     g_dev->CreatePixelShader((const DWORD *)g_rings_bin,    &g_fx[2]);
 }
 
+#define AUDIO_WAV "game:\\Media\\Sounds\\Electro_1.wav"
+static const BYTE *g_wavData; static DWORD g_wavBytes; static bool g_wavIsSample;
+
+static inline unsigned RdLE16(const BYTE *p) { return p[0] | (p[1] << 8); }
+static inline unsigned RdLE32(const BYTE *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24); }
+
+/* Load a little-endian PCM WAV off game:\ and byte-swap the 16-bit samples to
+ * the console's native big-endian order for XAudio2 (WAV is LE by spec; the 360
+ * is BE). Fills *wf from the fmt chunk; leaves the sample buffer allocated (it
+ * backs the voice for the life of the title). */
+static bool LoadWav(const char *path, WAVEFORMATEX *wf)
+{
+    HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    DWORD sz = GetFileSize(h, NULL), rd = 0;
+    BYTE *buf = (BYTE *)malloc(sz);
+    if (!buf) { CloseHandle(h); return false; }
+    BOOL ok = ReadFile(h, buf, sz, &rd, NULL); CloseHandle(h);
+    if (!ok || rd < 12 || memcmp(buf, "RIFF", 4) || memcmp(buf + 8, "WAVE", 4)) { free(buf); return false; }
+    ZeroMemory(wf, sizeof(*wf));
+    DWORD off = 12; bool haveFmt = false, haveData = false;
+    while (off + 8 <= sz) {
+        const BYTE *id = buf + off; DWORD csz = RdLE32(buf + off + 4); const BYTE *body = buf + off + 8;
+        if (!memcmp(id, "fmt ", 4)) {
+            wf->wFormatTag      = (WORD)RdLE16(body + 0);
+            wf->nChannels       = (WORD)RdLE16(body + 2);
+            wf->nSamplesPerSec  = RdLE32(body + 4);
+            wf->nAvgBytesPerSec = RdLE32(body + 8);
+            wf->nBlockAlign     = (WORD)RdLE16(body + 12);
+            wf->wBitsPerSample  = (WORD)RdLE16(body + 14);
+            haveFmt = true;
+        } else if (!memcmp(id, "data", 4)) {
+            BYTE *d = buf + off + 8;
+            if (csz > sz - (off + 8)) csz = sz - (off + 8);
+            /* LE -> BE for 16-bit PCM samples */
+            for (DWORD i = 0; i + 1 < csz; i += 2) { BYTE t = d[i]; d[i] = d[i + 1]; d[i + 1] = t; }
+            g_wavData = d; g_wavBytes = csz; haveData = true;
+        }
+        off += 8 + ((csz + 1) & ~1u);
+    }
+    return haveFmt && haveData;
+}
+
 static void InitAudioEngine()
 {
     HRESULT hr = XAudio2Create(&g_xa2, 0, XAUDIO2_DEFAULT_PROCESSOR);
@@ -216,15 +259,26 @@ static void InitAudioEngine()
     if (FAILED(hr) || !g_xa2) return;
     hr = g_xa2->CreateMasteringVoice(&g_master, XAUDIO2_DEFAULT_CHANNELS, XAUDIO2_DEFAULT_SAMPLERATE, 0, 0, NULL);
     if (FAILED(hr)) { DbgPrint("[DASH] master hr=0x%08x\n", hr); return; }
-    for (int i = 0; i < 44100; ++i)
-        g_tone[i] = (short)(0.28 * sin(2.0 * 3.14159265 * 440.0 * i / 44100.0) * 32767.0);
-    WAVEFORMATEX wf; ZeroMemory(&wf, sizeof(wf));
-    wf.wFormatTag = WAVE_FORMAT_PCM; wf.nChannels = 1; wf.nSamplesPerSec = 44100;
-    wf.wBitsPerSample = 16; wf.nBlockAlign = 2; wf.nAvgBytesPerSec = 88200;
+
+    WAVEFORMATEX wf;
+    g_wavIsSample = LoadWav(AUDIO_WAV, &wf);
+    if (g_wavIsSample) {
+        DbgPrint("[DASH] loaded %s: %uHz %uch %ubit %u bytes\n", AUDIO_WAV,
+                 wf.nSamplesPerSec, wf.nChannels, wf.wBitsPerSample, g_wavBytes);
+    } else {
+        DbgPrint("[DASH] WAV load failed; using 440Hz fallback tone\n");
+        for (int i = 0; i < 44100; ++i)
+            g_tone[i] = (short)(0.28 * sin(2.0 * 3.14159265 * 440.0 * i / 44100.0) * 32767.0);
+        ZeroMemory(&wf, sizeof(wf));
+        wf.wFormatTag = WAVE_FORMAT_PCM; wf.nChannels = 1; wf.nSamplesPerSec = 44100;
+        wf.wBitsPerSample = 16; wf.nBlockAlign = 2; wf.nAvgBytesPerSec = 88200;
+        g_wavData = (const BYTE *)g_tone; g_wavBytes = sizeof(g_tone);
+    }
+
     hr = g_xa2->CreateSourceVoice(&g_srcVoice, &wf, 0, 4.0f, NULL, NULL, NULL);
     if (FAILED(hr)) { DbgPrint("[DASH] source voice hr=0x%08x\n", hr); return; }
     XAUDIO2_BUFFER b; ZeroMemory(&b, sizeof(b));
-    b.AudioBytes = sizeof(g_tone); b.pAudioData = (const BYTE *)g_tone;
+    b.AudioBytes = g_wavBytes; b.pAudioData = g_wavData;
     b.Flags = XAUDIO2_END_OF_STREAM; b.LoopCount = XAUDIO2_LOOP_INFINITE;
     g_srcVoice->SubmitSourceBuffer(&b, NULL);
     g_audioReady = true;
@@ -260,8 +314,6 @@ static int   g_netTried;
 
 static void SetStatus(DWORD col, const char *s) { g_statusCol = col; int i = 0; for (; s[i] && i < 127; ++i) g_status[i] = s[i]; g_status[i] = 0; }
 
-static void ProbeVideo();   /* defined below */
-
 static void SectionEnter(int s)
 {
     g_frameInSec = 0;
@@ -271,14 +323,13 @@ static void SectionEnter(int s)
     case SEC_SHADERS: SetStatus(COL_OK, "cycling precompiled PS effects"); break;
     case SEC_TEXT:    SetStatus(COL_OK, "A8 atlas font, screen-space quads"); break;
     case SEC_VIDEO:
-        ProbeVideo();
-        SetStatus(g_vidState == 1 ? COL_OK : COL_FAIL,
-                  g_vidState == 1 ? "XMedia2 opened the movie (probe)" : "XMedia2 create failed");
+        SetStatus(COL_OK, "XMedia2 XMV -- playing " XMV_MOVIE);
         break;
     case SEC_AUDIO:   ToneStart();
                       SetStatus(g_audioReady ? COL_OK : COL_FAIL,
-                                g_audioReady ? "440Hz voice playing (stops on exit)" : "engine unavailable");
-                      DbgPrint("[DASH] audio: tone %s\n", g_audioReady ? "started" : "unavailable"); break;
+                                g_audioReady ? "playing WAV sample (stops on exit)" : "engine unavailable");
+                      DbgPrint("[DASH] audio: %s %s\n", g_wavIsSample ? "sample" : "tone",
+                               g_audioReady ? "started" : "unavailable"); break;
     case SEC_INPUT:   SetStatus(COL_PEND, "polling XInput port 0..."); break;
     case SEC_NET:
         SetStatus(g_netStarted ? COL_OK : COL_FAIL,
@@ -289,42 +340,6 @@ static void SectionEnter(int s)
 }
 
 static void SectionExit(int s) { if (s == SEC_AUDIO) { ToneStop(); DbgPrint("[DASH] audio: tone stopped\n"); } }
-
-/* Bring up XMedia2 on the movie file: create the player and query the video
- * descriptor -- this proves xmedia2.lib links and that the .xmv/.wmv is opened
- * and parsed (streams read off game:\). We do NOT call the blocking Play() by
- * default: full CPU-decoded playback currently faults this xenia build (host
- * AV during XMA/VC-1 decode), so it is gated behind XMV_FULL_PLAY for hardware. */
-static void ProbeVideo()
-{
-    XMEDIA_XMV_CREATE_PARAMETERS p; ZeroMemory(&p, sizeof(p));
-    p.createType = XMEDIA_CREATE_FROM_FILE;
-    p.createFromFile.szFileName = XMV_MOVIE;
-    p.dwAudioStreamId = XMEDIA_STREAM_ID_USE_DEFAULT;
-    p.dwVideoStreamId = XMEDIA_STREAM_ID_USE_DEFAULT;
-
-    IXMedia2XmvPlayer *player = NULL;
-    HRESULT hr = XMedia2CreateXmvPlayer(g_dev, g_xa2, &p, &player);
-    DbgPrint("[DASH] XMedia2CreateXmvPlayer hr=0x%08x\n", hr);
-    if (FAILED(hr) || !player) { g_vidState = -1; return; }
-
-    XMEDIA_VIDEO_DESCRIPTOR vd; ZeroMemory(&vd, sizeof(vd));
-    if (SUCCEEDED(player->GetVideoDescriptor(&vd))) {
-        g_vidW = vd.dwWidth; g_vidH = vd.dwHeight;
-        g_vidFps = vd.fFrameRate; g_vidDur = vd.dwClipDuration;
-        DbgPrint("[DASH] XMV descriptor: %ux%u @ %d.%02dfps dur=%ums\n",
-                 vd.dwWidth, vd.dwHeight, (int)vd.fFrameRate,
-                 (int)((vd.fFrameRate - (int)vd.fFrameRate) * 100), vd.dwClipDuration);
-    }
-    g_vidState = 1;
-
-#ifdef XMV_FULL_PLAY
-    DbgPrint("[DASH] XMV: Play (blocking, HW)...\n");
-    player->Play(0, NULL);
-    g_dev->SetRenderState(D3DRS_VIEWPORTENABLE, TRUE);
-#endif
-    player->Release();
-}
 
 static void Goto(int s) { SectionExit(g_section); g_section = s; SectionEnter(s); }
 
@@ -388,23 +403,23 @@ static void SectionBody(int s, float tsec, float tglob)
         break;
     }
     case SEC_VIDEO:
-        DrawText(64, 180, 1.5f, g_vidState == 1 ? COL_OK : COL_FAIL,
-                 g_vidState == 1 ? "XMedia2 XMV player created" : "XMedia2 create FAILED");
-        DrawText(64, 232, 1.25f, COL_WHITE, "XMedia2CreateXmvPlayer + GetVideoDescriptor");
+        DrawText(64, 180, 1.5f, COL_OK, "XMV movie playing...");
+        DrawText(64, 232, 1.25f, COL_WHITE, "XMedia2CreateXmvPlayer -> Play (CPU VC-1 + XMA)");
         DrawText(64, 266, 1.25f, COL_DIM,  XMV_MOVIE);
         if (g_vidState == 1) {
             wsprintfA(line, "movie: %ux%u  @ %dfps  dur %ums",
                       g_vidW, g_vidH, (int)g_vidFps, g_vidDur);
             DrawText(64, 300, 1.25f, COL_OK, line);
         }
-        DrawText(64, 344, 1.0f, COL_DIM,
-                 "full CPU-decoded playback (Play) is HW-only: it faults this xenia build");
+        DrawText(64, 344, 1.0f, COL_DIM, "player takes over the screen -- press A / B / START to skip");
         break;
     case SEC_AUDIO: {
         DrawText(64, 200, 1.5f, g_audioReady ? COL_OK : COL_FAIL,
                  g_audioReady ? "XAudio2 voice PLAYING" : "XAudio2 unavailable");
-        DrawText(64, 250, 1.25f, COL_WHITE, "engine -> mastering voice -> source voice -> 440Hz sine");
-        DrawText(64, 284, 1.25f, COL_DIM,  "tone starts on enter, stops on exit (per-section)");
+        DrawText(64, 250, 1.25f, COL_WHITE, "engine -> mastering voice -> source voice");
+        DrawText(64, 284, 1.25f, COL_DIM,  g_wavIsSample
+                 ? "PCM WAV sample from game:\\Media\\Sounds (starts on enter, stops on exit)"
+                 : "440Hz fallback tone (WAV not found)");
         break;
     }
     case SEC_INPUT: {
@@ -543,17 +558,54 @@ static void DrawBackground(int s, float tsec, float tglob)
 
 static void Present() { g_dev->Present(NULL, NULL, NULL, NULL); }
 
-static void DrawLoading(int dots)
+/* Per-frame callback during XMV Play(): poll the pad and stop the clip early on
+ * A/B/Start, so a controller can skip the movie (Play() otherwise blocks until
+ * the clip ends). ctx is the player. */
+static void XmvFrameCallback(PVOID ctx)
 {
-    g_dev->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, D3DCOLOR_XRGB(6, 8, 22), 1.0f, 0);
-    TextReset();
-    DrawText(CenterX("RXDK-360", 3.0f), g_bbH * 0.40f, 3.0f, COL_WHITE, "RXDK-360");
-    char l[64]; int i = 0; l[i++] = 'l'; l[i++]='o';l[i++]='a';l[i++]='d';l[i++]='i';l[i++]='n';l[i++]='g';
-    for (int d = 0; d < (dots % 4); ++d) l[i++] = '.';
-    l[i] = 0;
-    DrawText(CenterX("loading...", 1.5f), g_bbH * 0.40f + 90, 1.5f, COL_BLUE, l);
-    TextFlush();
-    Present();
+    XINPUT_STATE st; ZeroMemory(&st, sizeof(st));
+    if (XInputGetState(0, &st) == ERROR_SUCCESS) {
+        WORD b = st.Gamepad.wButtons;
+        if (b & (XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_B | XINPUT_GAMEPAD_START))
+            ((IXMedia2XmvPlayer *)ctx)->Stop(XMEDIA_STOP_IMMEDIATE);
+    }
+}
+
+/* XMV video: create the player, show a labelled pre-roll frame, then Play() the
+ * clip (blocking -- the player decodes on the CPU and presents each frame
+ * itself), then continue. Real playback works now that xenia resolves the
+ * save/rest stubs (no more giant-function miscompile that faulted decode).
+ * A/B/Start skip the clip via XmvFrameCallback. */
+static void DoVideoSection()
+{
+    XMEDIA_XMV_CREATE_PARAMETERS p; ZeroMemory(&p, sizeof(p));
+    p.createType = XMEDIA_CREATE_FROM_FILE;
+    p.createFromFile.szFileName = XMV_MOVIE;
+    p.dwAudioStreamId = XMEDIA_STREAM_ID_USE_DEFAULT;
+    p.dwVideoStreamId = XMEDIA_STREAM_ID_USE_DEFAULT;
+    IXMedia2XmvPlayer *pl = NULL;
+    HRESULT hr = XMedia2CreateXmvPlayer(g_dev, g_xa2, &p, &pl);
+    DbgPrint("[DASH] XMV create hr=0x%08x\n", hr);
+    if (FAILED(hr) || !pl) { g_vidState = -1; return; }
+
+    XMEDIA_VIDEO_DESCRIPTOR vd; ZeroMemory(&vd, sizeof(vd));
+    if (SUCCEEDED(pl->GetVideoDescriptor(&vd))) {
+        g_vidW = vd.dwWidth; g_vidH = vd.dwHeight; g_vidFps = vd.fFrameRate; g_vidDur = vd.dwClipDuration;
+    }
+    g_vidState = 1;
+
+    /* labelled pre-roll so the viewer sees what's about to play */
+    g_dev->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL,
+                 D3DCOLOR_XRGB(8, 10, 26), 1.0f, 0);
+    TextReset(); SectionBody(SEC_VIDEO, 0, 0); DrawHUD(); TextFlush(); Present();
+    Sleep(800);
+
+    pl->SetCallback(XMEDIA_NOTIFY_END_OF_FRAME, XmvFrameCallback, pl);
+    DbgPrint("[DASH] XMV Play...\n");
+    hr = pl->Play(0, NULL);   /* blocks until the clip ends (or A/B/Start skips) */
+    DbgPrint("[DASH] XMV Play hr=0x%08x\n", hr);
+    pl->Release();
+    g_dev->SetRenderState(D3DRS_VIEWPORTENABLE, TRUE);
 }
 
 int main(void)
@@ -561,21 +613,13 @@ int main(void)
     DbgPrint("[DASH] start\n");
     if (FAILED(InitD3D())) { DbgPrint("[DASH] InitD3D FAILED\n"); return 1; }
 
-    /* Earliest possible pixels: a bare clear+present is the smallest GPU path,
-     * so it warms (JITs) and paints sooner than anything with a draw in it --
-     * the screen goes from black to a colour as fast as xenia allows. Only then
-     * do we bring up the text pipeline for the animated loading frames, and we
-     * spread those across the heavy init so they animate rather than freeze. */
-    for (int i = 0; i < 2; ++i) {
-        g_dev->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, D3DCOLOR_XRGB(6, 8, 22), 1.0f, 0);
-        Present();
-    }
+    /* No loading screen: with the save/rest JIT fix xenia warms in ~1.5s, so we
+     * go straight to the sections. */
     if (FAILED(InitText())){ DbgPrint("[DASH] InitText FAILED\n"); return 1; }
-    DrawLoading(0);
-    InitTriangle();     DrawLoading(1);
-    InitFx();           DrawLoading(2);
-    InitAudioEngine();  DrawLoading(3);
-    InitNet();          DrawLoading(0);
+    InitTriangle();
+    InitFx();
+    InitAudioEngine();
+    InitNet();
     DbgPrint("[DASH] init complete; running sections\n");
 
     SectionEnter(g_section);
@@ -586,6 +630,15 @@ int main(void)
 #endif
     for (int f = 0; f < frames; ++f) {
         HandleNav();
+
+        /* XMV plays full-screen via a blocking Play() that presents the clip
+         * itself; hand off, then advance to the next section when it ends. */
+        if (g_section == SEC_VIDEO) {
+            DoVideoSection();
+            Goto((SEC_VIDEO + 1) % SEC_COUNT);
+            continue;
+        }
+
         float tsec = g_frameInSec / 60.0f, tglob = g_totalFrames / 60.0f;
 
         g_dev->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL,
