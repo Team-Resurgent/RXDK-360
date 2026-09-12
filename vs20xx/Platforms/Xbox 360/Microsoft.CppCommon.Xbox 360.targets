@@ -44,8 +44,11 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <PropertyPageSchema Include="$(Xbox360PropertyPagesPath)debugger_remote.xml"/>
 
     <!-- Local Windows Debugger flavor - the Xenia launch uses it (the Xenia
-         settings live on the Console Deployment page, deploy.xml). -->
-    <PropertyPageSchema Include="$(VCTargetsPath)$(LangID)\debugger_local.xml"/>
+         settings live on the Console Deployment page, deploy.xml). The stock
+         schema file is debugger_local_windows.xml; registering it is what lets VS
+         read our evaluated LocalDebuggerCommand ($(RxdkXeniaPath)) for F5 instead
+         of falling back to the built-in $(TargetPath) local-launch default. -->
+    <PropertyPageSchema Include="$(VCTargetsPath)$(LangID)\debugger_local_windows.xml"/>
 
     <!-- Property sheet specific property pages -->
     <PropertyPageSchema Include="$(VCTargetsPath)$(LangID)\usermacros.xml">

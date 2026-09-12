@@ -16,10 +16,12 @@ namespace Rxdk360.TemplateWizard
 
         public ToolsetForm()
         {
-            // Auto-sizing controls (each grows to fit its text) so nothing clips -
-            // not the bold radio descenders, not the wrapped descriptions - at any
-            // display scaling. AutoScaleDimensions + Font mode scales the fixed
-            // positions with the DPI.
+            // Everything stacks in an auto-sizing single-column table and the form
+            // grows to fit it, so nothing collides or clips no matter how the text
+            // wraps at the user's DPI/font (the old fixed Y positions assumed a
+            // 2-line intro and hid the first radio when it wrapped to 3). AutoSize
+            // controls each grow to their text; a little bottom padding gives the
+            // bold radio descenders (the 'g' in "clang") room so they aren't clipped.
             AutoScaleDimensions = new SizeF(7f, 15f);
             AutoScaleMode = AutoScaleMode.Font;
             Font = new Font("Segoe UI", 9f);
@@ -30,48 +32,61 @@ namespace Rxdk360.TemplateWizard
             MaximizeBox = false;
             ShowInTaskbar = false;
             ControlBox = false;                 // OK-only: the project is already being created
-            ClientSize = new Size(524, 276);
+            AutoSize = true;
+            AutoSizeMode = AutoSizeMode.GrowAndShrink;
 
             var boldFont = new Font(Font, FontStyle.Bold);
+            const int wrapW = 492;              // fixes the dialog width; text wraps within it
 
-            // AutoSize measures text height as Font.Height, which can fall a pixel or
-            // two short of what bold glyph descenders (the 'g' in "clang") actually
-            // need, clipping them at the control's bottom edge. A couple pixels of
-            // bottom padding grows the control just enough to give descenders room.
-            Label Wrap(int x, int y, int w, string text, Color? color = null) => new Label
+            Label Wrap(int w, int leftIndent, string text, Color? color = null) => new Label
             {
                 Text = text,
                 AutoSize = true,
                 MaximumSize = new Size(w, 0),
-                Padding = new Padding(0, 0, 0, 2),
-                Location = new Point(x, y),
+                Margin = new Padding(leftIndent, 0, 0, 2),
                 ForeColor = color ?? SystemColors.ControlText,
             };
-            RadioButton Radio(int y, string text, bool chk) => new RadioButton
+            RadioButton Radio(string text, bool chk) => new RadioButton
             {
                 Text = text,
                 Checked = chk,
                 Font = boldFont,
                 AutoSize = true,
-                Padding = new Padding(0, 0, 0, 3),
-                Location = new Point(16, y),
+                Margin = new Padding(0, 10, 0, 3),
             };
 
-            var intro = Wrap(16, 14, 492,
+            var intro = Wrap(wrapW, 0,
                 "How should this Xbox 360 title be built? Both toolchains install side by side, " +
                 "so you can change it later in the project's Platform Toolset.");
-            _modern = Radio(64, "Modern (clang / LLVM)", true);
-            var modernDesc = Wrap(36, 92, 476,
+            _modern = Radio("Modern (clang / LLVM)", true);
+            var modernDesc = Wrap(wrapW - 20, 20,
                 "C/C++23 with the modern runtime (picolibc + libc++), packed by XexTool. " +
                 "The productised RXDK-360 toolchain.", SystemColors.GrayText);
-            var legacy = Radio(146, "Legacy (stock Xbox 360 XDK)", false);
-            var legacyDesc = Wrap(36, 174, 476,
+            var legacy = Radio("Legacy (stock Xbox 360 XDK)", false);
+            var legacyDesc = Wrap(wrapW - 20, 20,
                 "The stock XDK cl.exe / link.exe / imagexex, exactly as the original SDK. " +
                 "Use for existing XDK code and samples.", SystemColors.GrayText);
+            var ok = new Button
+            {
+                Text = "OK",
+                DialogResult = DialogResult.OK,
+                Size = new Size(96, 34),
+                Anchor = AnchorStyles.Right,
+                Margin = new Padding(0, 14, 0, 0),
+            };
 
-            var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(412, 228), Size = new Size(96, 34) };
+            var layout = new TableLayoutPanel
+            {
+                ColumnCount = 1,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Dock = DockStyle.Fill,
+                Padding = new Padding(16, 14, 16, 14),
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            layout.Controls.AddRange(new Control[] { intro, _modern, modernDesc, legacy, legacyDesc, ok });
 
-            Controls.AddRange(new Control[] { intro, _modern, modernDesc, legacy, legacyDesc, ok });
+            Controls.Add(layout);
             AcceptButton = ok;
         }
     }
