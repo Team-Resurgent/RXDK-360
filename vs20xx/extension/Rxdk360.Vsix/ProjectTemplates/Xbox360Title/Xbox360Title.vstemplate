@@ -5,6 +5,9 @@
     <Name>Xbox 360 Title (RXDK-360)</Name>
     <Description>A minimal bootable Xbox 360 title built with the stock XDK toolchain on modern Visual Studio.</Description>
     <ProjectType>VC</ProjectType>
+    <LanguageTag>C++</LanguageTag>
+    <PlatformTag>Xbox 360</PlatformTag>
+    <ProjectTypeTag>Games</ProjectTypeTag>
     <SortOrder>1000</SortOrder>
     <CreateNewFolder>true</CreateNewFolder>
     <DefaultName>Xbox360Title</DefaultName>
