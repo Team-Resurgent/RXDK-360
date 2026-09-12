@@ -18,8 +18,8 @@ custom toolchain (clang/lld/coff2elf) — it drives the XDK's own
 | **Application** build (cl → link → imagexex → `.xex`) | ✅ boots + runs in xenia |
 | VS project templates ("Xbox 360 Title" / "Static Library") | ✅ built into a `.vsix` |
 | VSIX packaging (templates) | ✅ `extension/Rxdk360.Vsix` builds a `.vsix` |
+| Single-installer (`install.ps1`: platform + tasks + VSIX, self-elevating) | ✅ installs into VS2022 + VS18 |
 | Remote debugger (VSPackage) | ⏳ (deferred; separate native VSIX) |
-| Single-installer bundle (VSIX + elevated platform install) | ⏳ |
 
 Verified end to end under `VS2022\MSBuild\Current\Bin\MSBuild.exe`, invoking the
 stock XDK PowerPC toolchain (`cl.exe` v16.00, `link.exe`, `lib.exe`,
@@ -73,19 +73,24 @@ copied to `Platforms/RXDK-360/` and adapted for the modern VC platform contract:
 The XDK itself is untouched, and the compiler/headers/libs come from the stock
 install via `HKLM\...\Xbox\2.0\SDK@InstallPath`.
 
-## Install (developer, pre-VSIX)
+## Install
 
-From an **elevated** PowerShell (writes under the VS install):
+`install.ps1` is the single installer — it **self-elevates** and does everything:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File vs20xx\install.ps1
 ```
 
-This builds the task assembly, stages it, and copies the `RXDK-360` platform into
-every detected VS install's `MSBuild\Microsoft\VC\{v170,v180}\Platforms`.
-`-Uninstall` removes them.
+1. builds the RXDK-360 task assembly from source,
+2. installs the `RXDK-360` platform (+ task assembly) into every detected VS
+   install's `MSBuild\Microsoft\VC\{v170,v180}\Platforms`,
+3. builds and installs the VSIX (project templates) into each VS.
 
-Then a project uses `<Platform>RXDK-360</Platform>` with
+`-Uninstall` removes all of it; `-SkipVsix` / `-SkipPlatform` do one half.
+Verified installing into VS2022 (v170) and VS "18"/2026 (v170 + v180).
+
+After a VS restart: **New Project → "Xbox 360 Title" / "Xbox 360 Static
+Library"**, or hand-write a `.vcxproj` with `<Platform>RXDK-360</Platform>` +
 `<PlatformToolset>2010-01</PlatformToolset>` (see `tests/hello`,
 `tests/apphello`).
 
@@ -101,9 +106,9 @@ msbuild extension\Rxdk360.Vsix\Rxdk360.Vsix.csproj /restore /p:Configuration=Rel
 ```
 
 The extension ships templates only — a VSIX cannot write into the VS install's
-`VC\<toolset>\Platforms`, so the `RXDK-360` platform + task assembly are still
-installed by the elevated `install.ps1`. A future single-installer bundle will
-run both steps.
+`VC\<toolset>\Platforms`, so the `RXDK-360` platform + task assembly are installed
+by the elevated `install.ps1`, which also builds and installs this VSIX. Building
+it standalone (above) is only needed when iterating on the templates themselves.
 
 ## Layout
 
