@@ -15,14 +15,20 @@ custom toolchain (clang/lld/coff2elf) — it drives the XDK's own
 | Task assembly rebuilt from source against v170 CPPTasks | ✅ builds clean |
 | `RXDK-360` MSBuild platform (v170/v180) loads in modern VS | ✅ |
 | **StaticLibrary** build (cl → lib) end to end | ✅ produces a PPCBE `.lib` |
-| Application build (cl → link → imagexex → `.xex`) | ⏳ next |
+| **Application** build (cl → link → imagexex → `.xex`) | ✅ boots + runs in xenia |
 | VS project/item templates | ⏳ |
 | Remote debugger (VSPackage) | ⏳ (deferred; separate native VSIX) |
 | VSIX bundling all of the above | ⏳ |
 
-Verified: a minimal `.vcxproj` with `<Platform>RXDK-360</Platform>` builds under
-`VS2022\MSBuild\Current\Bin\MSBuild.exe`, invoking the XDK PowerPC `cl.exe`
-(v16.00) and `Lib.exe`; `dumpbin /headers` reports `1F2 machine (PPCBE)`.
+Verified end to end under `VS2022\MSBuild\Current\Bin\MSBuild.exe`, invoking the
+stock XDK PowerPC toolchain (`cl.exe` v16.00, `link.exe`, `lib.exe`,
+`imagexex.exe`):
+
+- `tests/hello` (StaticLibrary) → a `.lib` whose `dumpbin /headers` reports
+  `1F2 machine (PPCBE)`.
+- `tests/apphello` (Application) → a bootable `apphello.xex` that loads and runs
+  in xenia and prints from `main()` via `DbgPrint`, exiting cleanly through the
+  XDK CRT (`[XAPI RETURN VALUE] 0`).
 
 ## Why the stock DLL had to be rebuilt
 
