@@ -17,6 +17,7 @@
 
   <Rule.Categories>
     <Category Name="General" DisplayName="General" />
+    <Category Name="DiscImage" DisplayName="Disc Image" />
   </Rule.Categories>
 
   <Rule.DataSource>
@@ -41,4 +42,26 @@
   <BoolProperty Name="RxdkXeniaHeadless" DisplayName="Run Headless"
                 Category="General"
                 Description="Pass --headless=true so Xenia runs without its window (useful for smoke tests / capturing the log). Default: off, so the emulator window is shown." />
+
+  <BoolProperty Name="RxdkXeniaUseIso" DisplayName="Launch as Disc Image (ISO)"
+                Category="DiscImage"
+                Description="Build an Xbox 360 disc image (XISO/GDFX) from the title and any content folder, and boot THAT in Xenia instead of the bare XEX. Use this when the title expects a disc layout (game:\ media, etc.). The XEX is placed at the disc root as default.xex." />
+
+  <StringProperty Name="RxdkXeniaDiscDir" DisplayName="Disc Content Folder"
+                  Category="DiscImage" Subtype="folder"
+                  Description="Optional folder whose contents are laid into the disc root alongside default.xex (your media / game-data folder). Leave empty for a disc containing just the title.">
+    <StringProperty.ValueEditors>
+      <ValueEditor EditorType="DefaultStringPropertyEditor" DisplayName="&lt;Edit...&gt;" />
+      <ValueEditor EditorType="DefaultFolderPropertyEditor" DisplayName="&lt;Browse...&gt;" />
+    </StringProperty.ValueEditors>
+  </StringProperty>
+
+  <StringProperty Name="RxdkXdvdfsPath" DisplayName="XDVDFS Tool"
+                  Category="DiscImage" Subtype="file"
+                  Description="Path to the xdvdfs executable (Team-Resurgent/XDVDFS-TR) used to pack the disc image. Defaults to the RXDK host-tools copy if present; set it if xdvdfs is elsewhere.">
+    <StringProperty.ValueEditors>
+      <ValueEditor EditorType="DefaultStringPropertyEditor" DisplayName="&lt;Edit...&gt;" />
+      <ValueEditor EditorType="DefaultFilePropertyEditor" DisplayName="&lt;Browse...&gt;" />
+    </StringProperty.ValueEditors>
+  </StringProperty>
 </Rule>
