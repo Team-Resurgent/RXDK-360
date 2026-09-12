@@ -97,7 +97,7 @@ int main(void)
     if (FAILED(InitD3D())) { DbgPrint("[XUI] InitD3D FAILED\n"); return 1; }
     if (FAILED(InitXui())) { DbgPrint("[XUI] InitXui FAILED\n"); return 1; }
 
-    for (int f = 0; f < 120; ++f) {
+    for (int f = 0; f < 1800; ++f) {   /* ~30s at 60fps so it's watchable */
         g_dev->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(8, 10, 26), 1.0f, 0);
         XuiRenderBegin(g_hDC, D3DCOLOR_ARGB(255, 8, 10, 26));
         D3DXMATRIX v; D3DXMatrixIdentity(&v);

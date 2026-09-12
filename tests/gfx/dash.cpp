@@ -1442,9 +1442,10 @@ static void XmvFrameCallback(PVOID ctx)
         if (b & (XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_B | XINPUT_GAMEPAD_START))
             ((IXMedia2XmvPlayer *)ctx)->Stop(XMEDIA_STOP_IMMEDIATE);
     }
-#ifndef DASH_SPIN_FOREVER
+#if !defined(DASH_SPIN_FOREVER) && !defined(DASH_FULL_XMV)
     /* Quick (headless / one-cycle) build: cap the clip so a self-test run isn't
-       held up for the whole movie. The windowed --spin demo plays it in full. */
+       held up for the whole movie. The windowed --play/--spin demos play it in
+       full (--play exits after one cycle; --spin loops). */
     if (GetTickCount() - g_xmvStart > 4000)
         ((IXMedia2XmvPlayer *)ctx)->Stop(XMEDIA_STOP_IMMEDIATE);
 #endif
