@@ -1,0 +1,175 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Rule
+  Name="Xbox360Deploy"
+  DisplayName="Console Deployment"
+  PageTemplate="tool"
+  SwitchPrefix="/"
+  Order="100"
+  xmlns="http://schemas.microsoft.com/build/2009/properties"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+  <Rule.Categories>
+    
+    <Category
+      Name="General"
+      DisplayName="General"/>
+    
+    <Category
+      Name="DeployToHardDrive"
+      DisplayName="Copy To Hard Drive"/>
+    
+    <Category
+      Name="EmulateDvd"
+      DisplayName="Emulate DVD Drive"/>
+    
+    <Category
+      Name="Command Line"
+      DisplayName="Command Line"
+      Subtype="CommandLine"/>
+    
+  </Rule.Categories>
+      
+  <Rule.DataSource>
+    <DataSource
+      Persistence="ProjectFile"
+      ItemType="Deploy"
+      HasConfigurationCondition="true"/>
+  </Rule.DataSource>
+
+  <!-- General -->
+
+  <EnumProperty
+    Name="DeploymentType"
+    DisplayName="Deployment Type"
+    Category="General"
+    Description="Specifies whether media files are emulated from the PC or deployed to the Xenon hard drive.  Emulation can mimic game performance on DVD media."
+    F1Keyword="VC.Project.VCX360DeploymentTool.DeploymentType">
+
+    <EnumValue
+      Name="CopyToHardDrive"
+      DisplayName="Copy to Hard Drive"/>
+
+    <EnumValue
+      Name="EmulateDvd"
+      DisplayName="Emulate DVD Drive"/>
+    
+  </EnumProperty>
+
+  <BoolProperty
+    Name="SuppressStartupBanner"
+    DisplayName="Suppress Startup Banner"
+    Category="General"
+    Switch="nologo"
+    Description="Suppress the display of the startup banner and information messages."
+    F1Keyword="VC.Project.VCX360DeploymentTool.SuppressStartupBanner" />
+
+  <BoolProperty
+    Name="ExcludedFromBuild"
+    DisplayName="Excluded From Build"
+    Category="General"
+    Description="Specifies whether the Console Deployment Tool is excluded from the build for the current configuration."
+    F1Keyword="VC.Project.VCX360DeploymentTool.ExcludedFromBuild"/>
+  
+  <!-- DeployToHardDrive -->
+
+  <BoolProperty
+    Name="Progress"
+    DisplayName="Progress"
+    Category="DeployToHardDrive"
+    Switch="PROGRESS"
+    Description="Displays status information about the progress of the deployment.     (/PROGRESS)"
+    F1Keyword="VC.Project.VCX360DeploymentTool.Progress"/>
+
+  <BoolProperty
+    Name="ForceCopy"
+    DisplayName="Force Copy"
+    Category="DeployToHardDrive"
+    Switch="FORCECOPY"
+    Description="Forces the deployment tool to always copy files, even if the destination file size and date matches the source file.     (/FORCECOPY)"
+    F1Keyword="VC.Project.VCX360DeploymentTool.ForceCopy"/>
+
+  <StringListProperty
+    Name="DeploymentFiles"
+    DisplayName="Deployment Files"
+    Category="DeployToHardDrive"
+    Switch="DeploymentFiles "
+    Description="Specifies the source media files to deploy as well as their target locations on the console or synthesized DVD media.  Select your own files or specify a Game Disc Layout file."
+    F1Keyword="VC.Project.VCX360DeploymentTool.DeploymentFiles">
+    <StringListProperty.ValueEditors>
+      <ValueEditor EditorType="XboxDeploymentFilesPropertyEditor" DisplayName="&lt;Edit...&gt;"/>
+    </StringListProperty.ValueEditors>
+  </StringListProperty>
+
+  <StringProperty
+    Name="RemoteRoot"
+    DisplayName="Deployment Root"
+    Category="DeployToHardDrive"
+    IncludeInCommandLine="false"
+    Description="The full path of the directory (on the Console) where all deployment files will be copied to. This sets the value of the RemoteRoot macros. Example value: devkit:\$(SolutionName)"
+    F1Keyword="VC.Project.VCX360DeploymentTool.RemoteRoot">
+    <StringProperty.DataSource>
+      <DataSource Persistence="ProjectFile" ItemType="" Label="" HasConfigurationCondition="true" />
+    </StringProperty.DataSource>
+  </StringProperty>
+
+  <StringProperty
+    Name="RemotePath"
+    DisplayName="Remote Path"
+    Category="DeployToHardDrive"
+    IncludeInCommandLine="false"
+    Description="Remote Path : The full path (on the Console) where the xbe will be copied to. This sets the value of the RemotePath macros. Example value: devkit:\$(SolutionName)\$(TargetName).xex"
+    Visible="false">
+    <StringProperty.DataSource>
+      <DataSource Persistence="ProjectFile" ItemType="" Label="" HasConfigurationCondition="true" />
+    </StringProperty.DataSource>
+  </StringProperty>
+
+  <!-- EmulateDvd -->
+
+  <EnumProperty
+    Name="DvdEmulationType"
+    DisplayName="Emulation Type"    
+    Category="EmulateDvd"
+    IncludeInCommandLine="false"
+    Description="The different search times determine the accuracy of the emulation. Only the Accurate Search Times emulation type requires a user-defined DVD layout file (.XGD)."
+    F1Keyword="VC.Project.VCX360DeploymentTool.EmulationType">
+    
+    <EnumValue
+      Name="ZeroSeekTimes"
+      DisplayName="Zero Seek Times"
+      Switch="TimingMode none"/>
+
+    <EnumValue
+      Name="TypicalSeekTimes"
+      DisplayName="Typical Seek Times"
+      Switch="TimingMode typical"/>
+    
+    <EnumValue
+      Name="AccurateSeekTimes"
+      DisplayName="Accurate Seek Times"
+      Switch="TimingMode accurate"/>
+    
+  </EnumProperty>
+
+  <StringProperty
+    Name="LayoutFile"
+    DisplayName="Layout File"
+    Category="EmulateDvd"
+    IncludeInCommandLine="false"
+    Description="User defined Game Disc Layout file (.xgd) that was created with the Xbox Game Disc Authoring Tool."
+    F1Keyword="VC.Project.VCX360DeploymentTool.EmulationLayout">
+    <StringProperty.ValueEditors>
+      <ValueEditor EditorType="DefaultStringPropertyEditor" DisplayName="&lt;Edit...&gt;"/>
+      <ValueEditor EditorType="XboxLayoutFilePropertyEditor" DisplayName="&lt;Browse...&gt;"/>
+    </StringProperty.ValueEditors>
+  </StringProperty>
+
+  <!-- Command Line -->
+
+  <StringProperty
+    Name="AdditionalOptions"
+    Category="Command Line"
+    DisplayName="Additional Options"/>
+  
+</Rule>
