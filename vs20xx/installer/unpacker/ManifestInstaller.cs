@@ -251,13 +251,31 @@ namespace Rxdk.Xdk.Unpacker
                             RegistryHive hive = f[1].Equals("HKCU", StringComparison.OrdinalIgnoreCase)
                                 ? RegistryHive.CurrentUser : RegistryHive.LocalMachine;
                             using (var baseKey = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64))
-                            using (var k = baseKey.OpenSubKey(f[2], true))
-                                if (k != null && !string.IsNullOrEmpty(f[3])) { try { k.DeleteValue(f[3], false); } catch { } }
+                            {
+                                if (!string.IsNullOrEmpty(f[3]))
+                                    using (var k = baseKey.OpenSubKey(f[2], true))
+                                        if (k != null) { try { k.DeleteValue(f[3], false); } catch { } }
+                                // remove the key too if it is now empty (e.g. a key-only addreg)
+                                try
+                                {
+                                    using (var k = baseKey.OpenSubKey(f[2]))
+                                        if (k != null && k.ValueCount == 0 && k.SubKeyCount == 0)
+                                            baseKey.DeleteSubKey(f[2], false);
+                                }
+                                catch { }
+                            }
                             break;
                     }
                 }
                 catch { }
             }
+            // remove the now-empty RXDK-360 Start-menu group (shortcuts already gone)
+            try
+            {
+                string grp = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms), "RXDK-360");
+                if (Directory.Exists(grp)) Directory.Delete(grp, true);
+            }
+            catch { }
         }
     }
 }
