@@ -46,20 +46,13 @@ MissingRunOnceIdsWarning=no
 [Tasks]
 Name: "envvar";    Description: "Set the RXDK360 environment variable"; GroupDescription: "Integration:"
 Name: "vs";        Description: "Install the Visual Studio integration (RXDK-360 platform + project templates)"; GroupDescription: "Integration:"
-Name: "startmenu"; Description: "Create RXDK-360 Start menu shortcuts"; GroupDescription: "Integration:"
 
 [Files]
-; --- the extracted XDK payload (external, from the temp extraction) -> {app} ---
-; The Xbox 360 XDK setup extracts under an "XDK\" prefix; relocate the build
-; essentials to {app}. (Add more subtrees here to install the full SDK.)
-Source: "{tmp}\XDKTemp\XDK\bin\*";     DestDir: "{app}\bin";     Flags: external recursesubdirs createallsubdirs
-Source: "{tmp}\XDKTemp\XDK\include\*"; DestDir: "{app}\include"; Flags: external recursesubdirs createallsubdirs
-Source: "{tmp}\XDKTemp\XDK\lib\*";     DestDir: "{app}\lib";     Flags: external recursesubdirs createallsubdirs
-Source: "{tmp}\XDKTemp\XDK\source\*";  DestDir: "{app}\source";  Flags: external recursesubdirs createallsubdirs skipifsourcedoesntexist
-Source: "{tmp}\XDKTemp\XDK\doc\*";     DestDir: "{app}\doc";     Flags: external recursesubdirs createallsubdirs skipifsourcedoesntexist
-
-; --- bundled: the RXDK-360 XDK unpacker + the VS integration (ours) ---
-Source: "unpacker\bin\Release\net472\RxdkXdkUnpacker.exe"; Flags: dontcopy
+; The XDK payload is installed by the manifest engine at [Run] time (files,
+; registry, shortcuts, shell extension) - not by Inno - so it can be placed
+; exactly as the original installer (relocated to {app}). Here we only bundle
+; our own tools + the VS integration.
+Source: "unpacker\bin\Release\net472\RxdkXdkUnpacker.exe"; DestDir: "{app}\tools"
 Source: "..\Platforms\*"; DestDir: "{app}\vsintegration\Platforms"; Flags: recursesubdirs createallsubdirs; Excludes: "*.dll"
 Source: "..\tasks\*";     DestDir: "{app}\vsintegration\tasks";     Flags: recursesubdirs createallsubdirs; Excludes: "\*\bin\*,\*\obj\*"
 Source: "..\extension\*"; DestDir: "{app}\vsintegration\extension"; Flags: recursesubdirs createallsubdirs; Excludes: "\*\bin\*,\*\obj\*"
@@ -73,22 +66,30 @@ Root: HKLM; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueN
 Root: HKLM; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "Version";     ValueData: "{#AppVersion}"
 
 [Icons]
-Name: "{group}\RXDK-360 Command Prompt"; Filename: "{cmd}"; Parameters: "/k ""{app}\bin\win32\xdkvars.bat"""; Tasks: startmenu
-Name: "{group}\Xbox Neighborhood";       Filename: "{app}\bin\win32\xbNeighborhood.exe"; Tasks: startmenu; Check: FileExists(ExpandConstant('{app}\bin\win32\xbNeighborhood.exe'))
-Name: "{group}\PIX for Xbox";            Filename: "{app}\bin\win32\pix.exe";            Tasks: startmenu; Check: FileExists(ExpandConstant('{app}\bin\win32\pix.exe'))
-Name: "{group}\Xbox Watson";             Filename: "{app}\bin\win32\xbwatson.exe";       Tasks: startmenu; Check: FileExists(ExpandConstant('{app}\bin\win32\xbwatson.exe'))
-Name: "{group}\Uninstall RXDK-360";      Filename: "{uninstallexe}"
+; The XDK's own Start-menu shortcuts are created (under the RXDK-360 group) by
+; the manifest engine. Here we only add the uninstaller entry.
+Name: "{group}\Uninstall RXDK-360"; Filename: "{uninstallexe}"
 
 [Run]
-; Wire up the VS integration. The RXDK-360 platform reads XDKInstallDir from the
-; registry key written above, so it targets {app} automatically. Needs .NET SDK
-; + a VS 2022/2026 install.
+; 1. Install the XDK itself, relocated to {app}: the manifest engine unpacks the
+;    setup EXE and replays manifest.csv (files + registry + Start-menu shortcuts +
+;    the Xbox 360 Neighborhood shell extension).
+Filename: "{app}\tools\RxdkXdkUnpacker.exe"; \
+  Parameters: "install ""{code:GetSetupExe}"" ""{app}"""; \
+  StatusMsg: "Installing the Xbox 360 XDK (unpacking ~2 GB, this can take a few minutes)..."; \
+  Flags: waituntilterminated
+; 2. Wire up the modern-VS integration. The RXDK-360 platform reads XDKInstallDir
+;    from the registry key written above, so it targets {app} automatically.
 Filename: "powershell.exe"; \
   Parameters: "-ExecutionPolicy Bypass -NoProfile -File ""{app}\vsintegration\install.ps1"""; \
   StatusMsg: "Installing the Visual Studio integration..."; \
   Flags: runhidden waituntilterminated; Tasks: vs
 
 [UninstallRun]
+; Reverse the manifest install (files, registry, shortcuts, shell ext) first...
+Filename: "{app}\tools\RxdkXdkUnpacker.exe"; Parameters: "uninstall ""{app}"""; \
+  Flags: waituntilterminated; RunOnceId: "RxdkXdkUninstall"
+; ...then remove the VS integration.
 Filename: "powershell.exe"; \
   Parameters: "-ExecutionPolicy Bypass -NoProfile -File ""{app}\vsintegration\install.ps1"" -Uninstall"; \
   Flags: runhidden waituntilterminated; RunOnceId: "RxdkVsUninstall"
@@ -97,8 +98,6 @@ Filename: "powershell.exe"; \
 var
   XDKPage: TInputFileWizardPage;
   XDKPageID: Integer;
-  ExtractPage: TOutputMarqueeProgressWizardPage;
-  ResultCode: Integer;
 
 procedure InitializeWizard();
 begin
@@ -108,45 +107,23 @@ begin
     'Select your Xbox 360 XDK setup EXE (e.g. XDKSetupXenon<version>.exe), then click Next.');
   XDKPage.Add('&Location of the XDK setup EXE:', 'Executable files|*.exe|All files|*.*', '.exe');
   XDKPageID := XDKPage.ID;
-  ExtractPage := CreateOutputMarqueeProgressPage('Extracting the XDK', 'Please wait while the XDK is unpacked...');
 end;
 
-{ On leaving the file page, extract the XDK with 7-Zip into the temp dir; the
-  external file entries above then relocate the XDK tree into the target. }
+{ the selected setup EXE, passed to the manifest engine at [Run] time }
+function GetSetupExe(Param: String): String;
+begin
+  Result := XDKPage.Values[0];
+end;
+
 function NextButtonClick(CurPageID: Integer): Boolean;
-var
-  setupExe, tempDir: String;
 begin
   Result := True;
   if CurPageID = XDKPageID then
   begin
-    setupExe := XDKPage.Values[0];
-    if not FileExists(setupExe) then
+    if not FileExists(XDKPage.Values[0]) then
     begin
       MsgBox('Please select your Xbox 360 XDK setup EXE.', mbError, MB_OK);
       Result := False;
-      exit;
-    end;
-    ExtractPage.Show;
-    try
-      ExtractPage.Animate;
-      ExtractTemporaryFile('RxdkXdkUnpacker.exe');
-      tempDir := ExpandConstant('{tmp}\XDKTemp');
-      { our self-contained unpacker walks the setup's concatenated MS cabinets }
-      if not Exec(ExpandConstant('{tmp}\RxdkXdkUnpacker.exe'),
-                  '"' + setupExe + '" "' + tempDir + '"',
-                  '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
-      begin
-        MsgBox('Failed to unpack the XDK setup.', mbError, MB_OK);
-        Result := False;
-      end
-      else if not DirExists(tempDir + '\XDK\bin') then
-      begin
-        MsgBox('That does not look like an Xbox 360 XDK setup (no XDK\bin after extraction).', mbError, MB_OK);
-        Result := False;
-      end;
-    finally
-      ExtractPage.Hide;
     end;
   end;
 end;
