@@ -13,3 +13,6 @@ Platforms/RXDK-360/Rxdk.Xbox360.Build.dll
 # VS extension build outputs (the .vsix artifact lands under bin/)
 extension/**/bin/
 extension/**/obj/
+
+# Inno Setup output
+installer/Output/
