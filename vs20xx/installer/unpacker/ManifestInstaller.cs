@@ -123,8 +123,13 @@ namespace Rxdk.Xdk.Unpacker
             if (so) _selfreg++;
             if (DryRun) return;
 
-            Directory.CreateDirectory(Path.GetDirectoryName(dst));
-            File.Copy(src, dst, true);
+            // idempotent: skip the copy if an identical-size file is already there
+            // (fast re-runs / repair), but still (re)register SO objects.
+            if (!(File.Exists(dst) && new FileInfo(dst).Length == new FileInfo(src).Length))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(dst));
+                File.Copy(src, dst, true);
+            }
             _undo.Add("file|" + dst);
             if (so)
             {
@@ -144,8 +149,11 @@ namespace Rxdk.Xdk.Unpacker
             string dst = Path.Combine(destBase, Rel(dstRelWithToken).Replace('/', '\\'));
             _files++;
             if (DryRun) return;
-            Directory.CreateDirectory(Path.GetDirectoryName(dst));
-            File.Copy(src, dst, true);
+            if (!(File.Exists(dst) && new FileInfo(dst).Length == new FileInfo(src).Length))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(dst));
+                File.Copy(src, dst, true);
+            }
             _undo.Add("file|" + dst);
         }
 
@@ -208,13 +216,17 @@ namespace Rxdk.Xdk.Unpacker
         {
             string targetBase = ResolveDir(token);
             if (targetBase == null || string.IsNullOrEmpty(linkName)) { _skipped++; return; }
-            string target = Path.Combine(targetBase, Rel(targetRel).Replace('/', '\\'));
+            // shortcut target paths are already relative to the token (no prefix) -
+            // unlike file rows, so do NOT strip a leading segment here.
+            string target = Path.Combine(targetBase, targetRel.Replace('/', '\\'));
             string linkDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms), _group);
             string link = Path.Combine(linkDir, linkName.Replace('/', '\\'));
             _links++;
             if (DryRun) return;
             Directory.CreateDirectory(Path.GetDirectoryName(link));
-            string wd = string.IsNullOrEmpty(workdir) ? Path.GetDirectoryName(target) : ResolveDir(workdir) ?? Path.GetDirectoryName(target);
+            // workdir (optional) is a path relative to the same token
+            string wd = string.IsNullOrEmpty(workdir) ? Path.GetDirectoryName(target)
+                : Path.Combine(targetBase, workdir.Replace('/', '\\'));
             ShellLink.Create(link, target, null, wd, description, target, 0);
             _undo.Add("shortcut|" + link);
         }
