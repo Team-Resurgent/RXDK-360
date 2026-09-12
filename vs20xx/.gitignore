@@ -6,7 +6,7 @@ tests/**/Debug/
 *.user
 
 # staged task assembly (built from tasks/ by build.ps1 / install.ps1)
-Platforms/RXDK-360/Rxdk.Xbox360.Build.dll
+Platforms/Xbox 360/Rxdk.Xbox360.Build.dll
 *.tlog
 *.FileListAbsolute.txt
 

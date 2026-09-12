@@ -22,7 +22,11 @@
     <Category
       Name="EmulateDvd"
       DisplayName="Emulate DVD Drive"/>
-    
+
+    <Category
+      Name="Xenia"
+      DisplayName="Xenia Emulator"/>
+
     <Category
       Name="Command Line"
       DisplayName="Command Line"
@@ -53,7 +57,11 @@
     <EnumValue
       Name="EmulateDvd"
       DisplayName="Emulate DVD Drive"/>
-    
+
+    <EnumValue
+      Name="Xenia"
+      DisplayName="Xenia Emulator (PC)"/>
+
   </EnumProperty>
 
   <BoolProperty
@@ -165,11 +173,93 @@
     </StringProperty.ValueEditors>
   </StringProperty>
 
+  <!-- Xenia : run the built title in the Xenia PC emulator. When Deployment Type
+       is "Xenia Emulator", F5 / Ctrl+F5 launches Xenia with this title (see
+       Platform.targets). Works for both the stock and clang toolsets. -->
+
+  <!-- The Xenia settings persist as project PROPERTIES (own DataSource, no
+       ItemType) so the platform can read $(RxdkXenia*) at evaluation time to
+       override the F5 launch. Shown here on the Console Deployment page. -->
+  <StringProperty
+    Name="RxdkXeniaPath"
+    DisplayName="Xenia Executable"
+    Category="Xenia"
+    Subtype="file"
+    Description="Full path to the Xenia executable (including the .exe), e.g. D:\xenia\xenia_canary.exe. When set, F5 / Ctrl+F5 launches this title in Xenia.">
+    <StringProperty.DataSource>
+      <DataSource Persistence="ProjectFile" HasConfigurationCondition="false"/>
+    </StringProperty.DataSource>
+    <StringProperty.ValueEditors>
+      <ValueEditor EditorType="DefaultStringPropertyEditor" DisplayName="&lt;Edit...&gt;"/>
+      <ValueEditor EditorType="DefaultFilePropertyEditor" DisplayName="&lt;Browse...&gt;"/>
+    </StringProperty.ValueEditors>
+  </StringProperty>
+
+  <StringProperty
+    Name="RxdkXeniaArgs"
+    DisplayName="Additional Xenia Arguments"
+    Category="Xenia"
+    Description="Extra command-line arguments passed to Xenia after the title (e.g. --license_mask=-1).">
+    <StringProperty.DataSource>
+      <DataSource Persistence="ProjectFile" HasConfigurationCondition="false"/>
+    </StringProperty.DataSource>
+  </StringProperty>
+
+  <BoolProperty
+    Name="RxdkXeniaHeadless"
+    DisplayName="Run Headless"
+    Category="Xenia"
+    Description="Pass --headless=true so Xenia runs without its window (useful for smoke tests / capturing the log).">
+    <BoolProperty.DataSource>
+      <DataSource Persistence="ProjectFile" HasConfigurationCondition="false"/>
+    </BoolProperty.DataSource>
+  </BoolProperty>
+
+  <BoolProperty
+    Name="RxdkXeniaUseIso"
+    DisplayName="Launch as Disc Image (ISO)"
+    Category="Xenia"
+    Description="Build an Xbox 360 disc image (XISO/GDFX) from the title (as default.xex) plus the content folder, and boot THAT in Xenia instead of the bare XEX. Use when the title expects a disc layout (game:\ media).">
+    <BoolProperty.DataSource>
+      <DataSource Persistence="ProjectFile" HasConfigurationCondition="false"/>
+    </BoolProperty.DataSource>
+  </BoolProperty>
+
+  <StringProperty
+    Name="RxdkXeniaDiscDir"
+    DisplayName="Disc Content Folder"
+    Category="Xenia"
+    Subtype="folder"
+    Description="Optional folder whose contents are laid into the disc root alongside default.xex (your media / game-data). Only used when 'Launch as Disc Image' is set.">
+    <StringProperty.DataSource>
+      <DataSource Persistence="ProjectFile" HasConfigurationCondition="false"/>
+    </StringProperty.DataSource>
+    <StringProperty.ValueEditors>
+      <ValueEditor EditorType="DefaultStringPropertyEditor" DisplayName="&lt;Edit...&gt;"/>
+      <ValueEditor EditorType="DefaultFolderPropertyEditor" DisplayName="&lt;Browse...&gt;"/>
+    </StringProperty.ValueEditors>
+  </StringProperty>
+
+  <StringProperty
+    Name="RxdkXdvdfsPath"
+    DisplayName="XDVDFS Tool"
+    Category="Xenia"
+    Subtype="file"
+    Description="Path to xdvdfs (Team-Resurgent/XDVDFS-TR) used to pack the disc image. Defaults to the bundled modern-toolchain copy.">
+    <StringProperty.DataSource>
+      <DataSource Persistence="ProjectFile" HasConfigurationCondition="false"/>
+    </StringProperty.DataSource>
+    <StringProperty.ValueEditors>
+      <ValueEditor EditorType="DefaultStringPropertyEditor" DisplayName="&lt;Edit...&gt;"/>
+      <ValueEditor EditorType="DefaultFilePropertyEditor" DisplayName="&lt;Browse...&gt;"/>
+    </StringProperty.ValueEditors>
+  </StringProperty>
+
   <!-- Command Line -->
 
   <StringProperty
     Name="AdditionalOptions"
     Category="Command Line"
     DisplayName="Additional Options"/>
-  
+
 </Rule>

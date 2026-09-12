@@ -24,8 +24,8 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <UseDefaultGeneralPropertyPageSchema>false</UseDefaultGeneralPropertyPageSchema>
 
     <!-- Default to English of the $(LangID) directory is not present for the property pages. -->
-    <Xbox360PropertyPagesPath>$(VCTargetsPath)Platforms\RXDK-360\1033\</Xbox360PropertyPagesPath>
-    <Xbox360PropertyPagesPath Condition="'$(LangID)' != '' and Exists('$(VCTargetsPath)Platforms\RXDK-360\$(LangID)\')">$(VCTargetsPath)Platforms\RXDK-360\$(LangID)\</Xbox360PropertyPagesPath>
+    <Xbox360PropertyPagesPath>$(VCTargetsPath)Platforms\Xbox 360\1033\</Xbox360PropertyPagesPath>
+    <Xbox360PropertyPagesPath Condition="'$(LangID)' != '' and Exists('$(VCTargetsPath)Platforms\Xbox 360\$(LangID)\')">$(VCTargetsPath)Platforms\Xbox 360\$(LangID)\</Xbox360PropertyPagesPath>
   </PropertyGroup>
   
   <ItemGroup>
@@ -43,12 +43,9 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <!-- Xbox 360 Debugger property -->
     <PropertyPageSchema Include="$(Xbox360PropertyPagesPath)debugger_remote.xml"/>
 
-    <!-- Local Windows Debugger flavor (used to launch the built XEX in Xenia) and
-         the Xenia Emulator settings page. -->
+    <!-- Local Windows Debugger flavor - the Xenia launch uses it (the Xenia
+         settings live on the Console Deployment page, deploy.xml). -->
     <PropertyPageSchema Include="$(VCTargetsPath)$(LangID)\debugger_local.xml"/>
-    <PropertyPageSchema Include="$(Xbox360PropertyPagesPath)xenia.xml">
-      <Context>Project</Context>
-    </PropertyPageSchema>
 
     <!-- Property sheet specific property pages -->
     <PropertyPageSchema Include="$(VCTargetsPath)$(LangID)\usermacros.xml">

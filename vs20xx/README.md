@@ -50,12 +50,12 @@ registration does not collide with the stock v170 `CL`/`Link` tasks.
 ## What the port changes vs. the stock v4.0 platform
 
 The stock platform (`.../MSBuild/Microsoft.Cpp/v4.0/Platforms/Xbox 360`) was
-copied to `Platforms/RXDK-360/` and adapted for the modern VC platform contract:
+copied to `Platforms/Xbox 360/` and adapted for the modern VC platform contract:
 
 - Entry files renamed to the modern convention: `Microsoft.Cpp.Xbox 360.*` →
   `Platform.Default.props` / `Platform.props` / `Platform.targets`; toolset files
   → `PlatformToolsets/2010-01/Toolset.props` / `Toolset.targets`.
-- All internal `\Platforms\Xbox 360\` references retargeted to `\Platforms\RXDK-360\`.
+- All internal `\Platforms\Xbox 360\` references retargeted to `\PlatformsXbox 360\`.
 - `UsingTask` assembly retargeted from the stock XDK DLL to the rebuilt
   `Rxdk.Xbox360.Build.dll` (bundled next to the platform files).
 - Compatibility shims for things the modern MSBuild expects that the 2010 core
@@ -114,7 +114,7 @@ it standalone (above) is only needed when iterating on the templates themselves.
 
 ```
 vs20xx/
-  Platforms/RXDK-360/        the ported MSBuild platform (source of truth)
+  Platforms/Xbox 360/        the ported MSBuild platform (source of truth)
   tasks/Rxdk.Xbox360.Build/  the rebuilt-from-source CL/Link/ImageXex/Deploy tasks
   extension/Rxdk360.Vsix/    VS extension: "Xbox 360 Title"/"Static Library" templates
   tests/hello/               minimal StaticLibrary smoke test

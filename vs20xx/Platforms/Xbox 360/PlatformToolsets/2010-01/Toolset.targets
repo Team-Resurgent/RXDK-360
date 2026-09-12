@@ -14,7 +14,7 @@ Copyright (C) Microsoft Corporation. All rights reserved.
 -->
 
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\ImportBefore\*.2010-01.targets" Condition="Exists('$(VCTargetsPath)\Platforms\RXDK-360\ImportBefore')" />
+  <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportBefore\*.2010-01.targets" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportBefore')" />
 
-  <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\ImportAfter\*.2010-01.targets" Condition="Exists('$(VCTargetsPath)\Platforms\RXDK-360\ImportAfter')" />
+  <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter\*.2010-01.targets" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter')" />
 </Project>

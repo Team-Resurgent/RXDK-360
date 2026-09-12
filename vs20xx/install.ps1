@@ -26,7 +26,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
-$src  = Join-Path $root 'Platforms\RXDK-360'
+$src  = Join-Path $root 'Platforms\Xbox 360'
 $vsixProj = Join-Path $root 'extension\Rxdk360.Vsix\Rxdk360.Vsix.csproj'
 $vsixOut  = Join-Path $root 'extension\Rxdk360.Vsix\bin\Release\Rxdk360.Vsix.vsix'
 $vsixId   = 'Rxdk360.Vsix.add38e43-cc73-4417-9c4b-e2d43131ab14'
@@ -78,7 +78,10 @@ if (-not $SkipPlatform) {
         foreach ($ts in $ToolsetDirs) {
             $platRoot = Join-Path $vs "MSBuild\Microsoft\VC\$ts\Platforms"
             if (-not (Test-Path $platRoot)) { continue }
-            $dst = Join-Path $platRoot 'RXDK-360'
+            $dst = Join-Path $platRoot 'Xbox 360'
+            # Remove a stale pre-rename 'RXDK-360' platform folder from earlier installs.
+            $legacyDst = Join-Path $platRoot 'RXDK-360'
+            if (Test-Path $legacyDst) { Remove-Item -Recurse -Force $legacyDst; Write-Host "removed legacy $legacyDst" }
             if ($Uninstall) {
                 if (Test-Path $dst) { Remove-Item -Recurse -Force $dst; Write-Host "removed   $dst" }
                 continue
@@ -127,4 +130,4 @@ if (-not $SkipVsix) {
 }
 
 Write-Host "`nDone. New Project -> 'Xbox 360 Title' / 'Xbox 360 Static Library',"
-Write-Host "or set <Platform>RXDK-360</Platform> + <PlatformToolset>2010-01</PlatformToolset>."
+Write-Host "or set <Platform>Xbox 360</Platform> + <PlatformToolset>2010-01</PlatformToolset>."
