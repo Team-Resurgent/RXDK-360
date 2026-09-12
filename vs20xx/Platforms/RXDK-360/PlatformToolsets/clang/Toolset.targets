@@ -32,6 +32,14 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
          modern runtime (libc.a/libcpp.a/xapilib.a) is auto-linked unless opted out. -->
     <RxdkModernLibs Condition="'$(RxdkModernLibs)' == ''"></RxdkModernLibs>
     <RxdkModernNoDefaultLibs Condition="'$(RxdkModernNoDefaultLibs)' == ''">false</RxdkModernNoDefaultLibs>
+
+    <!-- Debug configs compile with DWARF at -O0 and keep the linked .elf beside
+         the .xex as the symbol file (source-level debugging reads DWARF from it,
+         mapped onto the XEX load base); Release optimises with no debug info. -->
+    <RxdkModernDebug Condition="'$(RxdkModernDebug)' == '' and '$(Configuration)' == 'Debug'">true</RxdkModernDebug>
+    <RxdkModernDebug Condition="'$(RxdkModernDebug)' == ''">false</RxdkModernDebug>
+    <RxdkModernOpt Condition="'$(RxdkModernOpt)' == '' and '$(RxdkModernDebug)' == 'true'">-O0</RxdkModernOpt>
+    <RxdkModernOpt Condition="'$(RxdkModernOpt)' == ''">-O2</RxdkModernOpt>
   </PropertyGroup>
 
   <!-- ***** ClCompile ***** -->
@@ -51,6 +59,8 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
         RxdkRoot="$(RxdkModernRoot)"
         OutputDir="$(IntDir)"
         Sources="@(ClCompile)"
+        Optimization="$(RxdkModernOpt)"
+        DebugInformation="$(RxdkModernDebug)"
         AdditionalIncludeDirectories="$(_RxdkInc)"
         PreprocessorDefinitions="$(_RxdkDef)"
         AdditionalOptions="$(_RxdkOpt)" />
@@ -83,6 +93,7 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
         BaseAddress="$(_ModernBase)"
         Libraries="$(RxdkModernLibs)"
         NoDefaultLibs="$(RxdkModernNoDefaultLibs)"
+        KeepElf="$(RxdkModernDebug)"
         AdditionalOptions="%(Link.AdditionalOptions)" />
 
     <Message Text="$(MSBuildProjectFile) -&gt; $(_ModernXex)" Importance="High" />
@@ -95,9 +106,25 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
     <Message Text="ImageXex: skipped (the clang toolset packs the XEX during Link)." Importance="Low" />
   </Target>
 
-  <!-- ***** Lib ***** : no modern archiver shipped yet. -->
-  <Target Name="Lib" Condition="'@(Lib)' != ''">
-    <Error Text="RXDK-360 clang toolset: StaticLibrary is not yet supported by the modern toolchain. Use the 2010-01 (stock XDK) toolset for a static library, or link the sources directly into the title." />
+  <!-- ***** Lib ***** : combine the compiled objects into a single relocatable
+       object (ld.lld with -r) named .lib. We ship no llvm-ar, but a relocatable
+       link serves as a static library: the title's final link pulls it in whole
+       and section GC still drops anything unused. -->
+  <Target Name="Lib"
+          Condition="'$(ConfigurationType)' == 'StaticLibrary'"
+          DependsOnTargets="ClCompile">
+    <ItemGroup>
+      <_ModernLibObj Include="$(IntDir)*.o" />
+    </ItemGroup>
+    <Error Condition="'@(_ModernLibObj)' == ''" Text="RXDK-360 clang toolset: no compiled objects to archive." />
+    <PropertyGroup>
+      <_ModernLibOut Condition="'$(_ModernLibOut)' == ''">$(OutDir)$(TargetName).lib</_ModernLibOut>
+      <_ModernLibOut Condition="'$(OutputFile)' != ''">$(OutputFile)</_ModernLibOut>
+      <_ModernLibObjs>@(_ModernLibObj->'&quot;%(FullPath)&quot;', ' ')</_ModernLibObjs>
+    </PropertyGroup>
+    <MakeDir Directories="$(OutDir)" />
+    <Exec Command="&quot;$(RxdkLldPath)&quot; -r $(_ModernLibObjs) -o &quot;$(_ModernLibOut)&quot;" />
+    <Message Importance="High" Text="$(MSBuildProjectFile) -&gt; $(_ModernLibOut)" />
   </Target>
 
   <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\ImportAfter\*.clang.targets" Condition="Exists('$(VCTargetsPath)\Platforms\RXDK-360\ImportAfter')" />

@@ -133,7 +133,19 @@ namespace Rxdk.Xbox360.Modern.Build
                 return false;
             }
 
-            if (!KeepElf && File.Exists(elf)) File.Delete(elf);
+            if (KeepElf)
+            {
+                // Keep the DWARF-carrying ELF beside the XEX as the symbol file for
+                // source-level debugging (maps onto the XEX load base).
+                try
+                {
+                    string sym = Path.ChangeExtension(OutputFile, ".elf");
+                    if (!string.Equals(Path.GetFullPath(sym), Path.GetFullPath(elf), StringComparison.OrdinalIgnoreCase))
+                        File.Copy(elf, sym, true);
+                }
+                catch { /* symbol-file copy is best-effort */ }
+            }
+            else if (File.Exists(elf)) File.Delete(elf);
             Log.LogMessage(MessageImportance.High, "  -> " + OutputFile);
             return !Log.HasLoggedErrors;
         }

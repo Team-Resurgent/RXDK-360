@@ -30,6 +30,8 @@ namespace Rxdk.Xbox360.Modern.Build
 
         public string MsTriple { get; set; } = "powerpc-unknown-xbox360";
         public string Optimization { get; set; } = "-O2";
+        /// <summary>Emit DWARF debug info (Debug configs), for source-level debugging.</summary>
+        public bool DebugInformation { get; set; }
         public string LanguageStandardC { get; set; } = "c23";
         public string LanguageStandardCpp { get; set; } = "c++23";
         public string[] AdditionalIncludeDirectories { get; set; }
@@ -73,6 +75,7 @@ namespace Rxdk.Xbox360.Modern.Build
                 {
                     // Insert compile flags before the -c (matching mktitle's ordering).
                     var pre = new List<string> { Optimization, "-std=" + (isCpp ? LanguageStandardCpp : LanguageStandardC) };
+                    if (DebugInformation) pre.Add("-gdwarf-4");
                     pre.AddRange(AutoClangFlags(isCpp));
                     if (AdditionalIncludeDirectories != null)
                         foreach (var inc in AdditionalIncludeDirectories)
