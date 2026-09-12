@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    RXDK-360 project-template wizard.
+
+    Shown by the Application project templates (Empty/Game/Title): a small dialog
+    asking whether to build the new title with the MODERN (clang/LLVM) toolchain
+    or the LEGACY (stock XDK cl.exe/link.exe) toolchain. It substitutes the
+    $rxdktoolset$ parameter in the .vcxproj with "clang" or "2010-01"; the two
+    toolsets are installed side by side, so the choice is purely per project.
+
+    net472 + WinForms: loaded in-process by the .NET Framework Visual Studio.
+
+    Build:  dotnet build -c Release   (or via the VSIX project reference)
+    Output: bin\Release\net472\Rxdk360.TemplateWizard.dll
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>Rxdk360.TemplateWizard</AssemblyName>
+    <RootNamespace>Rxdk360.TemplateWizard</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Company>Team Resurgent</Company>
+    <Product>RXDK-360</Product>
+    <Description>RXDK-360 project-template wizard (modern/legacy toolset chooser).</Description>
+    <Copyright>Copyright (C) Team Resurgent. GPL-3.0-or-later.</Copyright>
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+    <!-- Strong-named so the .vstemplate WizardExtension can bind it by full name. -->
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>Rxdk360.TemplateWizard.snk</AssemblyOriginatorKeyFile>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- IWizard + EnvDTE, provided by the host VS at runtime. -->
+    <PackageReference Include="Microsoft.VisualStudio.TemplateWizardInterface" Version="17.0.32112.339" ExcludeAssets="runtime" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+
+</Project>
