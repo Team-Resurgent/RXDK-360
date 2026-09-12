@@ -43,6 +43,13 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <!-- Xbox 360 Debugger property -->
     <PropertyPageSchema Include="$(Xbox360PropertyPagesPath)debugger_remote.xml"/>
 
+    <!-- Local Windows Debugger flavor (used to launch the built XEX in Xenia) and
+         the Xenia Emulator settings page. -->
+    <PropertyPageSchema Include="$(VCTargetsPath)$(LangID)\debugger_local.xml"/>
+    <PropertyPageSchema Include="$(Xbox360PropertyPagesPath)xenia.xml">
+      <Context>Project</Context>
+    </PropertyPageSchema>
+
     <!-- Property sheet specific property pages -->
     <PropertyPageSchema Include="$(VCTargetsPath)$(LangID)\usermacros.xml">
       <Context>PropertySheet</Context>

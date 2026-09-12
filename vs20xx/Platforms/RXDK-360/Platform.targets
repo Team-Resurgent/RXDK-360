@@ -55,6 +55,20 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <RemotePath Condition="'$(RemotePath)'=='%24(RemoteRoot)\%24(TargetName)%24(TargetExt)'">$(RemoteRoot)\$(TargetName)$(TargetExt)</RemotePath>
   </PropertyGroup>
   
+  <!-- Xenia launch: when a Xenia executable is configured (Xenia Emulator property
+       page), F5 / Ctrl+F5 runs the built XEX in Xenia via the built-in Local
+       Windows Debugger, overriding the (not-yet-wired) Xbox 360 remote debugger.
+       Works for both toolsets - the produced XEX is identical. -->
+  <PropertyGroup Condition="'$(RxdkXeniaPath)' != '' and '$(ConfigurationType)' != 'Makefile' and '$(ConfigurationType)' != 'StaticLibrary'">
+    <_RxdkXeniaHeadless Condition="'$(RxdkXeniaHeadless)' == 'true'"> --headless=true</_RxdkXeniaHeadless>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerCommand>$(RxdkXeniaPath)</LocalDebuggerCommand>
+    <LocalDebuggerCommandArguments>"$(ImagePath)"$(_RxdkXeniaHeadless) $(RxdkXeniaArgs)</LocalDebuggerCommandArguments>
+    <LocalDebuggerWorkingDirectory>$([System.IO.Path]::GetDirectoryName('$(RxdkXeniaPath)'))</LocalDebuggerWorkingDirectory>
+    <!-- xenia is a normal Windows exe: use the native local debugger. -->
+    <DebuggerType Condition="'$(DebuggerType)' == ''">NativeOnly</DebuggerType>
+  </PropertyGroup>
+
   <ItemGroup Condition="'$(ConfigurationType)' == 'Application' or '$(ConfigurationType)' == 'DynamicLibrary'">
     <ImageXex Include="$(OutputFile)"/>
   </ItemGroup>
