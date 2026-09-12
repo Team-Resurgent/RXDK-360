@@ -55,17 +55,15 @@ function Get-VsInstalls {
 $vsInstalls = @(Get-VsInstalls)
 if ($vsInstalls.Count -eq 0) { throw "no Visual Studio install found" }
 
-# --- 1 + 2: task assembly + platform ---------------------------------------
+# --- 1 + 2: task assembly (per VC toolset) + platform ----------------------
+# The task derives from that toolset's Microsoft.Build.CPPTasks.Common, whose
+# assembly version differs per toolset (v170=17.x, v180=18.x) and cannot bind
+# across a major version. So the task is rebuilt against EACH toolset's CPPTasks
+# and the matching DLL is staged into that toolset's platform folder.
 if (-not $SkipPlatform) {
     if (-not (Test-Path $src)) { throw "platform source not found: $src" }
-    if (-not $Uninstall) {
-        $taskProj = Join-Path $root 'tasks\Rxdk.Xbox360.Build\Rxdk.Xbox360.Build.csproj'
-        $taskDll  = Join-Path $root 'tasks\Rxdk.Xbox360.Build\bin\Release\net472\Rxdk.Xbox360.Build.dll'
-        Write-Host "building task assembly..."
-        & dotnet build $taskProj -c Release -v q
-        if ($LASTEXITCODE -ne 0) { throw "task assembly build failed" }
-        Copy-Item -Force $taskDll (Join-Path $src 'Rxdk.Xbox360.Build.dll')
-    }
+    $taskProj = Join-Path $root 'tasks\Rxdk.Xbox360.Build\Rxdk.Xbox360.Build.csproj'
+    $taskDll  = Join-Path $root 'tasks\Rxdk.Xbox360.Build\bin\Release\net472\Rxdk.Xbox360.Build.dll'
     foreach ($vs in $vsInstalls) {
         foreach ($ts in $ToolsetDirs) {
             $platRoot = Join-Path $vs "MSBuild\Microsoft\VC\$ts\Platforms"
@@ -75,10 +73,16 @@ if (-not $SkipPlatform) {
                 if (Test-Path $dst) { Remove-Item -Recurse -Force $dst; Write-Host "removed   $dst" }
                 continue
             }
+            Write-Host "building task assembly for $ts..."
+            # NB: doubled trailing backslash so the closing quote is not escaped
+            # by CommandLineToArgvW (a lone "...\" would swallow the quote).
+            & dotnet build $taskProj -c Release -p:VcTaskVersion=$ts -p:VsInstallDir="$vs\\" -v q
+            if ($LASTEXITCODE -ne 0) { throw "task assembly build for $ts failed" }
             if (Test-Path $dst) { Remove-Item -Recurse -Force $dst }
             New-Item -ItemType Directory -Force -Path $dst | Out-Null
             Copy-Item -Recurse -Force (Join-Path $src '*') $dst
-            Write-Host "installed $dst"
+            Copy-Item -Force $taskDll (Join-Path $dst 'Rxdk.Xbox360.Build.dll')
+            Write-Host "installed $dst  (task built vs $ts CPPTasks)"
         }
     }
 }
