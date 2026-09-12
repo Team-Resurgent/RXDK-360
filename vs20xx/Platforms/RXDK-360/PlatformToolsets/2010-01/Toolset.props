@@ -18,6 +18,14 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <VCInstallDir>$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\VisualStudio\10.0\Setup\VC@ProductDir)</VCInstallDir>
     <VCInstallDir Condition="'$(VCInstallDir)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\10.0\Setup\VC@ProductDir)</VCInstallDir>
 
+    <!-- RXDK-360: prefer a relocated, side-by-side SDK install (its own env var
+         and registry key) so the RXDK-360 platform is independent of any stock
+         "Microsoft Xbox 360 SDK" and the two can coexist. Falls back to the
+         stock Xbox 2.0 SDK key, so a setup that points RXDK-360 at an existing
+         stock XDK keeps working. Override per-project with <XDKInstallDir>. -->
+    <XDKInstallDir Condition="'$(XDKInstallDir)' == '' and '$(RXDK360)' != ''">$(RXDK360)</XDKInstallDir>
+    <XDKInstallDir Condition="'$(XDKInstallDir)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\TeamResurgent\RXDK-360@InstallPath)</XDKInstallDir>
+    <XDKInstallDir Condition="'$(XDKInstallDir)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\TeamResurgent\RXDK-360@InstallPath)</XDKInstallDir>
     <XDKInstallDir Condition="'$(XDKInstallDir)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Xbox\2.0\SDK@InstallPath)</XDKInstallDir>
     <XDKInstallDir Condition="'$(XDKInstallDir)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Microsoft\Xbox\2.0\SDK@InstallPath)</XDKInstallDir>
     <XDKInstallDir Condition="'$(XDKInstallDir)' != '' and !HasTrailingSlash('$(XDKInstallDir)')">$(XDKInstallDir)\</XDKInstallDir>
