@@ -70,6 +70,8 @@ def main():
     ap.add_argument("--outdir", default=os.path.join(ROOT, "build", "dash"))
     ap.add_argument("--spin", action="store_true",
                     help="windowed 'spin forever' variant for screenshots")
+    ap.add_argument("--play", action="store_true",
+                    help="windowed variant: full XMV playback, one cycle, then exit")
     args = ap.parse_args()
 
     fxc = args.fxc or os.path.join(args.xdk, "bin", "win32", "fxc.exe")
@@ -127,12 +129,17 @@ def main():
         run([fxc, "/nologo", "/T", profile, "/E", "main",
              "/Fh", os.path.join(shdir, hdr), "/Vn", var, os.path.join(shdir, src)])
 
-    obj = os.path.join(args.outdir, "dash_spin.o" if args.spin else "dash.o")
-    cflags = list(CFLAGS) + (["-DDASH_SPIN_FOREVER"] if args.spin else [])
+    tag = "dash_spin" if args.spin else "dash_play" if args.play else "dash"
+    obj = os.path.join(args.outdir, tag + ".o")
+    cflags = list(CFLAGS)
+    if args.spin:
+        cflags += ["-DDASH_SPIN_FOREVER"]
+    elif args.play:
+        cflags += ["-DDASH_FULL_XMV"]
     run([args.clang, "--target=" + TRIPLE] + cflags +
         ["-I", xdk_inc, "-I", HERE, "-c", os.path.join(HERE, "dash.cpp"), "-o", obj])
 
-    xex = os.path.join(args.outdir, "dash_spin.xex" if args.spin else "dash.xex")
+    xex = os.path.join(args.outdir, tag + ".xex")
     run([sys.executable, os.path.join(ROOT, "tools", "mktitle.py"), obj,
          "--lib", "d3d9,d3dx9,xgraphics,xaudio2,xmcore,xnet,xmedia2,x3daudio,xmp,"
                   "xact3,xjson,xhttp,XAPOFX,vcomp,tracerecording,xsim,xonline,xuirun,xuirender",
