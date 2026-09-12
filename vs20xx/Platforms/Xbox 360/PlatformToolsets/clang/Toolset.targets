@@ -65,13 +65,17 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
     <ClangCompile
         ClangPath="$(RxdkClangPath)"
         RxdkRoot="$(RxdkModernRoot)"
+        PicolibcIncludeDir="$(RxdkPicolibcInc)"
+        ConfigDir="$(RxdkConfigInc)"
+        LibcxxIncludeDir="$(RxdkLibcxxInc)"
+        LibcxxabiIncludeDir="$(RxdkLibcxxabiInc)"
         OutputDir="$(IntDir)"
         Sources="@(ClCompile)"
         Optimization="$(RxdkModernOpt)"
         LanguageStandardCpp="$(RxdkModernCppStd)"
         DebugInformation="$(RxdkModernDebug)"
         XdkHeaders="$(RxdkModernXdkHeaders)"
-        XdkIncludeDirectories="$(XDKInstallDir)include\xbox"
+        XdkIncludeDirectories="$(RxdkXdkIncludeDir)"
         AdditionalIncludeDirectories="$(_RxdkInc)"
         PreprocessorDefinitions="$(_RxdkDef)"
         AdditionalOptions="$(_RxdkOpt)" />

@@ -20,8 +20,18 @@ namespace Rxdk.Xbox360.Modern.Build
     {
         [Required] public string ClangPath { get; set; }
 
-        /// <summary>Install root that holds runtime/, vendor/ (for the auto include set).</summary>
-        [Required] public string RxdkRoot { get; set; }
+        /// <summary>Optional fallback root that holds the dev-tree runtime/, vendor/;
+        /// used only to derive the modern include dirs below when they are not given
+        /// explicitly (so a clean installed layout supplies its own dirs).</summary>
+        public string RxdkRoot { get; set; }
+
+        // The modern C/C++23 runtime include set, supplied explicitly by the toolset
+        // so it works for any install layout. When empty they fall back to the dev
+        // tree under RxdkRoot.
+        public string PicolibcIncludeDir { get; set; }
+        public string ConfigDir { get; set; }
+        public string LibcxxIncludeDir { get; set; }
+        public string LibcxxabiIncludeDir { get; set; }
 
         /// <summary>Where the .o files are written (the project IntDir).</summary>
         [Required] public string OutputDir { get; set; }
@@ -125,19 +135,21 @@ namespace Rxdk.Xbox360.Modern.Build
         /// </summary>
         private IEnumerable<string> AutoClangFlags(bool isCpp)
         {
-            string cfg = Path.Combine(RxdkRoot, "runtime", "config");
-            string pico = Path.Combine(RxdkRoot, "vendor", "picolibc", "libc", "include");
+            string cfg = Or(ConfigDir, Path.Combine(RxdkRoot ?? "", "runtime", "config"));
+            string pico = Or(PicolibcIncludeDir, Path.Combine(RxdkRoot ?? "", "vendor", "picolibc", "libc", "include"));
             if (!isCpp)
                 return new[] { "-D__Picolibc__", "-D_GNU_SOURCE", "-I" + cfg, "-I" + pico,
                                "-include", "picolibc.h" };
-            string lx = Path.Combine(RxdkRoot, "vendor", "llvm-project", "libcxx", "include");
-            string la = Path.Combine(RxdkRoot, "vendor", "llvm-project", "libcxxabi", "include");
+            string lx = Or(LibcxxIncludeDir, Path.Combine(RxdkRoot ?? "", "vendor", "llvm-project", "libcxx", "include"));
+            string la = Or(LibcxxabiIncludeDir, Path.Combine(RxdkRoot ?? "", "vendor", "llvm-project", "libcxxabi", "include"));
             return new[] { "-fexceptions", "-funwind-tables", "-frtti",
                            "-D__Picolibc__", "-D_GNU_SOURCE",
                            "-I" + lx, "-I" + la, "-I" + cfg,
                            "-include", "__config_site", "-include", "rxdk_libcpp_prereq.h",
                            "-I" + pico, "-include", "picolibc.h" };
         }
+
+        private static string Or(string a, string b) => string.IsNullOrWhiteSpace(a) ? b : a.Trim();
 
         // The MS-compatibility recipe that lets clang parse the stock XDK headers
         // (see tests/gfx/build_tri.py / docs/sdk-headers-plan.md): satisfy the

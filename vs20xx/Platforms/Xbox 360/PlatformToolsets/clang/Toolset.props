@@ -39,24 +39,50 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild; a bad edit here breaks
     <RxdkModernRoot Condition="'$(RxdkModernRoot)' == ''">$(XDKInstallDir)</RxdkModernRoot>
     <RxdkModernRoot Condition="'$(RxdkModernRoot)' != '' and HasTrailingSlash('$(RxdkModernRoot)')">$(RxdkModernRoot.TrimEnd('\'))</RxdkModernRoot>
 
-    <!-- The tools and directories the modern build drives. Each is overridable;
-         the defaults mirror the dev tree's layout under RxdkModernRoot. -->
-    <RxdkClangPath   Condition="'$(RxdkClangPath)'   == ''">$(RxdkModernRoot)\build\llvm\bin\clang.exe</RxdkClangPath>
-    <RxdkLldPath     Condition="'$(RxdkLldPath)'     == ''">$(RxdkModernRoot)\build\llvm\bin\ld.lld.exe</RxdkLldPath>
-    <!-- Installed payload keeps the binary tools together under modern\tools;
-         the dev tree builds XexTool under vendor\xextool. Prefer the former. -->
-    <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == '' and Exists('$(RxdkModernRoot)\tools\XexTool.exe')">$(RxdkModernRoot)\tools\XexTool.exe</RxdkXexToolPath>
-    <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == ''">$(RxdkModernRoot)\vendor\xextool\build\Release\XexTool.exe</RxdkXexToolPath>
-    <RxdkCoffDir     Condition="'$(RxdkCoffDir)'     == ''">$(RxdkModernRoot)\build\coff</RxdkCoffDir>
-    <RxdkLibcDir     Condition="'$(RxdkLibcDir)'     == ''">$(RxdkModernRoot)\build\libc</RxdkLibcDir>
-    <RxdkXdkLibDir   Condition="'$(RxdkXdkLibDir)'   == ''">$(XDKInstallDir)lib\xbox</RxdkXdkLibDir>
+    <!-- Two supported layouts, detected by whether the clean installed tree exists:
+         INSTALLED (clean)  RxdkModernRoot\{bin,lib,include}
+         DEV (source tree)  RxdkModernRoot\{build\llvm\bin, build\libc, build\coff,
+                            vendor\..., runtime\config} + the XDK install for headers.
+         Everything is overridable. -->
+    <_RxdkClean Condition="'$(_RxdkClean)' == '' and Exists('$(RxdkModernRoot)\bin\clang.exe')">true</_RxdkClean>
 
-    <!-- IntelliSense: point the C++ language service at the modern runtime headers
-         so the editor resolves the STL / picolibc surface a title compiles against.
-         (The build itself gets these via the ClangCompile task's auto flags.) -->
-    <IncludePath Condition="'$(IncludePath)' == ''">$(RxdkModernRoot)\vendor\llvm-project\libcxx\include;$(RxdkModernRoot)\vendor\llvm-project\libcxxabi\include;$(RxdkModernRoot)\runtime\config;$(RxdkModernRoot)\vendor\picolibc\libc\include;$(XDKInstallDir)include\xbox;</IncludePath>
-    <LibraryPath Condition="'$(LibraryPath)' == ''">$(RxdkLibcDir);$(RxdkCoffDir);$(XDKInstallDir)lib\xbox;</LibraryPath>
-    <ExecutablePath Condition="'$(ExecutablePath)' == ''">$(RxdkModernRoot)\build\llvm\bin;$(PATH);</ExecutablePath>
+    <!-- binary tools -->
+    <RxdkClangPath   Condition="'$(RxdkClangPath)'   == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\bin\clang.exe</RxdkClangPath>
+    <RxdkClangPath   Condition="'$(RxdkClangPath)'   == ''">$(RxdkModernRoot)\build\llvm\bin\clang.exe</RxdkClangPath>
+    <RxdkLldPath     Condition="'$(RxdkLldPath)'     == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\bin\ld.lld.exe</RxdkLldPath>
+    <RxdkLldPath     Condition="'$(RxdkLldPath)'     == ''">$(RxdkModernRoot)\build\llvm\bin\ld.lld.exe</RxdkLldPath>
+    <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\bin\XexTool.exe</RxdkXexToolPath>
+    <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == ''">$(RxdkModernRoot)\vendor\xextool\build\Release\XexTool.exe</RxdkXexToolPath>
+
+    <!-- library dirs: clean layout keeps every archive (our libc/libcpp, the coff2elf
+         libs, and the copied XDK import .libs for genstubs) under a single lib\. -->
+    <RxdkLibcDir Condition="'$(RxdkLibcDir)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\lib</RxdkLibcDir>
+    <RxdkLibcDir Condition="'$(RxdkLibcDir)' == ''">$(RxdkModernRoot)\build\libc</RxdkLibcDir>
+    <RxdkCoffDir Condition="'$(RxdkCoffDir)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\lib</RxdkCoffDir>
+    <RxdkCoffDir Condition="'$(RxdkCoffDir)' == ''">$(RxdkModernRoot)\build\coff</RxdkCoffDir>
+
+    <!-- modern C/C++23 runtime include dirs (picolibc + libc++), passed to the
+         compile task explicitly so the clean and dev layouts both work. -->
+    <RxdkPicolibcInc  Condition="'$(RxdkPicolibcInc)'  == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\include\picolibc</RxdkPicolibcInc>
+    <RxdkPicolibcInc  Condition="'$(RxdkPicolibcInc)'  == ''">$(RxdkModernRoot)\vendor\picolibc\libc\include</RxdkPicolibcInc>
+    <RxdkConfigInc    Condition="'$(RxdkConfigInc)'    == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\include\config</RxdkConfigInc>
+    <RxdkConfigInc    Condition="'$(RxdkConfigInc)'    == ''">$(RxdkModernRoot)\runtime\config</RxdkConfigInc>
+    <RxdkLibcxxInc    Condition="'$(RxdkLibcxxInc)'    == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\include\libcxx</RxdkLibcxxInc>
+    <RxdkLibcxxInc    Condition="'$(RxdkLibcxxInc)'    == ''">$(RxdkModernRoot)\vendor\llvm-project\libcxx\include</RxdkLibcxxInc>
+    <RxdkLibcxxabiInc Condition="'$(RxdkLibcxxabiInc)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\include\libcxxabi</RxdkLibcxxabiInc>
+    <RxdkLibcxxabiInc Condition="'$(RxdkLibcxxabiInc)' == ''">$(RxdkModernRoot)\vendor\llvm-project\libcxxabi\include</RxdkLibcxxabiInc>
+
+    <!-- XDK headers (for XDK-headers mode) + import .libs (for genstubs). The clean
+         modern tree carries its own copies so it does not reach into the XDK. -->
+    <RxdkXdkIncludeDir Condition="'$(RxdkXdkIncludeDir)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\include\xbox</RxdkXdkIncludeDir>
+    <RxdkXdkIncludeDir Condition="'$(RxdkXdkIncludeDir)' == ''">$(XDKInstallDir)include\xbox</RxdkXdkIncludeDir>
+    <RxdkXdkLibDir Condition="'$(RxdkXdkLibDir)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\lib</RxdkXdkLibDir>
+    <RxdkXdkLibDir Condition="'$(RxdkXdkLibDir)' == ''">$(XDKInstallDir)lib\xbox</RxdkXdkLibDir>
+
+    <!-- IntelliSense: point the C++ language service at the same header set. -->
+    <IncludePath Condition="'$(IncludePath)' == ''">$(RxdkLibcxxInc);$(RxdkLibcxxabiInc);$(RxdkConfigInc);$(RxdkPicolibcInc);$(RxdkXdkIncludeDir);</IncludePath>
+    <LibraryPath Condition="'$(LibraryPath)' == ''">$(RxdkLibcDir);$(RxdkCoffDir);</LibraryPath>
+    <ExecutablePath Condition="'$(ExecutablePath)' == ''">$([System.IO.Path]::GetDirectoryName('$(RxdkClangPath)'));$(PATH);</ExecutablePath>
   </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter\*.clang.props" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter')" />
