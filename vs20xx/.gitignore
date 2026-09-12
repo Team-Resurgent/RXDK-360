@@ -16,3 +16,7 @@ extension/**/obj/
 
 # Inno Setup output
 installer/Output/
+
+# unpacker build outputs
+installer/unpacker/bin/
+installer/unpacker/obj/
