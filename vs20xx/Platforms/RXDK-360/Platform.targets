@@ -61,11 +61,18 @@ Copyright (C) Microsoft Corporation. All rights reserved.
        Works for both toolsets - the produced XEX is identical. -->
   <PropertyGroup Condition="'$(ConfigurationType)' != 'Makefile' and '$(ConfigurationType)' != 'StaticLibrary'">
     <!-- The disc image built for the "Launch as Disc Image" option, and the tool
-         that builds it (Team-Resurgent/XDVDFS-TR); default to the RXDK host-tools
-         copy or the RXDK_XDVDFS env var. -->
+         that builds it (Team-Resurgent/XDVDFS-TR). xdvdfs is bundled with the
+         modern toolchain payload (tools\xdvdfs.exe under the install's ModernPath),
+         so RXDK-360 is self-contained and does NOT depend on an RXDK-Tools install;
+         RXDK_XDVDFS is an explicit manual override. Toolset-independent: the
+         ModernPath registry value is read directly (the clang toolset's
+         $(RxdkModernRoot) is not set for a stock-toolset project). -->
     <RxdkXeniaIsoPath Condition="'$(RxdkXeniaIsoPath)' == ''">$(OutDir)$(TargetName).iso</RxdkXeniaIsoPath>
+    <_RxdkModernPath Condition="'$(_RxdkModernPath)' == '' and '$(RxdkModernRoot)' != ''">$(RxdkModernRoot)</_RxdkModernPath>
+    <_RxdkModernPath Condition="'$(_RxdkModernPath)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\TeamResurgent\RXDK-360@ModernPath)</_RxdkModernPath>
+    <_RxdkModernPath Condition="'$(_RxdkModernPath)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\TeamResurgent\RXDK-360@ModernPath)</_RxdkModernPath>
     <RxdkXdvdfsPath Condition="'$(RxdkXdvdfsPath)' == '' and '$(RXDK_XDVDFS)' != ''">$(RXDK_XDVDFS)</RxdkXdvdfsPath>
-    <RxdkXdvdfsPath Condition="'$(RxdkXdvdfsPath)' == '' and Exists('$(ProgramData)\RXDK\tools\xdvdfs.exe')">$(ProgramData)\RXDK\tools\xdvdfs.exe</RxdkXdvdfsPath>
+    <RxdkXdvdfsPath Condition="'$(RxdkXdvdfsPath)' == '' and '$(_RxdkModernPath)' != '' and Exists('$(_RxdkModernPath)\tools\xdvdfs.exe')">$(_RxdkModernPath)\tools\xdvdfs.exe</RxdkXdvdfsPath>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(RxdkXeniaPath)' != '' and '$(ConfigurationType)' != 'Makefile' and '$(ConfigurationType)' != 'StaticLibrary'">
