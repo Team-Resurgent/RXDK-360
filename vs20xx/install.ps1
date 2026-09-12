@@ -89,6 +89,17 @@ if (-not $SkipPlatform) {
 
 # --- 3: VSIX (project templates) -------------------------------------------
 if (-not $SkipVsix) {
+    # Always rebuild the VSIX (from source) before installing, so a stale artifact
+    # is never installed - otherwise VS installs whatever old .vsix is lying around.
+    if (-not $Uninstall) {
+        Remove-Item -Force $vsixOut -ErrorAction SilentlyContinue
+        Write-Host "building VSIX..."
+        $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest -prerelease -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+        if (-not $msbuild) { throw "MSBuild not found to build the VSIX" }
+        & $msbuild $vsixProj /restore /p:Configuration=Release /v:m /nologo
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $vsixOut)) { throw "VSIX build failed" }
+    }
     foreach ($vs in $vsInstalls) {
         $vsixInstaller = Join-Path $vs 'Common7\IDE\VSIXInstaller.exe'
         if (-not (Test-Path $vsixInstaller)) { continue }
@@ -97,14 +108,8 @@ if (-not $SkipVsix) {
             & $vsixInstaller /quiet /uninstall:$vsixId 2>$null | Out-Null
             continue
         }
-        if (-not (Test-Path $vsixOut)) {
-            Write-Host "building VSIX..."
-            $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
-                -latest -prerelease -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
-            if (-not $msbuild) { throw "MSBuild not found to build the VSIX" }
-            & $msbuild $vsixProj /restore /p:Configuration=Release /v:m /nologo
-            if ($LASTEXITCODE -ne 0) { throw "VSIX build failed" }
-        }
+        # upgrade cleanly: remove any previously-installed version first
+        & $vsixInstaller /quiet /uninstall:$vsixId 2>$null | Out-Null
         Write-Host "installing VSIX into $vs ..."
         & $vsixInstaller /quiet "$vsixOut"
     }
