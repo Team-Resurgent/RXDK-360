@@ -19,6 +19,20 @@ namespace Rxdk.Xdk.Unpacker
 
         private static int Main(string[] args)
         {
+            int rc = 1;
+            try { rc = Run(args); }
+            finally
+            {
+                // completion marker so a host installer polling --progress knows we
+                // finished (and with what exit code), even on failure.
+                if (Report.File != null)
+                    try { System.IO.File.AppendAllText(Report.File, "###DONE " + rc + "###\r\n"); } catch { }
+            }
+            return rc;
+        }
+
+        private static int Run(string[] args)
+        {
             try
             {
                 // verbs: unpack <setup> <outDir> | install <setup> <installDir> | uninstall <installDir>
@@ -26,13 +40,19 @@ namespace Rxdk.Xdk.Unpacker
                 {
                     if (args.Length < 2) return Usage();
                     ManifestInstaller.Uninstall(Path.Combine(args[1], UndoLog));
-                    Console.WriteLine("uninstalled from " + args[1]);
+                    Report.Line("uninstalled from " + args[1]);
                     return 0;
                 }
 
-                bool dryRun = Array.FindIndex(args, s => s.Equals("--dry-run", StringComparison.OrdinalIgnoreCase)) >= 0;
+                bool dryRun = false;
                 var pos = new List<string>();
-                foreach (var s in args) if (!s.StartsWith("--")) pos.Add(s);
+                for (int i = 0; i < args.Length; i++)
+                {
+                    if (args[i].Equals("--dry-run", StringComparison.OrdinalIgnoreCase)) dryRun = true;
+                    else if (args[i].Equals("--progress", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                        Report.File = args[++i];
+                    else pos.Add(args[i]);
+                }
                 args = pos.ToArray();
 
                 bool install = args.Length >= 1 && args[0].Equals("install", StringComparison.OrdinalIgnoreCase);
@@ -59,9 +79,9 @@ namespace Rxdk.Xdk.Unpacker
                 {
                     if (!preExtracted) { Directory.CreateDirectory(staging); ExtractAll(setupExe, staging); }
                     Directory.CreateDirectory(dest);
-                    Console.WriteLine("applying manifest -> {0}{1}", dest, dryRun ? "  (DRY RUN)" : "");
+                    Report.Line("applying manifest -> {0}{1}", dest, dryRun ? "  (DRY RUN)" : "");
                     new ManifestInstaller(staging, dest) { DryRun = dryRun }.Run(Path.Combine(dest, UndoLog));
-                    Console.WriteLine("done.");
+                    Report.Line("done.");
                 }
                 finally { if (!preExtracted) { try { Directory.Delete(staging, true); } catch { } } }
                 return 0;
@@ -86,7 +106,7 @@ namespace Rxdk.Xdk.Unpacker
         private static int ExtractAll(string setupExe, string destDir)
         {
             var cabs = FindCabinets(setupExe);
-            Console.WriteLine("found {0} cabinet(s) in {1}", cabs.Count, Path.GetFileName(setupExe));
+            Report.Line("found {0} cabinet(s) in {1}", cabs.Count, Path.GetFileName(setupExe));
             if (cabs.Count == 0)
                 throw new InvalidDataException("no MSCF cabinet found - is this an Xbox 360 XDK setup EXE?");
 
@@ -104,13 +124,13 @@ namespace Rxdk.Xdk.Unpacker
                         CarveTo(fs, c.Offset, c.Size, part);
                         using (var fdi = new FdiExtractor())
                             total += fdi.Extract(part, destDir);
-                        Console.WriteLine("  cab {0}/{1}: {2} files ({3:n0} bytes)", ++i, cabs.Count, c.Files, c.Size);
+                        Report.Line("  cab {0}/{1}: {2} files ({3:n0} bytes)", ++i, cabs.Count, c.Files, c.Size);
                         File.Delete(part);
                     }
                 }
             }
             finally { try { Directory.Delete(tmp, true); } catch { } }
-            Console.WriteLine("extracted {0} files", total);
+            Report.Line("extracted {0} files", total);
             return total;
         }
 

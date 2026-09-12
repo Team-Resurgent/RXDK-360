@@ -53,6 +53,7 @@ Name: "vs";        Description: "Install the Visual Studio integration (RXDK-360
 ; exactly as the original installer (relocated to {app}). Here we only bundle
 ; our own tools + the VS integration.
 Source: "unpacker\bin\Release\net472\RxdkXdkUnpacker.exe"; DestDir: "{app}\tools"
+Source: "unpacker\bin\Release\net472\RxdkXdkUnpacker.exe"; Flags: dontcopy
 Source: "..\Platforms\*"; DestDir: "{app}\vsintegration\Platforms"; Flags: recursesubdirs createallsubdirs; Excludes: "*.dll"
 Source: "..\tasks\*";     DestDir: "{app}\vsintegration\tasks";     Flags: recursesubdirs createallsubdirs; Excludes: "\*\bin\*,\*\obj\*"
 Source: "..\extension\*"; DestDir: "{app}\vsintegration\extension"; Flags: recursesubdirs createallsubdirs; Excludes: "\*\bin\*,\*\obj\*"
@@ -71,15 +72,10 @@ Root: HKLM; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueN
 Name: "{group}\Uninstall RXDK-360"; Filename: "{uninstallexe}"
 
 [Run]
-; 1. Install the XDK itself, relocated to {app}: the manifest engine unpacks the
-;    setup EXE and replays manifest.csv (files + registry + Start-menu shortcuts +
-;    the Xbox 360 Neighborhood shell extension).
-Filename: "{app}\tools\RxdkXdkUnpacker.exe"; \
-  Parameters: "install ""{code:GetSetupExe}"" ""{app}"""; \
-  StatusMsg: "Installing the Xbox 360 XDK (unpacking ~2 GB, this can take a few minutes)..."; \
-  Flags: waituntilterminated
-; 2. Wire up the modern-VS integration. The RXDK-360 platform reads XDKInstallDir
-;    from the registry key written above, so it targets {app} automatically.
+; The XDK install itself (unpack + manifest replay) runs from [Code] with a live
+; progress page (see DoManifestInstall). Here we only wire up the VS integration.
+; The RXDK-360 platform reads XDKInstallDir from the registry key written above,
+; so it targets {app} automatically.
 Filename: "powershell.exe"; \
   Parameters: "-ExecutionPolicy Bypass -NoProfile -File ""{app}\vsintegration\install.ps1"""; \
   StatusMsg: "Installing the Visual Studio integration..."; \
@@ -98,6 +94,7 @@ Filename: "powershell.exe"; \
 var
   XDKPage: TInputFileWizardPage;
   XDKPageID: Integer;
+  ProgressPage: TOutputProgressWizardPage;
 
 procedure InitializeWizard();
 begin
@@ -128,6 +125,78 @@ begin
   end;
 end;
 
+{ the first run of digits after 'prefix' in s, or -1 }
+function IntAfter(const s, prefix: String): Integer;
+var p, i: Integer; num: String;
+begin
+  Result := -1;
+  p := Pos(prefix, s);
+  if p = 0 then exit;
+  i := p + Length(prefix);
+  num := '';
+  while (i <= Length(s)) and (s[i] >= '0') and (s[i] <= '9') do begin num := num + s[i]; i := i + 1; end;
+  if num <> '' then Result := StrToIntDef(num, -1);
+end;
+
+{ Run the manifest engine and tail its --progress file into a wizard progress
+  page, so the unpack/install output shows in the wizard (not a console). }
+procedure DoManifestInstall();
+var
+  progFile, s, lastLine, doneLine: String;
+  lines: TArrayOfString;
+  code, i, cab, files, pct: Integer;
+  finished, started: Boolean;
+begin
+  ProgressPage := CreateOutputProgressPage('Installing the Xbox 360 XDK',
+    'Unpacking your XDK and installing it, relocated to ' + ExpandConstant('{app}') + '.');
+  ProgressPage.Show;
+  try
+    ProgressPage.SetProgress(0, 100);
+    progFile := ExpandConstant('{tmp}\rxdk_progress.txt');
+    DeleteFile(progFile);
+    ExtractTemporaryFile('RxdkXdkUnpacker.exe');
+    started := Exec(ExpandConstant('{tmp}\RxdkXdkUnpacker.exe'),
+      'install --progress "' + progFile + '" "' + GetSetupExe('') + '" "' + ExpandConstant('{app}') + '"',
+      '', SW_HIDE, ewNoWait, code);
+    if not started then
+    begin
+      MsgBox('Failed to start the XDK unpacker.', mbError, MB_OK);
+      exit;
+    end;
+
+    finished := False;
+    while not finished do
+    begin
+      Sleep(400);
+      if LoadStringsFromFile(progFile, lines) then
+      begin
+        for i := 0 to GetArrayLength(lines) - 1 do
+        begin
+          s := lines[i];
+          if Pos('###DONE', s) = 1 then begin finished := True; doneLine := s; end
+          else if s <> '' then lastLine := s;
+        end;
+        pct := 5;
+        cab := IntAfter(lastLine, 'cab ');
+        files := IntAfter(lastLine, 'installing files... ');
+        if cab >= 0 then pct := 5 + (cab * 45) div 15
+        else if files >= 0 then pct := 50 + (files * 45) div 6300
+        else if Pos('applying manifest', lastLine) > 0 then pct := 50
+        else if Pos('manifest:', lastLine) > 0 then pct := 98;
+        if pct > 99 then pct := 99;
+        ProgressPage.SetText('Installing the Xbox 360 XDK...', lastLine);
+        ProgressPage.SetProgress(pct, 100);
+      end;
+    end;
+    ProgressPage.SetProgress(100, 100);
+
+    if Pos('###DONE 0', doneLine) <> 1 then
+      MsgBox('The XDK install reported a problem:'#13#10 + lastLine, mbError, MB_OK);
+  finally
+    ProgressPage.Hide;
+  end;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
@@ -135,6 +204,8 @@ begin
     { clean upgrade: remove a prior RXDK-360 before laying down the new one }
     if IsUpgrade('RXDK-360') then
       UnInstallOldVersion('RXDK-360');
+    { install the XDK (unpack + manifest) with a live progress page }
+    DoManifestInstall();
   end
   else if CurStep = ssPostInstall then
   begin

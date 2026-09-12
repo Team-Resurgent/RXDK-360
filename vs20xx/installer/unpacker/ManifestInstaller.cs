@@ -30,7 +30,7 @@ namespace Rxdk.Xdk.Unpacker
         private readonly string _installDir; // XDK -> here (e.g. C:\Program Files\RXDK-360)
         private readonly string _group = "RXDK-360"; // Start-menu program group
         private readonly List<string> _undo = new List<string>();
-        private int _files, _regs, _links, _selfreg, _skipped;
+        private int _files, _regs, _links, _selfreg, _skipped, _lastReport;
         public bool DryRun;   // resolve + count actions, but change nothing
 
         public ManifestInstaller(string stagingDir, string installDir)
@@ -73,10 +73,13 @@ namespace Rxdk.Xdk.Unpacker
                     Console.Error.WriteLine("  ! " + action + " " + Get(f, 4) + " : " + ex.Message);
                     _skipped++;
                 }
+
+                // periodic progress so the host installer's bar advances
+                if (!DryRun && _files - _lastReport >= 500) { _lastReport = _files; Report.Line("  installing files... {0}", _files); }
             }
 
             File.WriteAllLines(undoLogPath, _undo);
-            Console.WriteLine("manifest: {0} files, {1} reg values, {2} shortcuts, {3} self-registered ({4} skipped)",
+            Report.Line("manifest: {0} files, {1} reg values, {2} shortcuts, {3} self-registered ({4} skipped)",
                 _files, _regs, _links, _selfreg, _skipped);
         }
 
