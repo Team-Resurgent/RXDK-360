@@ -155,11 +155,14 @@ namespace Rxdk.Xbox360.Modern.Build
                 "-fno-autolink",
                 "-D_WIN32=1", "-D_M_PPCBE=1", "-D_M_PPC=1", "-D_XBOX=1", "-D_XBOX_VER=200",
                 "-D__export=", "-D_SIZE_T_DEFINED", "-D_XM_NO_INTRINSICS_",
-                "-Wno-pragma-pack",
             };
+            // Add the XDK headers as SYSTEM includes (-isystem) so clang suppresses
+            // the many warnings from the stock MS headers themselves (ignored
+            // __stdcall, case-mismatched #includes, #endif tokens, ...) while still
+            // warning on the title's own code.
             if (XdkIncludeDirectories != null)
                 foreach (var d in XdkIncludeDirectories)
-                    if (!string.IsNullOrWhiteSpace(d)) f.Add("-I" + d.Trim());
+                    if (!string.IsNullOrWhiteSpace(d)) { f.Add("-isystem"); f.Add(d.Trim()); }
             return f;
         }
 
