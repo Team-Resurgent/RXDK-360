@@ -40,6 +40,14 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
     <RxdkModernDebug Condition="'$(RxdkModernDebug)' == ''">false</RxdkModernDebug>
     <RxdkModernOpt Condition="'$(RxdkModernOpt)' == '' and '$(RxdkModernDebug)' == 'true'">-O0</RxdkModernOpt>
     <RxdkModernOpt Condition="'$(RxdkModernOpt)' == ''">-O2</RxdkModernOpt>
+
+    <!-- XDK-headers mode: compile against the stock XDK headers (D3D9 / XGraphics /
+         xtl.h) with the MS-compat recipe, for titles that use the XDK API surface
+         (e.g. a D3D9 game). Off by default (pure modern C/C++23 on picolibc/libc++).
+         The XDK headers are C++03-era, so this mode compiles at c++14. -->
+    <RxdkModernXdkHeaders Condition="'$(RxdkModernXdkHeaders)' == ''">false</RxdkModernXdkHeaders>
+    <RxdkModernCppStd Condition="'$(RxdkModernCppStd)' == '' and '$(RxdkModernXdkHeaders)' == 'true'">c++14</RxdkModernCppStd>
+    <RxdkModernCppStd Condition="'$(RxdkModernCppStd)' == ''">c++23</RxdkModernCppStd>
   </PropertyGroup>
 
   <!-- ***** ClCompile ***** -->
@@ -60,7 +68,10 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
         OutputDir="$(IntDir)"
         Sources="@(ClCompile)"
         Optimization="$(RxdkModernOpt)"
+        LanguageStandardCpp="$(RxdkModernCppStd)"
         DebugInformation="$(RxdkModernDebug)"
+        XdkHeaders="$(RxdkModernXdkHeaders)"
+        XdkIncludeDirectories="$(XDKInstallDir)include\xbox"
         AdditionalIncludeDirectories="$(_RxdkInc)"
         PreprocessorDefinitions="$(_RxdkDef)"
         AdditionalOptions="$(_RxdkOpt)" />

@@ -17,8 +17,14 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset>2010-01</PlatformToolset>
+    <PlatformToolset>$rxdktoolset$</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
+    <!-- Modern (clang) toolset: this template uses the XDK Direct3D 9 API, so
+         compile against the stock XDK headers and link the translated D3D9
+         libraries. The legacy (2010-01) toolset ignores these and uses the XDK's
+         own headers/libs. -->
+    <RxdkModernXdkHeaders>true</RxdkModernXdkHeaders>
+    <RxdkModernLibs>d3d9;d3dx9;xgraphics</RxdkModernLibs>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">

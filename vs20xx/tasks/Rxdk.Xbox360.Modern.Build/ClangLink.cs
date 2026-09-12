@@ -154,7 +154,10 @@ namespace Rxdk.Xbox360.Modern.Build
                                    string layout, string elf, List<string> ldflags)
         {
             var args = new List<string> { "-T", layout, "-e", "_start", "--error-limit=0",
-                                          "--no-demangle", "--gc-sections" };
+                                          "--no-demangle", "--gc-sections",
+                                          // Ignore #pragma comment(lib, "x.lib") directives from XDK
+                                          // headers - the modern link names its ELF libraries explicitly.
+                                          "--no-dependent-libraries" };
             args.AddRange(ldflags);
             args.AddRange(objs);
             if (stubs != null) args.Add(stubs);

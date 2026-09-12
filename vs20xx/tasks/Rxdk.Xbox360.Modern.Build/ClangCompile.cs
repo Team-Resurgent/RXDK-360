@@ -32,6 +32,15 @@ namespace Rxdk.Xbox360.Modern.Build
         public string Optimization { get; set; } = "-O2";
         /// <summary>Emit DWARF debug info (Debug configs), for source-level debugging.</summary>
         public bool DebugInformation { get; set; }
+
+        /// <summary>Compile against the stock XDK headers (D3D9 / XGraphics / xtl.h)
+        /// instead of the modern picolibc/libc++ environment - the MS-compat recipe
+        /// that lets clang parse the Win32/MSVC-style XDK headers. The title still
+        /// links the modern runtime; only the header set differs.</summary>
+        public bool XdkHeaders { get; set; }
+
+        /// <summary>Include dirs added in XDK-headers mode (the XDK's include\xbox).</summary>
+        public string[] XdkIncludeDirectories { get; set; }
         public string LanguageStandardC { get; set; } = "c23";
         public string LanguageStandardCpp { get; set; } = "c++23";
         public string[] AdditionalIncludeDirectories { get; set; }
@@ -76,7 +85,7 @@ namespace Rxdk.Xbox360.Modern.Build
                     // Insert compile flags before the -c (matching mktitle's ordering).
                     var pre = new List<string> { Optimization, "-std=" + (isCpp ? LanguageStandardCpp : LanguageStandardC) };
                     if (DebugInformation) pre.Add("-gdwarf-4");
-                    pre.AddRange(AutoClangFlags(isCpp));
+                    pre.AddRange(XdkHeaders ? XdkHeaderFlags() : AutoClangFlags(isCpp));
                     if (AdditionalIncludeDirectories != null)
                         foreach (var inc in AdditionalIncludeDirectories)
                             if (!string.IsNullOrWhiteSpace(inc)) pre.Add("-I" + inc.Trim());
@@ -128,6 +137,30 @@ namespace Rxdk.Xbox360.Modern.Build
                            "-I" + lx, "-I" + la, "-I" + cfg,
                            "-include", "__config_site", "-include", "rxdk_libcpp_prereq.h",
                            "-I" + pico, "-include", "picolibc.h" };
+        }
+
+        // The MS-compatibility recipe that lets clang parse the stock XDK headers
+        // (see tests/gfx/build_tri.py / docs/sdk-headers-plan.md): satisfy the
+        // Win32/Xbox gates and MSVC extensions, and put xnamath/xboxmath in scalar
+        // mode so d3dx9math.h / xgraphics.h compile without VMX128 intrinsics. The
+        // XDK include\xbox dirs are added last.
+        private IEnumerable<string> XdkHeaderFlags()
+        {
+            var f = new List<string>
+            {
+                "-fms-extensions", "-fms-compatibility", "-fdeclspec",
+                // #pragma comment(lib, "d3d9.lib") in XDK code emits a COFF auto-link
+                // directive ld.lld cannot resolve; the modern link names the ELF
+                // libraries explicitly instead, so drop the directive.
+                "-fno-autolink",
+                "-D_WIN32=1", "-D_M_PPCBE=1", "-D_M_PPC=1", "-D_XBOX=1", "-D_XBOX_VER=200",
+                "-D__export=", "-D_SIZE_T_DEFINED", "-D_XM_NO_INTRINSICS_",
+                "-Wno-pragma-pack",
+            };
+            if (XdkIncludeDirectories != null)
+                foreach (var d in XdkIncludeDirectories)
+                    if (!string.IsNullOrWhiteSpace(d)) f.Add("-I" + d.Trim());
+            return f;
         }
 
         // Qualify the object with its parent directory: many titles carry several
