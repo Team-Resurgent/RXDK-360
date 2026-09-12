@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    RXDK-360 *modern* Xbox 360 MSBuild task assembly.
+
+    Drives the modern (clang/LLVM) toolchain: clang.exe -> ld.lld trial link ->
+    XexTool genstubs -> assemble stubs -> ld.lld final link -> XexTool pack, i.e.
+    the mktitle.py flow, as MSBuild tasks so a title builds from Visual Studio.
+
+    Unlike Rxdk.Xbox360.Build (the stock-XDK CL/Link rebuild, which derives from
+    the per-VS Microsoft.Build.CPPTasks.Common and so must be rebuilt per toolset),
+    these tasks derive only from Microsoft.Build.Utilities.Task, whose assembly is
+    version-stable across Visual Studio releases. One net472 DLL therefore loads
+    under VS2022 (v170) and VS "18" (v180) alike - no per-toolset rebuild.
+
+    Build:  dotnet build -c Release
+    Output: bin\Release\net472\Rxdk.Xbox360.Modern.Build.dll
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>Rxdk.Xbox360.Modern.Build</AssemblyName>
+    <RootNamespace>Rxdk.Xbox360.Modern.Build</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Company>Team Resurgent</Company>
+    <Product>RXDK-360</Product>
+    <Description>Modern (clang/LLVM) Xbox 360 compile/link MSBuild tasks for Visual Studio.</Description>
+    <Copyright>Copyright (C) Team Resurgent. GPL-3.0-or-later.</Copyright>
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+    <!-- We ship only our own assembly; MSBuild provides the base at runtime. -->
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <!-- The MSBuild task base. NuGet packages give a version-stable reference that
+       does not pin us to any one Visual Studio install (contrast the stock-XDK
+       task, which must bind the host VC CPPTasks). ExcludeAssets=runtime keeps
+       them out of the output - the host MSBuild supplies them. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Build.Framework" Version="17.3.2" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Utilities.Core" Version="17.3.2" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+</Project>
