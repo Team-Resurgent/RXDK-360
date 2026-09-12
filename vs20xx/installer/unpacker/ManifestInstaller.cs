@@ -168,9 +168,12 @@ namespace Rxdk.Xdk.Unpacker
 
             _regs++;
             if (DryRun) return;
-            RegistryKey hive = root.Equals("HKCU", StringComparison.OrdinalIgnoreCase)
-                ? Registry.CurrentUser : Registry.LocalMachine;
-            using (var k = hive.CreateSubKey(subkey))
+            // Write the native 64-bit view: this x86 process is otherwise WOW64-
+            // redirected to Wow6432Node, which is wrong for the 64-bit shell etc.
+            RegistryHive hive = root.Equals("HKCU", StringComparison.OrdinalIgnoreCase)
+                ? RegistryHive.CurrentUser : RegistryHive.LocalMachine;
+            using (var baseKey = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64))
+            using (var k = baseKey.CreateSubKey(subkey))
             {
                 if (k == null) { _skipped++; return; }
                 if (!string.IsNullOrEmpty(valueName) || !string.IsNullOrEmpty(data))
@@ -233,9 +236,10 @@ namespace Rxdk.Xdk.Unpacker
                         case "shortcut": if (File.Exists(f[1])) File.Delete(f[1]); break;
                         case "selfreg": SelfRegister(f[2], f[1] == "64", true); break;
                         case "reg":
-                            RegistryKey hive = f[1].Equals("HKCU", StringComparison.OrdinalIgnoreCase)
-                                ? Registry.CurrentUser : Registry.LocalMachine;
-                            using (var k = hive.OpenSubKey(f[2], true))
+                            RegistryHive hive = f[1].Equals("HKCU", StringComparison.OrdinalIgnoreCase)
+                                ? RegistryHive.CurrentUser : RegistryHive.LocalMachine;
+                            using (var baseKey = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64))
+                            using (var k = baseKey.OpenSubKey(f[2], true))
                                 if (k != null && !string.IsNullOrEmpty(f[3])) { try { k.DeleteValue(f[3], false); } catch { } }
                             break;
                     }
