@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    RXDK-360 XBDM client - the devkit transport for the modern debugger.
+
+    A managed facade over the XDK's PC-side xbdm.dll (P/Invoke of the DM* APIs), so
+    we drive a real Xbox 360 devkit (deploy, reboot into a title stopped for debug,
+    breakpoints, stop/go, memory, thread registers, debug-event notifications)
+    without reimplementing the XBDM wire protocol. Windows-only (xbdm.dll); locates
+    xbdm.dll from the relocated XDK / RXDK-360 install.
+
+    Build with dotnet build; run RxdkXbdm info for the offline self-check.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>RxdkXbdm</AssemblyName>
+    <RootNamespace>Rxdk.Xbox360.Xbdm</RootNamespace>
+    <Deterministic>true</Deterministic>
+    <Company>Team Resurgent</Company>
+    <Product>RXDK-360</Product>
+    <Copyright>Copyright (C) Team Resurgent. GPL-3.0-or-later.</Copyright>
+  </PropertyGroup>
+
+</Project>
