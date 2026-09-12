@@ -43,6 +43,18 @@ WizardImageFile=WizardImage.bmp
 WizardSmallImageFile=WizardSmallImage.bmp
 MissingRunOnceIdsWarning=no
 
+[Types]
+Name: "full";   Description: "Full - legacy XDK toolchain + modern (Clang/LLVM) toolchain"
+Name: "legacy"; Description: "Legacy only - stock XDK toolchain"
+Name: "custom"; Description: "Custom"; Flags: iscustom
+
+[Components]
+; The relocated XDK and the VS integration always install (the modern toolchain
+; also uses the XDK's import libraries). The modern component adds the self-
+; contained Clang/LLVM toolchain, XexTool and xdvdfs so RXDK-360 needs no external
+; toolchain and does not depend on an RXDK-Tools install.
+Name: "modern"; Description: "Modern toolchain (Clang/LLVM + XexTool + xdvdfs, self-contained)"; Types: full
+
 [Tasks]
 Name: "envvar";    Description: "Set the RXDK360 environment variable"; GroupDescription: "Integration:"
 Name: "vs";        Description: "Install the Visual Studio integration (RXDK-360 platform + project templates)"; GroupDescription: "Integration:"
@@ -60,11 +72,33 @@ Source: "..\extension\*"; DestDir: "{app}\vsintegration\extension"; Flags: recur
 Source: "..\install.ps1"; DestDir: "{app}\vsintegration"
 Source: "..\README.md";   DestDir: "{app}\vsintegration"
 
+; --- Modern (Clang/LLVM) toolchain payload -------------------------------------
+; Self-contained: our own Clang + ld.lld (only the two binaries we drive, plus
+; clang's resource headers - not the full 775MB LLVM bin), the modern C/C++
+; runtime archives and headers, XexTool, and xdvdfs. Laid out to mirror the dev
+; tree under {app}\modern so the clang Toolset.props defaults resolve unchanged.
+; Requires build/ to be populated (build the LLVM/runtime; drop xdvdfs in
+; build\tools per build\tools\README.md) before compiling the installer.
+Source: "..\..\build\llvm\bin\clang.exe";   DestDir: "{app}\modern\build\llvm\bin"; Components: modern
+Source: "..\..\build\llvm\bin\ld.lld.exe";  DestDir: "{app}\modern\build\llvm\bin"; Components: modern
+Source: "..\..\build\llvm\lib\clang\*";     DestDir: "{app}\modern\build\llvm\lib\clang"; Flags: recursesubdirs createallsubdirs; Components: modern
+Source: "..\..\build\libc\*.a";             DestDir: "{app}\modern\build\libc"; Components: modern
+Source: "..\..\build\coff\*.a";             DestDir: "{app}\modern\build\coff"; Components: modern
+Source: "..\..\runtime\config\*";           DestDir: "{app}\modern\runtime\config"; Flags: recursesubdirs createallsubdirs; Components: modern
+Source: "..\..\vendor\picolibc\libc\include\*";            DestDir: "{app}\modern\vendor\picolibc\libc\include"; Flags: recursesubdirs createallsubdirs; Components: modern
+Source: "..\..\vendor\llvm-project\libcxx\include\*";      DestDir: "{app}\modern\vendor\llvm-project\libcxx\include"; Flags: recursesubdirs createallsubdirs; Components: modern
+Source: "..\..\vendor\llvm-project\libcxxabi\include\*";   DestDir: "{app}\modern\vendor\llvm-project\libcxxabi\include"; Flags: recursesubdirs createallsubdirs; Components: modern
+Source: "..\..\vendor\xextool\build\Release\XexTool.exe";  DestDir: "{app}\modern\tools"; Components: modern
+Source: "..\..\build\tools\xdvdfs.exe";     DestDir: "{app}\modern\tools"; Components: modern
+
 [Registry]
 ; RXDK-360's own SDK key (read first by the RXDK-360 platform's Toolset.props),
 ; kept separate from the stock HKLM\...\Xbox\2.0\SDK so the two SDKs coexist.
 Root: HKLM; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletekey
 Root: HKLM; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "Version";     ValueData: "{#AppVersion}"
+; Modern toolchain root: the clang Toolset.props + Platform.targets resolve the
+; Clang/LLVM tools, runtime and xdvdfs from here (see ModernPath / tools\xdvdfs.exe).
+Root: HKLM; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "ModernPath"; ValueData: "{app}\modern"; Components: modern; Flags: uninsdeletevalue
 
 [Icons]
 ; The XDK's own Start-menu shortcuts are created (under the RXDK-360 group) by

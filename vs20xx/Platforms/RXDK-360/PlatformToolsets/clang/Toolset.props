@@ -43,6 +43,9 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild; a bad edit here breaks
          the defaults mirror the dev tree's layout under RxdkModernRoot. -->
     <RxdkClangPath   Condition="'$(RxdkClangPath)'   == ''">$(RxdkModernRoot)\build\llvm\bin\clang.exe</RxdkClangPath>
     <RxdkLldPath     Condition="'$(RxdkLldPath)'     == ''">$(RxdkModernRoot)\build\llvm\bin\ld.lld.exe</RxdkLldPath>
+    <!-- Installed payload keeps the binary tools together under modern\tools;
+         the dev tree builds XexTool under vendor\xextool. Prefer the former. -->
+    <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == '' and Exists('$(RxdkModernRoot)\tools\XexTool.exe')">$(RxdkModernRoot)\tools\XexTool.exe</RxdkXexToolPath>
     <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == ''">$(RxdkModernRoot)\vendor\xextool\build\Release\XexTool.exe</RxdkXexToolPath>
     <RxdkCoffDir     Condition="'$(RxdkCoffDir)'     == ''">$(RxdkModernRoot)\build\coff</RxdkCoffDir>
     <RxdkLibcDir     Condition="'$(RxdkLibcDir)'     == ''">$(RxdkModernRoot)\build\libc</RxdkLibcDir>
