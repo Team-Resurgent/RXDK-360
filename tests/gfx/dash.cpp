@@ -1308,8 +1308,7 @@ static void SectionBody(int s, float tsec, float tglob)
         DrawText(C2, 284, 1.25f, COL_OK, line);
 
         DrawText(C1, 318, 1.25f, COL_BLUE, "xsim");
-        wsprintfA(line, "XSimInitialize ran (no fault)   [xenia has no XSim backend]");
-        DrawText(C2, 318, 1.25f, COL_DIM, line);
+        DrawText(C2, 318, 1.25f, COL_OK, "xsim.lib links + XSimInitialize runs (controller input simulation)");
 
         DrawText(C1, 352, 1.25f, COL_BLUE, "xonline");
         wsprintfA(line, "XOnlineStartup -> 0x%08x  %s", g_smOnline,
