@@ -14,8 +14,8 @@ Copyright (C) Microsoft Corporation. All rights reserved.
 -->
 
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\ImportBefore\*.targets" Condition="Exists('$(VCTargetsPath)\Platforms\RXDK-360\ImportBefore')" />
-  <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\Microsoft.CppCommon.Xbox 360.targets"/>
+  <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportBefore\*.targets" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportBefore')" />
+  <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\Microsoft.CppCommon.Xbox 360.targets"/>
   <Import Project="$(VCTargetsPath)\Microsoft.CppCommon.targets" Condition="'$(ConfigurationType)'!='Makefile'"/>
 
   <UsingTask TaskName="Xbox360CL"                AssemblyFile="$(MSBuildThisFileDirectory)Rxdk.Xbox360.Build.dll"/>
@@ -55,48 +55,15 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <RemotePath Condition="'$(RemotePath)'=='%24(RemoteRoot)\%24(TargetName)%24(TargetExt)'">$(RemoteRoot)\$(TargetName)$(TargetExt)</RemotePath>
   </PropertyGroup>
   
-  <!-- Xenia launch: when a Xenia executable is configured (Xenia Emulator property
-       page), F5 / Ctrl+F5 runs the built XEX in Xenia via the built-in Local
-       Windows Debugger, overriding the (not-yet-wired) Xbox 360 remote debugger.
-       Works for both toolsets - the produced XEX is identical. -->
-  <PropertyGroup Condition="'$(ConfigurationType)' != 'Makefile' and '$(ConfigurationType)' != 'StaticLibrary'">
-    <!-- The disc image built for the "Launch as Disc Image" option, and the tool
-         that builds it (Team-Resurgent/XDVDFS-TR). xdvdfs is bundled with the
-         modern toolchain payload (tools\xdvdfs.exe under the install's ModernPath),
-         so RXDK-360 is self-contained and does NOT depend on an RXDK-Tools install;
-         RXDK_XDVDFS is an explicit manual override. Toolset-independent: the
-         ModernPath registry value is read directly (the clang toolset's
-         $(RxdkModernRoot) is not set for a stock-toolset project). -->
-    <RxdkXeniaIsoPath Condition="'$(RxdkXeniaIsoPath)' == ''">$(OutDir)$(TargetName).iso</RxdkXeniaIsoPath>
-    <_RxdkModernPath Condition="'$(_RxdkModernPath)' == '' and '$(RxdkModernRoot)' != ''">$(RxdkModernRoot)</_RxdkModernPath>
-    <_RxdkModernPath Condition="'$(_RxdkModernPath)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\TeamResurgent\RXDK-360@ModernPath)</_RxdkModernPath>
-    <_RxdkModernPath Condition="'$(_RxdkModernPath)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\TeamResurgent\RXDK-360@ModernPath)</_RxdkModernPath>
-    <RxdkXdvdfsPath Condition="'$(RxdkXdvdfsPath)' == '' and '$(RXDK_XDVDFS)' != ''">$(RXDK_XDVDFS)</RxdkXdvdfsPath>
-    <RxdkXdvdfsPath Condition="'$(RxdkXdvdfsPath)' == '' and '$(_RxdkModernPath)' != '' and Exists('$(_RxdkModernPath)\tools\xdvdfs.exe')">$(_RxdkModernPath)\tools\xdvdfs.exe</RxdkXdvdfsPath>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(RxdkXeniaPath)' != '' and '$(ConfigurationType)' != 'Makefile' and '$(ConfigurationType)' != 'StaticLibrary'">
-    <_RxdkXeniaHeadless Condition="'$(RxdkXeniaHeadless)' == 'true'"> --headless=true</_RxdkXeniaHeadless>
-    <!-- Boot the disc image when requested, otherwise the bare XEX. -->
-    <_RxdkXeniaImage Condition="'$(RxdkXeniaUseIso)' == 'true'">$(RxdkXeniaIsoPath)</_RxdkXeniaImage>
-    <_RxdkXeniaImage Condition="'$(_RxdkXeniaImage)' == ''">$(ImagePath)</_RxdkXeniaImage>
-    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
-    <LocalDebuggerCommand>$(RxdkXeniaPath)</LocalDebuggerCommand>
-    <LocalDebuggerCommandArguments>"$(_RxdkXeniaImage)"$(_RxdkXeniaHeadless) $(RxdkXeniaArgs)</LocalDebuggerCommandArguments>
-    <LocalDebuggerWorkingDirectory>$([System.IO.Path]::GetDirectoryName('$(RxdkXeniaPath)'))</LocalDebuggerWorkingDirectory>
-    <!-- xenia is a normal Windows exe: use the native local debugger. -->
-    <DebuggerType Condition="'$(DebuggerType)' == ''">NativeOnly</DebuggerType>
-  </PropertyGroup>
-
   <!-- Build the Xenia disc image (XISO/GDFX) after the XEX is produced: stage the
        title as default.xex plus any content folder, then pack with xdvdfs. Runs
        for both toolsets (stock ImageXex runs after Link; the clang toolset's
        ImageXex is a no-op that still fires after its Link packs the XEX). -->
   <Target Name="RxdkBuildXeniaIso"
           AfterTargets="ImageXex"
-          Condition="'$(RxdkXeniaUseIso)' == 'true' and ('$(ConfigurationType)' == 'Application' or '$(ConfigurationType)' == 'DynamicLibrary')">
+          Condition="'$(RxdkXeniaPath)' != '' and '$(RxdkXeniaUseIso)' == 'true' and ('$(ConfigurationType)' == 'Application' or '$(ConfigurationType)' == 'DynamicLibrary')">
     <Error Condition="'$(RxdkXdvdfsPath)' == '' or !Exists('$(RxdkXdvdfsPath)')"
-           Text="Xenia disc image: xdvdfs was not found. Set 'XDVDFS Tool' on the project's Xenia Emulator page (Team-Resurgent/XDVDFS-TR)." />
+           Text="Xenia disc image: xdvdfs was not found. Set 'XDVDFS Tool' under Console Deployment -&gt; Xenia (Team-Resurgent/XDVDFS-TR)." />
     <PropertyGroup>
       <_XeniaStage>$(IntDir)xeniaiso\</_XeniaStage>
     </PropertyGroup>
@@ -127,6 +94,36 @@ Copyright (C) Microsoft Corporation. All rights reserved.
   <ItemGroup Condition="'$(ConfigurationType)' == 'Makefile'">
     <Deploy Include="$(NMakeOutput)"/>
   </ItemGroup>
+
+  <!-- Xenia: the "Xenia Emulator" section of the Console Deployment page sets the
+       Xenia executable (a project property). When it is set, F5 / Ctrl+F5 runs the
+       built XEX (or a packed disc image) in Xenia via the built-in Local Windows
+       Debugger, overriding the (not-yet-wired) Xbox 360 remote debugger. Works for
+       both toolsets - the XEX is the same. (Reading the Deployment Type combo as a
+       property is not reliable at evaluation time, so the Xenia executable being
+       set is the trigger.) -->
+  <PropertyGroup Condition="'$(ConfigurationType)' != 'Makefile' and '$(ConfigurationType)' != 'StaticLibrary'">
+    <!-- Disc-image output path + xdvdfs default (bundled modern payload, so no
+         RXDK-Tools dependency); an explicit XDVDFS Tool path wins. -->
+    <RxdkXeniaIsoPath Condition="'$(RxdkXeniaIsoPath)' == ''">$(OutDir)$(TargetName).iso</RxdkXeniaIsoPath>
+    <_RxdkModernPath Condition="'$(_RxdkModernPath)' == '' and '$(RxdkModernRoot)' != ''">$(RxdkModernRoot)</_RxdkModernPath>
+    <_RxdkModernPath Condition="'$(_RxdkModernPath)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\TeamResurgent\RXDK-360@ModernPath)</_RxdkModernPath>
+    <_RxdkModernPath Condition="'$(_RxdkModernPath)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\TeamResurgent\RXDK-360@ModernPath)</_RxdkModernPath>
+    <RxdkXdvdfsPath Condition="'$(RxdkXdvdfsPath)' == '' and '$(RXDK_XDVDFS)' != ''">$(RXDK_XDVDFS)</RxdkXdvdfsPath>
+    <RxdkXdvdfsPath Condition="'$(RxdkXdvdfsPath)' == '' and '$(_RxdkModernPath)' != '' and Exists('$(_RxdkModernPath)\tools\xdvdfs.exe')">$(_RxdkModernPath)\tools\xdvdfs.exe</RxdkXdvdfsPath>
+  </PropertyGroup>
+
+  <!-- Override the debugger launch to Xenia when a Xenia executable is configured. -->
+  <PropertyGroup Condition="'$(RxdkXeniaPath)' != '' and '$(ConfigurationType)' != 'Makefile' and '$(ConfigurationType)' != 'StaticLibrary'">
+    <_RxdkXeniaHeadless Condition="'$(RxdkXeniaHeadless)' == 'true'"> --headless=true</_RxdkXeniaHeadless>
+    <_RxdkXeniaImage Condition="'$(RxdkXeniaUseIso)' == 'true'">$(RxdkXeniaIsoPath)</_RxdkXeniaImage>
+    <_RxdkXeniaImage Condition="'$(_RxdkXeniaImage)' == ''">$(ImagePath)</_RxdkXeniaImage>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerCommand>$(RxdkXeniaPath)</LocalDebuggerCommand>
+    <LocalDebuggerCommandArguments>"$(_RxdkXeniaImage)"$(_RxdkXeniaHeadless) $(RxdkXeniaArgs)</LocalDebuggerCommandArguments>
+    <LocalDebuggerWorkingDirectory Condition="'$(RxdkXeniaPath)' != ''">$([System.IO.Path]::GetDirectoryName('$(RxdkXeniaPath)'))</LocalDebuggerWorkingDirectory>
+    <DebuggerType Condition="'$(DebuggerType)' == ''">NativeOnly</DebuggerType>
+  </PropertyGroup>
 
 
   <!-- *******************************************************************************************
@@ -594,9 +591,9 @@ Copyright (C) Microsoft Corporation. All rights reserved.
 
   </Target>
 
-  <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\Microsoft.Makefile.Xbox 360.targets" Condition="'$(ConfigurationType)' == 'Makefile'"/>
+  <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\Microsoft.Makefile.Xbox 360.targets" Condition="'$(ConfigurationType)' == 'Makefile'"/>
 
-  <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\PlatformToolsets\$(PlatformToolset)\Toolset.targets" />
-  <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\ImportAfter\*.targets" Condition="Exists('$(VCTargetsPath)\Platforms\RXDK-360\ImportAfter')" />
+  <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\PlatformToolsets\$(PlatformToolset)\Toolset.targets" />
+  <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter\*.targets" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter')" />
 </Project>
 

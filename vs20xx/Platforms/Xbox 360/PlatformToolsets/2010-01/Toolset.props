@@ -11,7 +11,7 @@ Copyright (C) Microsoft Corporation. All rights reserved.
 -->
 
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\ImportBefore\*.2010-01.props" Condition="Exists('$(VCTargetsPath)\Platforms\RXDK-360\ImportBefore')" />
+  <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportBefore\*.2010-01.props" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportBefore')" />
 
   <PropertyGroup>
     <PlatformToolsetVersion>100</PlatformToolsetVersion>
@@ -51,5 +51,5 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <NativeExecutablePath Condition="'$(NativeExecutablePath)' == ''">$(ExecutablePath)</NativeExecutablePath>
   </PropertyGroup>
 
-  <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\ImportAfter\*.2010-01.props" Condition="Exists('$(VCTargetsPath)\Platforms\RXDK-360\ImportAfter')" />
+  <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter\*.2010-01.props" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter')" />
 </Project>

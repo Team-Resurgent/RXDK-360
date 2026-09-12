@@ -11,9 +11,9 @@ Copyright (C) Microsoft Corporation. All rights reserved.
 -->
 
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\ImportBefore\*.props" Condition="Exists('$(VCTargetsPath)\Platforms\RXDK-360\ImportBefore')" />
+  <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportBefore\*.props" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportBefore')" />
 
-  <Import Condition="(exists('$(VCTargetsPath)\Platforms\RXDK-360\PlatformToolsets\$(PlatformToolset)\Toolset.props'))" Project="$(VCTargetsPath)\Platforms\RXDK-360\PlatformToolsets\$(PlatformToolset)\Toolset.props"/>
+  <Import Condition="(exists('$(VCTargetsPath)\Platforms\Xbox 360\PlatformToolsets\$(PlatformToolset)\Toolset.props'))" Project="$(VCTargetsPath)\Platforms\Xbox 360\PlatformToolsets\$(PlatformToolset)\Toolset.props"/>
 
   <!-- Compiled-signal properties. Modern MSBuild gates the _Lib/_Link build
        orchestration (Microsoft.CppBuild.targets) on $(LibCompiled)/$(LinkCompiled),
@@ -63,7 +63,7 @@ Copyright (C) Microsoft Corporation. All rights reserved.
   <ImportGroup Label="PropertySheets">
     <!-- Core Xbox Libraries -->
     <!--
-    <Import Condition="'$(NonCoreXbox360)' != 'true'" Project="$(VCTargetsPath)\Platforms\RXDK-360\Microsoft.Cpp.Xbox 360.Core.props"/>
+    <Import Condition="'$(NonCoreXbox360)' != 'true'" Project="$(VCTargetsPath)\Platforms\Xbox 360\Microsoft.Cpp.Xbox 360.Core.props"/>
     -->
 
     <!-- Character Set -->
@@ -71,8 +71,8 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <Import Condition="'$(CharacterSet)' == 'MultiByte'"  Project="$(VCTargetsPath)\microsoft.Cpp.MultiByteCharSupport.props"/>
 
     <!-- Configuration Type -->
-    <Import Condition="'$(ConfigurationType)' == 'DynamicLibrary'"  Project="$(VCTargetsPath)\Platforms\RXDK-360\Microsoft.Cpp.Xbox 360.DLL.props"/>
-    <Import Condition="'$(ConfigurationType)' == 'Application'"     Project="$(VCTargetsPath)\Platforms\RXDK-360\Microsoft.Cpp.Xbox 360.Title.props"/>
+    <Import Condition="'$(ConfigurationType)' == 'DynamicLibrary'"  Project="$(VCTargetsPath)\Platforms\Xbox 360\Microsoft.Cpp.Xbox 360.DLL.props"/>
+    <Import Condition="'$(ConfigurationType)' == 'Application'"     Project="$(VCTargetsPath)\Platforms\Xbox 360\Microsoft.Cpp.Xbox 360.Title.props"/>
 
     <!-- Whole Program Optimization -->
     <Import Condition="'$(WholeProgramOptimization)' == 'true'"           Project="$(VCTargetsPath)\Microsoft.Cpp.WholeProgramOptimization.props"/>
@@ -81,9 +81,9 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <Import Condition="'$(WholeProgramOptimization)' == 'PGUpdate'"       Project="$(VCTargetsPath)\Microsoft.Cpp.pgupdate.props"/>
 
     <!-- Overridden and additional CL and Link defaults -->
-    <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\Microsoft.Cl.Xbox 360.props"/>
-    <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\Microsoft.Link.Xbox 360.props"/>
-    <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\Microsoft.Lib.Xbox 360.props"/>
+    <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\Microsoft.Cl.Xbox 360.props"/>
+    <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\Microsoft.Link.Xbox 360.props"/>
+    <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\Microsoft.Lib.Xbox 360.props"/>
   </ImportGroup>
 
   <PropertyGroup Condition="'$(ConfigurationType)' != 'Makefile'">
@@ -104,8 +104,8 @@ Copyright (C) Microsoft Corporation. All rights reserved.
 
   <ImportGroup Label="PropertySheets">
     <!-- Xbox 360 specific tools -->
-    <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\Microsoft.ImageXex.Xbox 360.props"/>
-    <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\Microsoft.Deploy.Xbox 360.props"/>
+    <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\Microsoft.ImageXex.Xbox 360.props"/>
+    <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\Microsoft.Deploy.Xbox 360.props"/>
   </ImportGroup>
 
   <PropertyGroup>
@@ -124,5 +124,5 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <Xbox360DebuggerCheckUpToDate>true</Xbox360DebuggerCheckUpToDate>
   </PropertyGroup>
 
-  <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\ImportAfter\*.props" Condition="Exists('$(VCTargetsPath)\Platforms\RXDK-360\ImportAfter')" />
+  <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter\*.props" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter')" />
 </Project>

@@ -19,7 +19,7 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
 ***********************************************************************************************
 -->
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\ImportBefore\*.clang.targets" Condition="Exists('$(VCTargetsPath)\Platforms\RXDK-360\ImportBefore')" />
+  <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportBefore\*.clang.targets" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportBefore')" />
 
   <UsingTask TaskName="Rxdk.Xbox360.Modern.Build.ClangCompile" AssemblyFile="$(MSBuildThisFileDirectory)..\..\Rxdk.Xbox360.Modern.Build.dll"/>
   <UsingTask TaskName="Rxdk.Xbox360.Modern.Build.ClangLink"    AssemblyFile="$(MSBuildThisFileDirectory)..\..\Rxdk.Xbox360.Modern.Build.dll"/>
@@ -127,5 +127,5 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
     <Message Importance="High" Text="$(MSBuildProjectFile) -&gt; $(_ModernLibOut)" />
   </Target>
 
-  <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\ImportAfter\*.clang.targets" Condition="Exists('$(VCTargetsPath)\Platforms\RXDK-360\ImportAfter')" />
+  <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter\*.clang.targets" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter')" />
 </Project>
