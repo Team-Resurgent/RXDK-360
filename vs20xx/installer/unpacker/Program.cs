@@ -15,57 +15,55 @@ namespace Rxdk.Xdk.Unpacker
 {
     internal static class Program
     {
+        private const string UndoLog = "rxdk360-uninstall.log";
+
         private static int Main(string[] args)
         {
-            if (args.Length < 2)
-            {
-                Console.Error.WriteLine("usage: RxdkXdkUnpacker <XDKSetupXenon.exe> <outDir>");
-                return 2;
-            }
-            string setupExe = args[0];
-            string outDir = args[1];
-            if (!File.Exists(setupExe))
-            {
-                Console.Error.WriteLine("not found: " + setupExe);
-                return 2;
-            }
-            Directory.CreateDirectory(outDir);
-
             try
             {
-                var cabs = FindCabinets(setupExe);
-                Console.WriteLine("found {0} cabinet(s) in {1}", cabs.Count, Path.GetFileName(setupExe));
-                if (cabs.Count == 0)
+                // verbs: unpack <setup> <outDir> | install <setup> <installDir> | uninstall <installDir>
+                if (args.Length >= 1 && args[0].Equals("uninstall", StringComparison.OrdinalIgnoreCase))
                 {
-                    Console.Error.WriteLine("no MSCF cabinet found - is this an Xbox 360 XDK setup EXE?");
-                    return 1;
+                    if (args.Length < 2) return Usage();
+                    ManifestInstaller.Uninstall(Path.Combine(args[1], UndoLog));
+                    Console.WriteLine("uninstalled from " + args[1]);
+                    return 0;
                 }
 
-                int total = 0;
-                string tmp = Path.Combine(Path.GetTempPath(), "rxdk_xdk_" + Guid.NewGuid().ToString("N"));
-                Directory.CreateDirectory(tmp);
+                bool dryRun = Array.FindIndex(args, s => s.Equals("--dry-run", StringComparison.OrdinalIgnoreCase)) >= 0;
+                var pos = new List<string>();
+                foreach (var s in args) if (!s.StartsWith("--")) pos.Add(s);
+                args = pos.ToArray();
+
+                bool install = args.Length >= 1 && args[0].Equals("install", StringComparison.OrdinalIgnoreCase);
+                int a = install ? 1 : 0;
+                if (args.Length - a < 2) return Usage();
+                string setupExe = args[a];
+                string dest = args[a + 1];
+                bool preExtracted = install && Directory.Exists(setupExe) && File.Exists(Path.Combine(setupExe, "manifest.csv"));
+                if (!preExtracted && !File.Exists(setupExe)) { Console.Error.WriteLine("not found: " + setupExe); return 2; }
+
+                if (!install)
+                {
+                    // plain unpack: extract the raw XDK\... tree to <outDir>
+                    Directory.CreateDirectory(dest);
+                    ExtractAll(setupExe, dest);
+                    return 0;
+                }
+
+                // install: extract to a temp staging area (unless already extracted),
+                // then replay manifest.csv relocated for RXDK-360.
+                string staging = preExtracted ? setupExe
+                    : Path.Combine(Path.GetTempPath(), "rxdk_stage_" + Guid.NewGuid().ToString("N"));
                 try
                 {
-                    using (var fs = File.OpenRead(setupExe))
-                    {
-                        int i = 0;
-                        foreach (var c in cabs)
-                        {
-                            string part = Path.Combine(tmp, "part.cab");
-                            CarveTo(fs, c.Offset, c.Size, part);
-                            using (var fdi = new FdiExtractor())
-                                total += fdi.Extract(part, outDir);
-                            Console.WriteLine("  cab {0}/{1}: {2} files ({3:n0} bytes)", ++i, cabs.Count, c.Files, c.Size);
-                            File.Delete(part);
-                        }
-                    }
+                    if (!preExtracted) { Directory.CreateDirectory(staging); ExtractAll(setupExe, staging); }
+                    Directory.CreateDirectory(dest);
+                    Console.WriteLine("applying manifest -> {0}{1}", dest, dryRun ? "  (DRY RUN)" : "");
+                    new ManifestInstaller(staging, dest) { DryRun = dryRun }.Run(Path.Combine(dest, UndoLog));
+                    Console.WriteLine("done.");
                 }
-                finally
-                {
-                    try { Directory.Delete(tmp, true); } catch { }
-                }
-
-                Console.WriteLine("done: {0} files extracted to {1}", total, outDir);
+                finally { if (!preExtracted) { try { Directory.Delete(staging, true); } catch { } } }
                 return 0;
             }
             catch (Exception ex)
@@ -73,6 +71,47 @@ namespace Rxdk.Xdk.Unpacker
                 Console.Error.WriteLine("error: " + ex.Message);
                 return 1;
             }
+        }
+
+        private static int Usage()
+        {
+            Console.Error.WriteLine("usage:");
+            Console.Error.WriteLine("  RxdkXdkUnpacker <XDKSetup.exe> <outDir>            (extract the XDK\\ tree)");
+            Console.Error.WriteLine("  RxdkXdkUnpacker install <XDKSetup.exe> <installDir> (manifest-driven install)");
+            Console.Error.WriteLine("  RxdkXdkUnpacker uninstall <installDir>              (reverse an install)");
+            return 2;
+        }
+
+        // Extract every cabinet in the setup EXE to destDir. Returns file count.
+        private static int ExtractAll(string setupExe, string destDir)
+        {
+            var cabs = FindCabinets(setupExe);
+            Console.WriteLine("found {0} cabinet(s) in {1}", cabs.Count, Path.GetFileName(setupExe));
+            if (cabs.Count == 0)
+                throw new InvalidDataException("no MSCF cabinet found - is this an Xbox 360 XDK setup EXE?");
+
+            int total = 0;
+            string tmp = Path.Combine(Path.GetTempPath(), "rxdk_cab_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tmp);
+            try
+            {
+                using (var fs = File.OpenRead(setupExe))
+                {
+                    int i = 0;
+                    foreach (var c in cabs)
+                    {
+                        string part = Path.Combine(tmp, "part.cab");
+                        CarveTo(fs, c.Offset, c.Size, part);
+                        using (var fdi = new FdiExtractor())
+                            total += fdi.Extract(part, destDir);
+                        Console.WriteLine("  cab {0}/{1}: {2} files ({3:n0} bytes)", ++i, cabs.Count, c.Files, c.Size);
+                        File.Delete(part);
+                    }
+                }
+            }
+            finally { try { Directory.Delete(tmp, true); } catch { } }
+            Console.WriteLine("extracted {0} files", total);
+            return total;
         }
 
         private struct CabRef { public long Offset; public long Size; public int Files; }
