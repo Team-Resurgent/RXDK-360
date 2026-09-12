@@ -18,12 +18,14 @@ acquires it at install time from the user's own XDK **setup EXE**.
 
 - **Source page** — point at your Xbox 360 XDK setup EXE (e.g.
   `XDKSetupXenon<version>.exe`).
-- **Extract + relocate → `{app}`** — the bundled `RxdkXdkUnpacker.exe` (see
-  `unpacker/`) unpacks the setup EXE to a temp dir (it walks the setup's chain of
-  concatenated MS cabinets; the payload lands under an `XDK\` prefix), and the
-  `external` `[Files]` entries relocate `XDK\{bin,include,lib,source,doc}` to
-  `C:\Program Files\RXDK-360`. The tree is fully `%XEDK%`-relative, so it runs
-  correctly from the new path.
+- **Manifest-driven XDK install → `{app}`** — `{app}\tools\RxdkXdkUnpacker.exe
+  install <setup.exe> {app}` unpacks the setup's cabinet chain and replays the
+  original installer's `manifest.csv`, **relocated for RXDK-360**: files (by
+  destination token: `XDK`→`{app}`, `SYSTEM_DIR`→System32, …), registry, the
+  RXDK-360 Start-menu shortcuts, and the **Xbox 360 Neighborhood shell extension**
+  (`xeshlext.dll`, self-registered). It never rewrites the stock `Xbox\2.0\SDK` /
+  `XenonSDK` keys, so it coexists with a stock XDK. The tree is `%XEDK%`-relative,
+  so it runs from the new path.
 - **Side-by-side registration** — writes `HKLM\SOFTWARE\TeamResurgent\RXDK-360\InstallPath`
   (what the RXDK-360 MSBuild platform's `Toolset.props` now reads first) and,
   optionally, the `RXDK360` machine env var. The stock `XEDK` /
