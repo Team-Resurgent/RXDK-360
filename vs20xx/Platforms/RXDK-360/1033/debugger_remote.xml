@@ -1,0 +1,57 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Rule Name="Xbox360Debugger" PageTemplate="debugger" xmlns="http://schemas.microsoft.com/build/2009/properties" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:sys="clr-namespace:System;assembly=mscorlib">
+  <Rule.DisplayName>
+    <sys:String>Xbox 360 Debugger</sys:String>
+  </Rule.DisplayName>
+  <Rule.Description>
+    <sys:String>Xbox 360 Debugger options</sys:String>
+  </Rule.Description>
+  <Rule.DataSource>
+    <DataSource Persistence="UserFile">
+    </DataSource>
+  </Rule.DataSource>
+  <StringProperty Name="Xbox360DebuggerCommand" F1Keyword="VC.Project.VCX360DebuggerTool.RemoteExecutable">
+    <StringProperty.DisplayName>
+      <sys:String>Command</sys:String>
+    </StringProperty.DisplayName>
+    <StringProperty.Description>
+      <sys:String>The path to the remote executable or dump file that will be used to start the debug session.</sys:String>
+    </StringProperty.Description>
+  </StringProperty>
+  <StringProperty Name="Xbox360DebuggerCommandArguments" F1Keyword="VC.Project.VCX360DebuggerTool.CommandArguments">
+    <StringProperty.DisplayName>
+      <sys:String>Command Arguments</sys:String>
+    </StringProperty.DisplayName>
+    <StringProperty.Description>
+      <sys:String>The command line arguments to pass to the game title. [debug only]</sys:String>
+    </StringProperty.Description>
+  </StringProperty>
+  <BoolProperty Name="Xbox360DebuggerMapDvdDrive" F1Keyword="VC.Project.VCX360DebuggerTool.MapDVDDrive">
+    <BoolProperty.DisplayName>
+      <sys:String>Map DVD Drive</sys:String>
+    </BoolProperty.DisplayName>
+    <BoolProperty.Description>
+      <sys:String>Map media: to the DVD drive (xbreboot -m).</sys:String>
+    </BoolProperty.Description>
+  </BoolProperty>
+  <StringProperty Name="RemoteMachine" F1Keyword="VC.Project.VCX360DebuggerTool.TargetConsole">
+    <StringProperty.DisplayName>
+      <sys:String>Remote Machine</sys:String>
+    </StringProperty.DisplayName>
+    <StringProperty.Description>
+      <sys:String>Xbox 360 console name or IP address for debugging and deployment.</sys:String>
+    </StringProperty.Description>
+    <StringProperty.ValueEditors>
+      <ValueEditor EditorType="DefaultStringPropertyEditor" DisplayName="&lt;Edit...&gt;"/>
+      <ValueEditor EditorType="XboxConsolePropertyEditor" DisplayName="&lt;Select...&gt;"/>
+    </StringProperty.ValueEditors>
+  </StringProperty>
+  <BoolProperty Name="Xbox360DebuggerCheckUpToDate" F1Keyword="VC.Project.VCX360DebuggerTool.CheckUpToDate">
+    <BoolProperty.DisplayName>
+      <sys:String>Check up-to-date</sys:String>
+    </BoolProperty.DisplayName>
+    <BoolProperty.Description>
+      <sys:String>Check to make sure that all deployment files are up to date before starting debugging when using [Copy to Hard Drive] Deployment Type.</sys:String>
+    </BoolProperty.Description>
+  </BoolProperty>
+</Rule>

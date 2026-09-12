@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    RXDK-360 Xbox 360 MSBuild task assembly.
+
+    Rebuild of the stock XDK's Microsoft.Xna.Xbox360.Build.dll against the
+    modern VC MSBuild task base (Microsoft.Build.CPPTasks.Common) shipped with
+    the installed Visual Studio, so the Xbox 360 CL/Link/ImageXex/Deploy tasks
+    load under VS2022 (v170) / VS "18" (v180) MSBuild. Targets .NET Framework
+    4.7.2 to match the .NET-Framework MSBuild.exe that drives C++ builds.
+
+    Build:  dotnet build -c Release
+    Output: bin\Release\net472\Rxdk.Xbox360.Build.dll
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>Rxdk.Xbox360.Build</AssemblyName>
+    <RootNamespace>Rxdk.Xbox360.Build</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Company>Team Resurgent</Company>
+    <Product>RXDK-360</Product>
+    <Description>Xbox 360 CL/Link/ImageXex/Deploy MSBuild tasks for modern Visual Studio.</Description>
+    <Copyright>Copyright (C) Team Resurgent. GPL-3.0-or-later.</Copyright>
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+    <!-- We ship only our own assembly; the MSBuild/VC assemblies are provided
+         by the host MSBuild at runtime. -->
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <!-- Locate the Visual Studio install that provides the VC task base. Defaults
+       to VS2022 Enterprise; override -p:VsInstallDir=... for another edition. -->
+  <PropertyGroup>
+    <VsInstallDir Condition="'$(VsInstallDir)' == '' AND Exists('C:\Program Files\Microsoft Visual Studio\2022\Enterprise')">C:\Program Files\Microsoft Visual Studio\2022\Enterprise\</VsInstallDir>
+    <VsInstallDir Condition="'$(VsInstallDir)' == '' AND Exists('C:\Program Files\Microsoft Visual Studio\2022\Professional')">C:\Program Files\Microsoft Visual Studio\2022\Professional\</VsInstallDir>
+    <VsInstallDir Condition="'$(VsInstallDir)' == '' AND Exists('C:\Program Files\Microsoft Visual Studio\2022\Community')">C:\Program Files\Microsoft Visual Studio\2022\Community\</VsInstallDir>
+    <VcTaskVersion Condition="'$(VcTaskVersion)' == ''">v170</VcTaskVersion>
+    <MSBuildBinDir>$(VsInstallDir)MSBuild\Current\Bin\</MSBuildBinDir>
+    <VcMSBuildDir>$(VsInstallDir)MSBuild\Microsoft\VC\$(VcTaskVersion)\</VcMSBuildDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Provided by the host MSBuild at runtime: never copy to output. -->
+    <Reference Include="Microsoft.Build.Framework">
+      <HintPath>$(MSBuildBinDir)Microsoft.Build.Framework.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Microsoft.Build.Utilities.Core">
+      <HintPath>$(MSBuildBinDir)Microsoft.Build.Utilities.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Microsoft.Build.CPPTasks.Common">
+      <HintPath>$(VcMSBuildDir)Microsoft.Build.CPPTasks.Common.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
