@@ -117,15 +117,20 @@ if (-not $SkipVsix) {
     foreach ($vs in $vsInstalls) {
         $vsixInstaller = Join-Path $vs 'Common7\IDE\VSIXInstaller.exe'
         if (-not (Test-Path $vsixInstaller)) { continue }
-        if ($Uninstall) {
-            Write-Host "uninstalling VSIX from $vs ..."
+        # Purge EVERY previously-installed copy (earlier runs could pile up several,
+        # which bloats VS and stops the new templates from being indexed). Repeat the
+        # uninstall until it reports nothing left to remove.
+        for ($i = 0; $i -lt 15; $i++) {
             & $vsixInstaller /quiet /uninstall:$vsixId 2>$null | Out-Null
-            continue
+            if ($LASTEXITCODE -ne 0) { break }   # non-zero = not installed any more
         }
-        # upgrade cleanly: remove any previously-installed version first
-        & $vsixInstaller /quiet /uninstall:$vsixId 2>$null | Out-Null
+        if ($Uninstall) { Write-Host "uninstalled VSIX from $vs"; continue }
         Write-Host "installing VSIX into $vs ..."
         & $vsixInstaller /quiet "$vsixOut"
+        # Force VS to rebuild its extension + project-template cache so the new
+        # templates appear without a manual reset.
+        $devenv = Join-Path $vs 'Common7\IDE\devenv.exe'
+        if (Test-Path $devenv) { & $devenv /updateconfiguration 2>$null | Out-Null }
     }
 }
 
