@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    RXDK-360 XDK unpacker.
+
+    Extracts an Xbox 360 XDK setup EXE (XDKSetupXenon<ver>.exe) fully. The setup
+    is a PE stub followed by a chain of concatenated standard Microsoft cabinets
+    (15 of them, ~6539 files); generic tools (7-Zip) only extract the first
+    cabinet. This walks the whole chain and decompresses every cabinet in-process
+    via the Windows FDI API (cabinet.dll), needing no external tools.
+
+    Build:  dotnet build -c Release
+    Use:    RxdkXdkUnpacker.exe <XDKSetupXenon.exe> <outDir>
+            -> extracts the XDK\ tree into <outDir>
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>RxdkXdkUnpacker</AssemblyName>
+    <RootNamespace>Rxdk.Xdk.Unpacker</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Platforms>x86</Platforms>
+    <PlatformTarget>x86</PlatformTarget>
+    <Deterministic>true</Deterministic>
+    <Company>Team Resurgent</Company>
+    <Product>RXDK-360</Product>
+  </PropertyGroup>
+
+</Project>
