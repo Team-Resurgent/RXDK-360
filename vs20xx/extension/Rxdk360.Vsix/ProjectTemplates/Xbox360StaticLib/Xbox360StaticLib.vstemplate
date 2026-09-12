@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<VSTemplate Version="3.0.0" Type="Project"
+            xmlns="http://schemas.microsoft.com/developer/vstemplate/2005">
+  <TemplateData>
+    <Name>Xbox 360 Static Library (RXDK-360)</Name>
+    <Description>An Xbox 360 static library (.lib) built with the stock XDK toolchain on modern Visual Studio.</Description>
+    <ProjectType>VC</ProjectType>
+    <SortOrder>1010</SortOrder>
+    <CreateNewFolder>true</CreateNewFolder>
+    <DefaultName>Xbox360Lib</DefaultName>
+    <ProvideDefaultName>true</ProvideDefaultName>
+    <LocationField>Enabled</LocationField>
+    <EnableLocationBrowseButton>true</EnableLocationBrowseButton>
+  </TemplateData>
+  <TemplateContent>
+    <Project TargetFileName="$projectname$.vcxproj" File="Xbox360StaticLib.vcxproj" ReplaceParameters="true">
+      <ProjectItem ReplaceParameters="true" TargetFileName="$projectname$.cpp">library.cpp</ProjectItem>
+    </Project>
+  </TemplateContent>
+</VSTemplate>

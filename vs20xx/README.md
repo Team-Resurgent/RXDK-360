@@ -16,9 +16,10 @@ custom toolchain (clang/lld/coff2elf) — it drives the XDK's own
 | `RXDK-360` MSBuild platform (v170/v180) loads in modern VS | ✅ |
 | **StaticLibrary** build (cl → lib) end to end | ✅ produces a PPCBE `.lib` |
 | **Application** build (cl → link → imagexex → `.xex`) | ✅ boots + runs in xenia |
-| VS project/item templates | ⏳ |
+| VS project templates ("Xbox 360 Title" / "Static Library") | ✅ built into a `.vsix` |
+| VSIX packaging (templates) | ✅ `extension/Rxdk360.Vsix` builds a `.vsix` |
 | Remote debugger (VSPackage) | ⏳ (deferred; separate native VSIX) |
-| VSIX bundling all of the above | ⏳ |
+| Single-installer bundle (VSIX + elevated platform install) | ⏳ |
 
 Verified end to end under `VS2022\MSBuild\Current\Bin\MSBuild.exe`, invoking the
 stock XDK PowerPC toolchain (`cl.exe` v16.00, `link.exe`, `lib.exe`,
@@ -85,7 +86,24 @@ every detected VS install's `MSBuild\Microsoft\VC\{v170,v180}\Platforms`.
 `-Uninstall` removes them.
 
 Then a project uses `<Platform>RXDK-360</Platform>` with
-`<PlatformToolset>2010-01</PlatformToolset>` (see `tests/hello`).
+`<PlatformToolset>2010-01</PlatformToolset>` (see `tests/hello`,
+`tests/apphello`).
+
+## IDE templates (VSIX)
+
+`extension/Rxdk360.Vsix` is a Visual Studio extension that adds two project
+templates to the New Project dialog: **Xbox 360 Title** (Application → `.xex`)
+and **Xbox 360 Static Library** (`.lib`), both on the `RXDK-360` platform.
+
+```powershell
+msbuild extension\Rxdk360.Vsix\Rxdk360.Vsix.csproj /restore /p:Configuration=Release
+# -> extension\Rxdk360.Vsix\bin\Release\Rxdk360.Vsix.vsix  (double-click to install)
+```
+
+The extension ships templates only — a VSIX cannot write into the VS install's
+`VC\<toolset>\Platforms`, so the `RXDK-360` platform + task assembly are still
+installed by the elevated `install.ps1`. A future single-installer bundle will
+run both steps.
 
 ## Layout
 
@@ -93,6 +111,8 @@ Then a project uses `<Platform>RXDK-360</Platform>` with
 vs20xx/
   Platforms/RXDK-360/        the ported MSBuild platform (source of truth)
   tasks/Rxdk.Xbox360.Build/  the rebuilt-from-source CL/Link/ImageXex/Deploy tasks
+  extension/Rxdk360.Vsix/    VS extension: "Xbox 360 Title"/"Static Library" templates
   tests/hello/               minimal StaticLibrary smoke test
-  install.ps1                build + install into detected VS installs
+  tests/apphello/            minimal Application -> bootable .xex
+  install.ps1                build + install the platform into detected VS installs
 ```

@@ -1,0 +1,12 @@
+RXDK-360 - Xbox 360 XDK for modern Visual Studio
+Copyright (C) Team Resurgent
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See the full text at https://www.gnu.org/licenses/gpl-3.0.html and in
+LICENSE.md at the root of the RXDK-360 repository.
+
+This extension ships project templates only. It bundles no Microsoft Xbox 360
+XDK content; the XDK toolchain, headers and libraries come from the user's own
+licensed XDK installation.
