@@ -58,8 +58,8 @@ Source: "{tmp}\XDKTemp\XDK\lib\*";     DestDir: "{app}\lib";     Flags: external
 Source: "{tmp}\XDKTemp\XDK\source\*";  DestDir: "{app}\source";  Flags: external recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "{tmp}\XDKTemp\XDK\doc\*";     DestDir: "{app}\doc";     Flags: external recursesubdirs createallsubdirs skipifsourcedoesntexist
 
-; --- bundled: 7za (for extraction) + the RXDK-360 VS integration (ours) ---
-Source: "Files\7za.exe"; Flags: dontcopy
+; --- bundled: the RXDK-360 XDK unpacker + the VS integration (ours) ---
+Source: "unpacker\bin\Release\net472\RxdkXdkUnpacker.exe"; Flags: dontcopy
 Source: "..\Platforms\*"; DestDir: "{app}\vsintegration\Platforms"; Flags: recursesubdirs createallsubdirs; Excludes: "*.dll"
 Source: "..\tasks\*";     DestDir: "{app}\vsintegration\tasks";     Flags: recursesubdirs createallsubdirs; Excludes: "\*\bin\*,\*\obj\*"
 Source: "..\extension\*"; DestDir: "{app}\vsintegration\extension"; Flags: recursesubdirs createallsubdirs; Excludes: "\*\bin\*,\*\obj\*"
@@ -130,13 +130,14 @@ begin
     ExtractPage.Show;
     try
       ExtractPage.Animate;
-      ExtractTemporaryFile('7za.exe');
+      ExtractTemporaryFile('RxdkXdkUnpacker.exe');
       tempDir := ExpandConstant('{tmp}\XDKTemp');
-      if not Exec(ExpandConstant('{tmp}\7za.exe'),
-                  'x "' + setupExe + '" -aoa -o"' + tempDir + '"',
-                  '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+      { our self-contained unpacker walks the setup's concatenated MS cabinets }
+      if not Exec(ExpandConstant('{tmp}\RxdkXdkUnpacker.exe'),
+                  '"' + setupExe + '" "' + tempDir + '"',
+                  '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
       begin
-        MsgBox('Failed to run the extractor.', mbError, MB_OK);
+        MsgBox('Failed to unpack the XDK setup.', mbError, MB_OK);
         Result := False;
       end
       else if not DirExists(tempDir + '\XDK\bin') then

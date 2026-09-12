@@ -18,9 +18,10 @@ acquires it at install time from the user's own XDK **setup EXE**.
 
 - **Source page** — point at your Xbox 360 XDK setup EXE (e.g.
   `XDKSetupXenon<version>.exe`).
-- **Extract + relocate → `{app}`** — a bundled `7za.exe` unpacks the setup EXE to
-  a temp dir (7-Zip reads it fine: the payload lands under an `XDK\` prefix), and
-  the `external` `[Files]` entries relocate `XDK\{bin,include,lib,source,doc}` to
+- **Extract + relocate → `{app}`** — the bundled `RxdkXdkUnpacker.exe` (see
+  `unpacker/`) unpacks the setup EXE to a temp dir (it walks the setup's chain of
+  concatenated MS cabinets; the payload lands under an `XDK\` prefix), and the
+  `external` `[Files]` entries relocate `XDK\{bin,include,lib,source,doc}` to
   `C:\Program Files\RXDK-360`. The tree is fully `%XEDK%`-relative, so it runs
   correctly from the new path.
 - **Side-by-side registration** — writes `HKLM\SOFTWARE\TeamResurgent\RXDK-360\InstallPath`
@@ -41,13 +42,15 @@ acquires it at install time from the user's own XDK **setup EXE**.
 ## Assets
 
 `Icon.ico`, `WizardImage.bmp`, `WizardSmallImage.bmp` (wizard art) and
-`Files/7za.exe` (the extractor) are bundled. `Uninstall.iss` carries the shared
-`IsUpgrade` / `UnInstallOldVersion` / `EnvironmentKey` helpers.
+are bundled. `Uninstall.iss` carries the shared `IsUpgrade` /
+`UnInstallOldVersion` / `EnvironmentKey` helpers. The extractor is our own
+`unpacker/RxdkXdkUnpacker.exe` (build it before compiling the installer).
 
 ## Notes
 
-- 7-Zip 24.x extracts the Xbox 360 XDK setup directly (the `MSCF` bytes mid-file
-  are a false positive; the real payload is a normal archive 7z reads).
+- The Xbox 360 XDK setup EXE is a PE stub + **15 concatenated standard MS
+  cabinets** (6539 files). Generic tools (7-Zip) extract only the first cabinet
+  (bin\win32); `RxdkXdkUnpacker` walks the whole chain via the Windows FDI API.
 - The VS integration ([Run] `install.ps1`) needs the .NET SDK and a VS 2022/2026
   install on the target. A future revision may bundle prebuilt task DLLs + VSIX
   to drop that build-time dependency.
