@@ -64,6 +64,16 @@ if (-not $SkipPlatform) {
     if (-not (Test-Path $src)) { throw "platform source not found: $src" }
     $taskProj = Join-Path $root 'tasks\Rxdk.Xbox360.Build\Rxdk.Xbox360.Build.csproj'
     $taskDll  = Join-Path $root 'tasks\Rxdk.Xbox360.Build\bin\Release\net472\Rxdk.Xbox360.Build.dll'
+    # The modern (clang) toolchain task assembly. Unlike the stock task it derives
+    # only from the version-stable MSBuild task base, so it is built ONCE (not per
+    # toolset) and shares the platform folder with the stock DLL.
+    $modernProj = Join-Path $root 'tasks\Rxdk.Xbox360.Modern.Build\Rxdk.Xbox360.Modern.Build.csproj'
+    $modernDll  = Join-Path $root 'tasks\Rxdk.Xbox360.Modern.Build\bin\Release\net472\Rxdk.Xbox360.Modern.Build.dll'
+    if (-not $Uninstall) {
+        Write-Host "building modern task assembly..."
+        & dotnet build $modernProj -c Release -v q
+        if ($LASTEXITCODE -ne 0) { throw "modern task assembly build failed" }
+    }
     foreach ($vs in $vsInstalls) {
         foreach ($ts in $ToolsetDirs) {
             $platRoot = Join-Path $vs "MSBuild\Microsoft\VC\$ts\Platforms"
@@ -82,7 +92,8 @@ if (-not $SkipPlatform) {
             New-Item -ItemType Directory -Force -Path $dst | Out-Null
             Copy-Item -Recurse -Force (Join-Path $src '*') $dst
             Copy-Item -Force $taskDll (Join-Path $dst 'Rxdk.Xbox360.Build.dll')
-            Write-Host "installed $dst  (task built vs $ts CPPTasks)"
+            if (Test-Path $modernDll) { Copy-Item -Force $modernDll (Join-Path $dst 'Rxdk.Xbox360.Modern.Build.dll') }
+            Write-Host "installed $dst  (stock task vs $ts CPPTasks; modern task shared)"
         }
     }
 }
