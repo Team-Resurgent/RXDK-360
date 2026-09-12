@@ -31,16 +31,59 @@ namespace Rxdk.Xdk.Unpacker
             return rc;
         }
 
+        // Populate the modern tree's XDK-derived parts from the (relocated) legacy
+        // XDK: its stock headers (for the XDK-headers compile mode) and its COFF
+        // import .libs (which genstubs reads for the console ordinals). This makes
+        // the modern toolchain self-contained - it never reaches into the legacy
+        // tree while building.
+        private static void StageModern(string legacyRoot, string modernRoot)
+        {
+            string srcInc = Path.Combine(legacyRoot, "include", "xbox");
+            if (Directory.Exists(srcInc))
+            {
+                string dstInc = Path.Combine(modernRoot, "include", "xbox");
+                CopyDir(srcInc, dstInc);
+                Report.Line("staged XDK headers -> {0}", dstInc);
+            }
+            string srcLib = Path.Combine(legacyRoot, "lib", "xbox");
+            if (Directory.Exists(srcLib))
+            {
+                string dstLib = Path.Combine(modernRoot, "lib");
+                Directory.CreateDirectory(dstLib);
+                int n = 0;
+                foreach (var f in Directory.GetFiles(srcLib, "*.lib"))
+                { File.Copy(f, Path.Combine(dstLib, Path.GetFileName(f)), true); n++; }
+                Report.Line("staged {0} XDK import libs -> {1}", n, dstLib);
+            }
+        }
+
+        private static void CopyDir(string src, string dst)
+        {
+            Directory.CreateDirectory(dst);
+            foreach (var d in Directory.GetDirectories(src, "*", SearchOption.AllDirectories))
+                Directory.CreateDirectory(d.Replace(src, dst));
+            foreach (var f in Directory.GetFiles(src, "*", SearchOption.AllDirectories))
+                File.Copy(f, f.Replace(src, dst), true);
+        }
+
         private static int Run(string[] args)
         {
             try
             {
-                // verbs: unpack <setup> <outDir> | install <setup> <installDir> | uninstall <installDir>
+                // verbs: unpack <setup> <outDir> | install <setup> <installDir>
+                //      | uninstall <installDir> | stagemodern <legacyRoot> <modernRoot>
                 if (args.Length >= 1 && args[0].Equals("uninstall", StringComparison.OrdinalIgnoreCase))
                 {
                     if (args.Length < 2) return Usage();
                     ManifestInstaller.Uninstall(Path.Combine(args[1], UndoLog));
                     Report.Line("uninstalled from " + args[1]);
+                    return 0;
+                }
+
+                if (args.Length >= 1 && args[0].Equals("stagemodern", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (args.Length < 3) return Usage();
+                    StageModern(args[1], args[2]);
                     return 0;
                 }
 

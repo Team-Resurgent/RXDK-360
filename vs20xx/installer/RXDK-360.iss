@@ -73,31 +73,40 @@ Source: "..\install.ps1"; DestDir: "{app}\vsintegration"
 Source: "..\README.md";   DestDir: "{app}\vsintegration"
 
 ; --- Modern (Clang/LLVM) toolchain payload -------------------------------------
-; Self-contained: our own Clang + ld.lld (only the two binaries we drive, plus
-; clang's resource headers - not the full 775MB LLVM bin), the modern C/C++
-; runtime archives and headers, XexTool, and xdvdfs. Laid out to mirror the dev
-; tree under {app}\modern so the clang Toolset.props defaults resolve unchanged.
+; Self-contained, clean {bin,lib,include} tree under {app}\modern: our Clang +
+; ld.lld (only the two binaries we drive + clang's resource headers, not the full
+; LLVM bin), XexTool, xdvdfs, the modern C/C++ runtime archives + headers. The XDK
+; stock headers (include\xbox) and import .libs (lib\*.lib for genstubs) are copied
+; in at install time from {app}\legacy by the unpacker's stagemodern step, so this
+; tree never reaches into the legacy XDK while building.
 ; Requires build/ to be populated (build the LLVM/runtime; drop xdvdfs in
 ; build\tools per build\tools\README.md) before compiling the installer.
-Source: "..\..\build\llvm\bin\clang.exe";   DestDir: "{app}\modern\build\llvm\bin"; Components: modern
-Source: "..\..\build\llvm\bin\ld.lld.exe";  DestDir: "{app}\modern\build\llvm\bin"; Components: modern
-Source: "..\..\build\llvm\lib\clang\*";     DestDir: "{app}\modern\build\llvm\lib\clang"; Flags: recursesubdirs createallsubdirs; Components: modern
-Source: "..\..\build\libc\*.a";             DestDir: "{app}\modern\build\libc"; Components: modern
-Source: "..\..\build\coff\*.a";             DestDir: "{app}\modern\build\coff"; Components: modern
-Source: "..\..\runtime\config\*";           DestDir: "{app}\modern\runtime\config"; Flags: recursesubdirs createallsubdirs; Components: modern
-Source: "..\..\vendor\picolibc\libc\include\*";            DestDir: "{app}\modern\vendor\picolibc\libc\include"; Flags: recursesubdirs createallsubdirs; Components: modern
-Source: "..\..\vendor\llvm-project\libcxx\include\*";      DestDir: "{app}\modern\vendor\llvm-project\libcxx\include"; Flags: recursesubdirs createallsubdirs; Components: modern
-Source: "..\..\vendor\llvm-project\libcxxabi\include\*";   DestDir: "{app}\modern\vendor\llvm-project\libcxxabi\include"; Flags: recursesubdirs createallsubdirs; Components: modern
-Source: "..\..\vendor\xextool\build\Release\XexTool.exe";  DestDir: "{app}\modern\tools"; Components: modern
-Source: "..\..\build\tools\xdvdfs.exe";     DestDir: "{app}\modern\tools"; Components: modern
+; bin\ - the tools the build drives
+Source: "..\..\build\llvm\bin\clang.exe";   DestDir: "{app}\modern\bin"; Components: modern
+Source: "..\..\build\llvm\bin\ld.lld.exe";  DestDir: "{app}\modern\bin"; Components: modern
+Source: "..\..\vendor\xextool\build\Release\XexTool.exe"; DestDir: "{app}\modern\bin"; Components: modern
+Source: "..\..\build\tools\xdvdfs.exe";     DestDir: "{app}\modern\bin"; Components: modern
+; lib\ - clang's resource dir (found relative to bin\..\lib\clang) + all archives
+Source: "..\..\build\llvm\lib\clang\*";     DestDir: "{app}\modern\lib\clang"; Flags: recursesubdirs createallsubdirs; Components: modern
+Source: "..\..\build\libc\*.a";             DestDir: "{app}\modern\lib"; Components: modern
+Source: "..\..\build\coff\*.a";             DestDir: "{app}\modern\lib"; Components: modern
+; include\ - the modern C/C++23 runtime headers (xbox\ is staged in at install time)
+Source: "..\..\runtime\config\*";           DestDir: "{app}\modern\include\config"; Flags: recursesubdirs createallsubdirs; Components: modern
+Source: "..\..\vendor\picolibc\libc\include\*";          DestDir: "{app}\modern\include\picolibc"; Flags: recursesubdirs createallsubdirs; Components: modern
+Source: "..\..\vendor\llvm-project\libcxx\include\*";    DestDir: "{app}\modern\include\libcxx"; Flags: recursesubdirs createallsubdirs; Components: modern
+Source: "..\..\vendor\llvm-project\libcxxabi\include\*"; DestDir: "{app}\modern\include\libcxxabi"; Flags: recursesubdirs createallsubdirs; Components: modern
 
 [Registry]
 ; RXDK-360's own SDK key (read first by the RXDK-360 platform's Toolset.props),
 ; kept separate from the stock HKLM\...\Xbox\2.0\SDK so the two SDKs coexist.
 Root: HKLM; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletekey
 Root: HKLM; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "Version";     ValueData: "{#AppVersion}"
+; The relocated XDK now lives under {app}\legacy; both toolsets read XdkPath for the
+; XDK headers/libs (the legacy toolset uses it directly; the modern toolset reads
+; the stock import libs for genstubs).
+Root: HKLM; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "XdkPath"; ValueData: "{app}\legacy"; Flags: uninsdeletevalue
 ; Modern toolchain root: the clang Toolset.props + Platform.targets resolve the
-; Clang/LLVM tools, runtime and xdvdfs from here (see ModernPath / tools\xdvdfs.exe).
+; Clang/LLVM tools, runtime, libs and xdvdfs from here (see ModernPath, bin\xdvdfs.exe).
 Root: HKLM; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "ModernPath"; ValueData: "{app}\modern"; Components: modern; Flags: uninsdeletevalue
 
 [Icons]
@@ -117,7 +126,7 @@ Filename: "powershell.exe"; \
 
 [UninstallRun]
 ; Reverse the manifest install (files, registry, shortcuts, shell ext) first...
-Filename: "{app}\tools\RxdkXdkUnpacker.exe"; Parameters: "uninstall ""{app}"""; \
+Filename: "{app}\tools\RxdkXdkUnpacker.exe"; Parameters: "uninstall ""{app}\legacy"""; \
   Flags: waituntilterminated; RunOnceId: "RxdkXdkUninstall"
 ; ...then remove the VS integration.
 Filename: "powershell.exe"; \
@@ -182,7 +191,7 @@ var
   finished, started: Boolean;
 begin
   ProgressPage := CreateOutputProgressPage('Installing the Xbox 360 XDK',
-    'Unpacking your XDK and installing it, relocated to ' + ExpandConstant('{app}') + '.');
+    'Unpacking your XDK and installing it, relocated to ' + ExpandConstant('{app}\legacy') + '.');
   ProgressPage.Show;
   try
     ProgressPage.SetProgress(0, 100);
@@ -190,7 +199,7 @@ begin
     DeleteFile(progFile);
     ExtractTemporaryFile('RxdkXdkUnpacker.exe');
     started := Exec(ExpandConstant('{tmp}\RxdkXdkUnpacker.exe'),
-      'install --progress "' + progFile + '" "' + GetSetupExe('') + '" "' + ExpandConstant('{app}') + '"',
+      'install --progress "' + progFile + '" "' + GetSetupExe('') + '" "' + ExpandConstant('{app}\legacy') + '"',
       '', SW_HIDE, ewNoWait, code);
     if not started then
     begin
@@ -232,20 +241,30 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var code: Integer;
 begin
   if CurStep = ssInstall then
   begin
     { clean upgrade: remove a prior RXDK-360 before laying down the new one }
     if IsUpgrade('RXDK-360') then
       UnInstallOldVersion('RXDK-360');
-    { install the XDK (unpack + manifest) with a live progress page }
+    { install the XDK (unpack + manifest) into the legacy tree with a live progress page }
     DoManifestInstall();
   end
   else if CurStep = ssPostInstall then
   begin
-    { machine-wide RXDK360 env var (task 'envvar'); Uninstall removes it }
+    { self-contained modern tree: copy the XDK stock headers + import libs from the
+      legacy tree into the modern tree (its files are already laid down by now) }
+    if WizardIsComponentSelected('modern') then
+    begin
+      ExtractTemporaryFile('RxdkXdkUnpacker.exe');
+      Exec(ExpandConstant('{tmp}\RxdkXdkUnpacker.exe'),
+        'stagemodern "' + ExpandConstant('{app}\legacy') + '" "' + ExpandConstant('{app}\modern') + '"',
+        '', SW_HIDE, ewWaitUntilTerminated, code);
+    end;
+    { machine-wide RXDK360 env var -> the (relocated) XDK; Uninstall removes it }
     if WizardIsTaskSelected('envvar') then
-      RegWriteExpandStringValue(HKEY_LOCAL_MACHINE, EnvironmentKey, 'RXDK360', ExpandConstant('{app}'));
+      RegWriteExpandStringValue(HKEY_LOCAL_MACHINE, EnvironmentKey, 'RXDK360', ExpandConstant('{app}\legacy'));
   end;
 end;
 

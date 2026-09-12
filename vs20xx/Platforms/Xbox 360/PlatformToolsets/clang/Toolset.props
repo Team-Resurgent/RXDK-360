@@ -25,8 +25,8 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild; a bad edit here breaks
     <!-- The relocated, side-by-side XDK (import libs live under lib\xbox). Same
          resolution order as the stock 2010-01 toolset. -->
     <XDKInstallDir Condition="'$(XDKInstallDir)' == '' and '$(RXDK360)' != ''">$(RXDK360)</XDKInstallDir>
-    <XDKInstallDir Condition="'$(XDKInstallDir)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\TeamResurgent\RXDK-360@InstallPath)</XDKInstallDir>
-    <XDKInstallDir Condition="'$(XDKInstallDir)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\TeamResurgent\RXDK-360@InstallPath)</XDKInstallDir>
+    <XDKInstallDir Condition="'$(XDKInstallDir)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\TeamResurgent\RXDK-360@XdkPath)</XDKInstallDir>
+    <XDKInstallDir Condition="'$(XDKInstallDir)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\TeamResurgent\RXDK-360@XdkPath)</XDKInstallDir>
     <XDKInstallDir Condition="'$(XDKInstallDir)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Xbox\2.0\SDK@InstallPath)</XDKInstallDir>
     <XDKInstallDir Condition="'$(XDKInstallDir)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Microsoft\Xbox\2.0\SDK@InstallPath)</XDKInstallDir>
     <XDKInstallDir Condition="'$(XDKInstallDir)' != '' and !HasTrailingSlash('$(XDKInstallDir)')">$(XDKInstallDir)\</XDKInstallDir>

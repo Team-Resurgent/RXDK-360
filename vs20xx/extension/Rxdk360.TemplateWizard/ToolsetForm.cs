@@ -16,10 +16,11 @@ namespace Rxdk360.TemplateWizard
 
         public ToolsetForm()
         {
-            // Fixed layout, DPI-scaled: AutoScaleMode.Font resizes the controls with
-            // the font so nothing clips at 125/150/200% display scaling. (Explicit
-            // positions - an auto-sizing panel did not display reliably in the VS
-            // new-project host.)
+            // Auto-sizing controls (each grows to fit its text) so nothing clips -
+            // not the bold radio descenders, not the wrapped descriptions - at any
+            // display scaling. AutoScaleDimensions + Font mode scales the fixed
+            // positions with the DPI.
+            AutoScaleDimensions = new SizeF(7f, 15f);
             AutoScaleMode = AutoScaleMode.Font;
             Font = new Font("Segoe UI", 9f);
             Text = "RXDK-360 - choose the toolchain";
@@ -29,52 +30,46 @@ namespace Rxdk360.TemplateWizard
             MaximizeBox = false;
             ShowInTaskbar = false;
             ControlBox = false;                 // OK-only: the project is already being created
-            ClientSize = new Size(524, 268);
+            ClientSize = new Size(524, 276);
 
             var boldFont = new Font(Font, FontStyle.Bold);
 
-            var intro = new Label
+            // AutoSize measures text height as Font.Height, which can fall a pixel or
+            // two short of what bold glyph descenders (the 'g' in "clang") actually
+            // need, clipping them at the control's bottom edge. A couple pixels of
+            // bottom padding grows the control just enough to give descenders room.
+            Label Wrap(int x, int y, int w, string text, Color? color = null) => new Label
             {
-                Text = "How should this Xbox 360 title be built? Both toolchains install side by " +
-                       "side, so you can change it later in the project's Platform Toolset.",
-                Location = new Point(16, 14),
-                Size = new Size(492, 40),
+                Text = text,
+                AutoSize = true,
+                MaximumSize = new Size(w, 0),
+                Padding = new Padding(0, 0, 0, 2),
+                Location = new Point(x, y),
+                ForeColor = color ?? SystemColors.ControlText,
             };
-
-            _modern = new RadioButton
+            RadioButton Radio(int y, string text, bool chk) => new RadioButton
             {
-                Text = "Modern (clang / LLVM)",
-                Checked = true,
+                Text = text,
+                Checked = chk,
                 Font = boldFont,
-                Location = new Point(16, 62),
-                Size = new Size(492, 24),
-            };
-            var modernDesc = new Label
-            {
-                Text = "C/C++23 with the modern runtime (picolibc + libc++), packed by XexTool. " +
-                       "The productised RXDK-360 toolchain.",
-                ForeColor = SystemColors.GrayText,
-                Location = new Point(36, 88),
-                Size = new Size(476, 40),
+                AutoSize = true,
+                Padding = new Padding(0, 0, 0, 3),
+                Location = new Point(16, y),
             };
 
-            var legacy = new RadioButton
-            {
-                Text = "Legacy (stock Xbox 360 XDK)",
-                Font = boldFont,
-                Location = new Point(16, 136),
-                Size = new Size(492, 24),
-            };
-            var legacyDesc = new Label
-            {
-                Text = "The stock XDK cl.exe / link.exe / imagexex, exactly as the original SDK. " +
-                       "Use for existing XDK code and samples.",
-                ForeColor = SystemColors.GrayText,
-                Location = new Point(36, 162),
-                Size = new Size(476, 40),
-            };
+            var intro = Wrap(16, 14, 492,
+                "How should this Xbox 360 title be built? Both toolchains install side by side, " +
+                "so you can change it later in the project's Platform Toolset.");
+            _modern = Radio(64, "Modern (clang / LLVM)", true);
+            var modernDesc = Wrap(36, 92, 476,
+                "C/C++23 with the modern runtime (picolibc + libc++), packed by XexTool. " +
+                "The productised RXDK-360 toolchain.", SystemColors.GrayText);
+            var legacy = Radio(146, "Legacy (stock Xbox 360 XDK)", false);
+            var legacyDesc = Wrap(36, 174, 476,
+                "The stock XDK cl.exe / link.exe / imagexex, exactly as the original SDK. " +
+                "Use for existing XDK code and samples.", SystemColors.GrayText);
 
-            var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(412, 216), Size = new Size(96, 34) };
+            var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(412, 228), Size = new Size(96, 34) };
 
             Controls.AddRange(new Control[] { intro, _modern, modernDesc, legacy, legacyDesc, ok });
             AcceptButton = ok;
