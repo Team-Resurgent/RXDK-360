@@ -51,6 +51,19 @@
     <Content Include="LICENSE.txt">
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
+    <!-- The project-template wizard: build it first (build-order only, no compile
+         reference), then ship its DLL in the VSIX root so the WizardExtension binds. -->
+    <Content Include="..\Rxdk360.TemplateWizard\bin\$(Configuration)\net472\Rxdk360.TemplateWizard.dll">
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <Link>Rxdk360.TemplateWizard.dll</Link>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Rxdk360.TemplateWizard\Rxdk360.TemplateWizard.csproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
+      <Private>false</Private>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <VSTemplate Include="ProjectTemplates\Xbox360Empty\Xbox360Empty.vstemplate">

@@ -20,4 +20,8 @@
       <ProjectItem ReplaceParameters="true" TargetFileName="main.cpp">main.cpp</ProjectItem>
     </Project>
   </TemplateContent>
+  <WizardExtension>
+    <Assembly>Rxdk360.TemplateWizard, Version=1.0.0.0, Culture=neutral, PublicKeyToken=8470474b053a39ff</Assembly>
+    <FullClassName>Rxdk360.TemplateWizard.ToolsetWizard</FullClassName>
+  </WizardExtension>
 </VSTemplate>
