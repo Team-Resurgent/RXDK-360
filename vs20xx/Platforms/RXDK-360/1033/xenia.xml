@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  RXDK-360 "Xenia Emulator" property page.
+
+  Lets a project run the built .xex in the Xenia emulator on F5 / Ctrl+F5. When a
+  Xenia executable path is set, the platform overrides the debugger launch to the
+  built-in Local Windows Debugger pointed at Xenia with the title as its argument
+  (see Platform.targets). This works for BOTH toolsets (stock 2010-01 and modern
+  clang) - the produced XEX is the same - and is currently the only working F5
+  target (the Xbox 360 remote debugger is not yet wired up).
+-->
+<Rule Name="RxdkXenia" PageTemplate="generic" DisplayName="Xenia Emulator"
+      Order="90"
+      xmlns="http://schemas.microsoft.com/build/2009/properties"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+  <Rule.Categories>
+    <Category Name="General" DisplayName="General" />
+  </Rule.Categories>
+
+  <Rule.DataSource>
+    <!-- Project file, all configurations: the emulator path is a per-project
+         setting, not per Debug/Release. -->
+    <DataSource Persistence="ProjectFile" Label="" HasConfigurationCondition="false" />
+  </Rule.DataSource>
+
+  <StringProperty Name="RxdkXeniaPath" DisplayName="Xenia Executable"
+                  Category="General" Subtype="file"
+                  Description="Full path to the Xenia executable (including the .exe), e.g. D:\xenia\xenia_canary.exe. When set, F5 / Ctrl+F5 launches this title's XEX in Xenia.">
+    <StringProperty.ValueEditors>
+      <ValueEditor EditorType="DefaultStringPropertyEditor" DisplayName="&lt;Edit...&gt;" />
+      <ValueEditor EditorType="DefaultFilePropertyEditor" DisplayName="&lt;Browse...&gt;" />
+    </StringProperty.ValueEditors>
+  </StringProperty>
+
+  <StringProperty Name="RxdkXeniaArgs" DisplayName="Additional Xenia Arguments"
+                  Category="General"
+                  Description="Extra command-line arguments passed to Xenia after the XEX path (e.g. --license_mask=-1)." />
+
+  <BoolProperty Name="RxdkXeniaHeadless" DisplayName="Run Headless"
+                Category="General"
+                Description="Pass --headless=true so Xenia runs without its window (useful for smoke tests / capturing the log). Default: off, so the emulator window is shown." />
+</Rule>
