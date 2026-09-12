@@ -21,14 +21,15 @@ namespace Rxdk360.TemplateWizard
                                Dictionary<string, string> replacementsDictionary,
                                WizardRunKind runKind, object[] customParams)
         {
-            // Default to modern; a wizard failure must never block project creation.
+            // OK-only chooser (the project is already being created). Default to
+            // modern; a wizard failure must never block project creation.
             string toolset = "clang";
             try
             {
                 using (var dlg = new ToolsetForm())
                 {
-                    if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                        toolset = dlg.UseModern ? "clang" : "2010-01";
+                    dlg.ShowDialog();
+                    toolset = dlg.UseModern ? "clang" : "2010-01";
                 }
             }
             catch { /* keep the default */ }

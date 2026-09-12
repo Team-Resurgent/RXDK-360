@@ -16,10 +16,11 @@ namespace Rxdk360.TemplateWizard
 
         public ToolsetForm()
         {
-            // Fixed layout, sized generously so text does not clip. (An auto-sizing
-            // layout was tried but did not display reliably inside the VS new-project
-            // host, so this stays with explicit, roomy positions.)
-            AutoScaleMode = AutoScaleMode.None;
+            // Fixed layout, DPI-scaled: AutoScaleMode.Font resizes the controls with
+            // the font so nothing clips at 125/150/200% display scaling. (Explicit
+            // positions - an auto-sizing panel did not display reliably in the VS
+            // new-project host.)
+            AutoScaleMode = AutoScaleMode.Font;
             Font = new Font("Segoe UI", 9f);
             Text = "RXDK-360 - choose the toolchain";
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -27,7 +28,8 @@ namespace Rxdk360.TemplateWizard
             MinimizeBox = false;
             MaximizeBox = false;
             ShowInTaskbar = false;
-            ClientSize = new Size(524, 286);
+            ControlBox = false;                 // OK-only: the project is already being created
+            ClientSize = new Size(524, 268);
 
             var boldFont = new Font(Font, FontStyle.Bold);
 
@@ -53,14 +55,14 @@ namespace Rxdk360.TemplateWizard
                        "The productised RXDK-360 toolchain.",
                 ForeColor = SystemColors.GrayText,
                 Location = new Point(36, 88),
-                Size = new Size(472, 38),
+                Size = new Size(476, 40),
             };
 
             var legacy = new RadioButton
             {
                 Text = "Legacy (stock Xbox 360 XDK)",
                 Font = boldFont,
-                Location = new Point(16, 134),
+                Location = new Point(16, 136),
                 Size = new Size(492, 24),
             };
             var legacyDesc = new Label
@@ -68,16 +70,14 @@ namespace Rxdk360.TemplateWizard
                 Text = "The stock XDK cl.exe / link.exe / imagexex, exactly as the original SDK. " +
                        "Use for existing XDK code and samples.",
                 ForeColor = SystemColors.GrayText,
-                Location = new Point(36, 160),
-                Size = new Size(472, 38),
+                Location = new Point(36, 162),
+                Size = new Size(476, 40),
             };
 
-            var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(346, 244), Size = new Size(80, 28) };
-            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Location = new Point(432, 244), Size = new Size(80, 28) };
+            var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(412, 216), Size = new Size(96, 34) };
 
-            Controls.AddRange(new Control[] { intro, _modern, modernDesc, legacy, legacyDesc, ok, cancel });
+            Controls.AddRange(new Control[] { intro, _modern, modernDesc, legacy, legacyDesc, ok });
             AcceptButton = ok;
-            CancelButton = cancel;
         }
     }
 }
