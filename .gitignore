@@ -21,5 +21,10 @@ build-log*.txt
 *.exe
 .xdkdoc/
 
+# The unpacked XDK payload (proprietary Microsoft headers/libs/media the user
+# extracts locally) -- never committed. Only xdksetup/README.md is tracked.
+/xdksetup/*
+!/xdksetup/README.md
+
 # real hand-written asm sources (the *.s rule above is for generated files)
 !runtime/xbox/*.S
