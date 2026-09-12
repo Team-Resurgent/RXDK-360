@@ -81,7 +81,16 @@ namespace Rxdk.Xbox360.Modern.Build
                         foreach (var d in PreprocessorDefinitions)
                             if (!string.IsNullOrWhiteSpace(d)) pre.Add("-D" + d.Trim());
                     if (!string.IsNullOrWhiteSpace(AdditionalOptions))
-                        pre.AddRange(SplitOptions(AdditionalOptions));
+                        foreach (var opt in SplitOptions(AdditionalOptions))
+                        {
+                            // Drop MSVC-style (/...) options: this is a gcc-style clang
+                            // toolset, and the stock platform props inject cl.exe defaults
+                            // (e.g. the /FI IntelliSense forced-include) that clang rejects.
+                            if (opt.StartsWith("/"))
+                                Log.LogMessage(MessageImportance.Low, "  (ignoring MSVC-style option " + opt + ")");
+                            else
+                                pre.Add(opt);
+                        }
                     args.InsertRange(1, pre);   // after "--target=..."
                 }
 

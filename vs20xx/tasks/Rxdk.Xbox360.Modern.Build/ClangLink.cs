@@ -196,7 +196,12 @@ namespace Rxdk.Xbox360.Modern.Build
             if (string.IsNullOrWhiteSpace(AdditionalOptions)) return outv;
             foreach (var f in AdditionalOptions.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
             {
-                if (f.StartsWith("-Wl,"))
+                // Drop MSVC-style (/...) linker options: this toolset drives ld.lld,
+                // and the stock platform props inject link.exe defaults (e.g. /XEX:NO)
+                // that ld.lld does not understand.
+                if (f.StartsWith("/"))
+                    Log.LogMessage(MessageImportance.Low, "  (ignoring MSVC-style linker option " + f + ")");
+                else if (f.StartsWith("-Wl,"))
                     outv.AddRange(f.Substring(4).Split(','));
                 else
                     outv.Add(f);

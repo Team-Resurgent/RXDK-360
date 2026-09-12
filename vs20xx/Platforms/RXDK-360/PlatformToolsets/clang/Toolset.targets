@@ -1,0 +1,104 @@
+<!--
+***********************************************************************************************
+RXDK-360 "clang" platform toolset - build targets.
+
+Imported at the END of Platform.targets (after the stock ClCompile/Link/ImageXex
+targets are defined), so these definitions OVERRIDE them: an RXDK-360 project set
+to <PlatformToolset>clang</PlatformToolset> builds with the modern (clang/LLVM)
+toolchain instead of the stock XDK cl.exe/link.exe/imagexex.
+
+  ClCompile - patched MS-PPC clang, one object per source into $(IntDir).
+  Link      - discover kernel imports (ld.lld trial link) -> XexTool genstubs ->
+              assemble stubs -> final link -> XexTool pack, straight to the .xex.
+              (ImageXex is therefore a no-op for this toolset - packing already
+              happened in Link.)
+  Lib       - not yet supported for the modern toolchain (no archiver shipped);
+              use a stock-toolset (2010-01) StaticLibrary, or link sources directly.
+
+WARNING:  DO NOT MODIFY unless you understand MSBuild.
+***********************************************************************************************
+-->
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\ImportBefore\*.clang.targets" Condition="Exists('$(VCTargetsPath)\Platforms\RXDK-360\ImportBefore')" />
+
+  <UsingTask TaskName="Rxdk.Xbox360.Modern.Build.ClangCompile" AssemblyFile="$(MSBuildThisFileDirectory)..\..\Rxdk.Xbox360.Modern.Build.dll"/>
+  <UsingTask TaskName="Rxdk.Xbox360.Modern.Build.ClangLink"    AssemblyFile="$(MSBuildThisFileDirectory)..\..\Rxdk.Xbox360.Modern.Build.dll"/>
+
+  <PropertyGroup>
+    <!-- Where the modern link stage writes its scratch (.ld/.elf/stubs), kept out
+         of $(IntDir) so the object glob below sees only compiled sources. -->
+    <RxdkModernLinkDir Condition="'$(RxdkModernLinkDir)' == ''">$(IntDir)link\</RxdkModernLinkDir>
+    <!-- Comma/semicolon list of extra libraries (bare name -> coff archive). The
+         modern runtime (libc.a/libcpp.a/xapilib.a) is auto-linked unless opted out. -->
+    <RxdkModernLibs Condition="'$(RxdkModernLibs)' == ''"></RxdkModernLibs>
+    <RxdkModernNoDefaultLibs Condition="'$(RxdkModernNoDefaultLibs)' == ''">false</RxdkModernNoDefaultLibs>
+  </PropertyGroup>
+
+  <!-- ***** ClCompile ***** -->
+  <Target Name="ClCompile"
+          Condition="'@(ClCompile)' != ''"
+          DependsOnTargets="SelectClCompile">
+    <!-- Project-level include dirs / defines / options, taken as the union across
+         the ClCompile items (VS sets these identically per configuration). -->
+    <PropertyGroup>
+      <_RxdkInc>@(ClCompile->'%(AdditionalIncludeDirectories)'->Distinct())</_RxdkInc>
+      <_RxdkDef>@(ClCompile->'%(PreprocessorDefinitions)'->Distinct())</_RxdkDef>
+      <_RxdkOpt>@(ClCompile->'%(AdditionalOptions)'->Distinct())</_RxdkOpt>
+    </PropertyGroup>
+
+    <ClangCompile
+        ClangPath="$(RxdkClangPath)"
+        RxdkRoot="$(RxdkModernRoot)"
+        OutputDir="$(IntDir)"
+        Sources="@(ClCompile)"
+        AdditionalIncludeDirectories="$(_RxdkInc)"
+        PreprocessorDefinitions="$(_RxdkDef)"
+        AdditionalOptions="$(_RxdkOpt)" />
+  </Target>
+
+  <!-- ***** Link (compile discovery + pack straight to .xex) ***** -->
+  <Target Name="Link"
+          Condition="'@(Link)' != '' and ('$(ConfigurationType)' == 'Application' or '$(ConfigurationType)' == 'DynamicLibrary')"
+          DependsOnTargets="ComputeLinkSwitches">
+    <PropertyGroup>
+      <_ModernXex>@(ImageXex->'%(ImageXexOutput)')</_ModernXex>
+      <_ModernXex Condition="'$(_ModernXex)' == ''">$(OutDir)$(TargetName).xex</_ModernXex>
+      <_ModernBase>@(ImageXex->'%(BaseAddress)')</_ModernBase>
+      <_ModernBase Condition="'$(_ModernBase)' == ''">0x82000000</_ModernBase>
+    </PropertyGroup>
+    <ItemGroup>
+      <_ModernObj Include="$(IntDir)*.o" />
+    </ItemGroup>
+
+    <ClangLink
+        ClangPath="$(RxdkClangPath)"
+        LldPath="$(RxdkLldPath)"
+        XexToolPath="$(RxdkXexToolPath)"
+        Objects="@(_ModernObj)"
+        OutputFile="$(_ModernXex)"
+        IntDir="$(RxdkModernLinkDir)"
+        XdkLibDir="$(RxdkXdkLibDir)"
+        CoffDir="$(RxdkCoffDir)"
+        LibcDir="$(RxdkLibcDir)"
+        BaseAddress="$(_ModernBase)"
+        Libraries="$(RxdkModernLibs)"
+        NoDefaultLibs="$(RxdkModernNoDefaultLibs)"
+        AdditionalOptions="%(Link.AdditionalOptions)" />
+
+    <Message Text="$(MSBuildProjectFile) -&gt; $(_ModernXex)" Importance="High" />
+  </Target>
+
+  <!-- ***** ImageXex ***** : packing already happened in Link. -->
+  <Target Name="ImageXex"
+          AfterTargets="Link"
+          Condition="'@(ImageXex)' != '' and ('$(ConfigurationType)' == 'Application' or '$(ConfigurationType)' == 'DynamicLibrary')">
+    <Message Text="ImageXex: skipped (the clang toolset packs the XEX during Link)." Importance="Low" />
+  </Target>
+
+  <!-- ***** Lib ***** : no modern archiver shipped yet. -->
+  <Target Name="Lib" Condition="'@(Lib)' != ''">
+    <Error Text="RXDK-360 clang toolset: StaticLibrary is not yet supported by the modern toolchain. Use the 2010-01 (stock XDK) toolset for a static library, or link the sources directly into the title." />
+  </Target>
+
+  <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\ImportAfter\*.clang.targets" Condition="Exists('$(VCTargetsPath)\Platforms\RXDK-360\ImportAfter')" />
+</Project>

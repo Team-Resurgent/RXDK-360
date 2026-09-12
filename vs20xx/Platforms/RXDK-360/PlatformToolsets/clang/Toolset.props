@@ -1,0 +1,60 @@
+<!--
+***********************************************************************************************
+RXDK-360 "clang" platform toolset - properties.
+
+The MODERN toolchain: titles are built with the patched MS-PPC clang + LLVM lld
+and packed by XexTool, instead of the stock XDK cl.exe/link.exe/imagexex. Selected
+per project with <PlatformToolset>clang</PlatformToolset> under <Platform>RXDK-360.
+
+This file resolves the two roots the modern build needs:
+  * XDKInstallDir  - the (relocated, side-by-side) XDK, for its import libraries
+                     (lib\xbox), the same resolution the stock toolset uses; and
+  * RxdkModernRoot - the modern toolchain payload (clang/lld/XexTool + the C/C++
+                     runtime archives and headers). Every tool/dir below derives
+                     from it and is individually overridable, so the dev tree and
+                     an installed layout differ only in these property values.
+
+WARNING:  DO NOT MODIFY unless you understand MSBuild; a bad edit here breaks
+          loading/building RXDK-360 projects.
+***********************************************************************************************
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\ImportBefore\*.clang.props" Condition="Exists('$(VCTargetsPath)\Platforms\RXDK-360\ImportBefore')" />
+
+  <PropertyGroup>
+    <!-- The relocated, side-by-side XDK (import libs live under lib\xbox). Same
+         resolution order as the stock 2010-01 toolset. -->
+    <XDKInstallDir Condition="'$(XDKInstallDir)' == '' and '$(RXDK360)' != ''">$(RXDK360)</XDKInstallDir>
+    <XDKInstallDir Condition="'$(XDKInstallDir)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\TeamResurgent\RXDK-360@InstallPath)</XDKInstallDir>
+    <XDKInstallDir Condition="'$(XDKInstallDir)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\TeamResurgent\RXDK-360@InstallPath)</XDKInstallDir>
+    <XDKInstallDir Condition="'$(XDKInstallDir)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Xbox\2.0\SDK@InstallPath)</XDKInstallDir>
+    <XDKInstallDir Condition="'$(XDKInstallDir)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Microsoft\Xbox\2.0\SDK@InstallPath)</XDKInstallDir>
+    <XDKInstallDir Condition="'$(XDKInstallDir)' != '' and !HasTrailingSlash('$(XDKInstallDir)')">$(XDKInstallDir)\</XDKInstallDir>
+
+    <!-- The modern toolchain payload root. Env RXDK360_MODERN wins (dev tree);
+         then RXDK-360's own registry ModernPath; else the XDK install root. -->
+    <RxdkModernRoot Condition="'$(RxdkModernRoot)' == '' and '$(RXDK360_MODERN)' != ''">$(RXDK360_MODERN)</RxdkModernRoot>
+    <RxdkModernRoot Condition="'$(RxdkModernRoot)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\TeamResurgent\RXDK-360@ModernPath)</RxdkModernRoot>
+    <RxdkModernRoot Condition="'$(RxdkModernRoot)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\TeamResurgent\RXDK-360@ModernPath)</RxdkModernRoot>
+    <RxdkModernRoot Condition="'$(RxdkModernRoot)' == ''">$(XDKInstallDir)</RxdkModernRoot>
+    <RxdkModernRoot Condition="'$(RxdkModernRoot)' != '' and HasTrailingSlash('$(RxdkModernRoot)')">$(RxdkModernRoot.TrimEnd('\'))</RxdkModernRoot>
+
+    <!-- The tools and directories the modern build drives. Each is overridable;
+         the defaults mirror the dev tree's layout under RxdkModernRoot. -->
+    <RxdkClangPath   Condition="'$(RxdkClangPath)'   == ''">$(RxdkModernRoot)\build\llvm\bin\clang.exe</RxdkClangPath>
+    <RxdkLldPath     Condition="'$(RxdkLldPath)'     == ''">$(RxdkModernRoot)\build\llvm\bin\ld.lld.exe</RxdkLldPath>
+    <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == ''">$(RxdkModernRoot)\vendor\xextool\build\Release\XexTool.exe</RxdkXexToolPath>
+    <RxdkCoffDir     Condition="'$(RxdkCoffDir)'     == ''">$(RxdkModernRoot)\build\coff</RxdkCoffDir>
+    <RxdkLibcDir     Condition="'$(RxdkLibcDir)'     == ''">$(RxdkModernRoot)\build\libc</RxdkLibcDir>
+    <RxdkXdkLibDir   Condition="'$(RxdkXdkLibDir)'   == ''">$(XDKInstallDir)lib\xbox</RxdkXdkLibDir>
+
+    <!-- IntelliSense: point the C++ language service at the modern runtime headers
+         so the editor resolves the STL / picolibc surface a title compiles against.
+         (The build itself gets these via the ClangCompile task's auto flags.) -->
+    <IncludePath Condition="'$(IncludePath)' == ''">$(RxdkModernRoot)\vendor\llvm-project\libcxx\include;$(RxdkModernRoot)\vendor\llvm-project\libcxxabi\include;$(RxdkModernRoot)\runtime\config;$(RxdkModernRoot)\vendor\picolibc\libc\include;$(XDKInstallDir)include\xbox;</IncludePath>
+    <LibraryPath Condition="'$(LibraryPath)' == ''">$(RxdkLibcDir);$(RxdkCoffDir);$(XDKInstallDir)lib\xbox;</LibraryPath>
+    <ExecutablePath Condition="'$(ExecutablePath)' == ''">$(RxdkModernRoot)\build\llvm\bin;$(PATH);</ExecutablePath>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Platforms\RXDK-360\ImportAfter\*.clang.props" Condition="Exists('$(VCTargetsPath)\Platforms\RXDK-360\ImportAfter')" />
+</Project>
