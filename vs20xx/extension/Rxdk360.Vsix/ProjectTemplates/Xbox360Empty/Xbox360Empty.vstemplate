@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<VSTemplate Version="3.0.0" Type="Project"
+            xmlns="http://schemas.microsoft.com/developer/vstemplate/2005">
+  <TemplateData>
+    <Name>Xbox 360 Empty Project (RXDK-360)</Name>
+    <Description>An empty Xbox 360 title - just a main() to add your own code to. Builds a bootable .xex with the stock XDK on modern Visual Studio.</Description>
+    <ProjectType>VC</ProjectType>
+    <LanguageTag>C++</LanguageTag>
+    <PlatformTag>Xbox 360</PlatformTag>
+    <ProjectTypeTag>Games</ProjectTypeTag>
+    <SortOrder>990</SortOrder>
+    <CreateNewFolder>true</CreateNewFolder>
+    <DefaultName>Xbox360App</DefaultName>
+    <ProvideDefaultName>true</ProvideDefaultName>
+    <LocationField>Enabled</LocationField>
+    <EnableLocationBrowseButton>true</EnableLocationBrowseButton>
+  </TemplateData>
+  <TemplateContent>
+    <Project TargetFileName="$projectname$.vcxproj" File="Xbox360Empty.vcxproj" ReplaceParameters="true">
+      <ProjectItem ReplaceParameters="true" TargetFileName="main.cpp">main.cpp</ProjectItem>
+    </Project>
+  </TemplateContent>
+</VSTemplate>

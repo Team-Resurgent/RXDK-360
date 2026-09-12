@@ -4,7 +4,7 @@
                  xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
     <Identity Id="Rxdk360.Vsix.add38e43-cc73-4417-9c4b-e2d43131ab14"
-              Version="0.1.1" Language="en-US" Publisher="Team Resurgent" />
+              Version="0.1.2" Language="en-US" Publisher="Team Resurgent" />
     <DisplayName>RXDK-360 - Xbox 360 XDK for modern Visual Studio</DisplayName>
     <Description xml:space="preserve">Build Xbox 360 titles with the stock Xbox 360 XDK toolchain on modern Visual Studio. Adds "Xbox 360 Title" and "Xbox 360 Static Library" project templates for the RXDK-360 platform. The RXDK-360 MSBuild platform and task assembly are installed separately (elevated) by install.ps1.</Description>
     <MoreInfo>https://github.com/Team-Resurgent/RXDK-360</MoreInfo>

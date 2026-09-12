@@ -53,6 +53,12 @@
     </Content>
   </ItemGroup>
   <ItemGroup>
+    <VSTemplate Include="ProjectTemplates\Xbox360Empty\Xbox360Empty.vstemplate">
+      <OutputSubPath>Xbox360Empty</OutputSubPath>
+    </VSTemplate>
+    <VSTemplate Include="ProjectTemplates\Xbox360Game\Xbox360Game.vstemplate">
+      <OutputSubPath>Xbox360Game</OutputSubPath>
+    </VSTemplate>
     <VSTemplate Include="ProjectTemplates\Xbox360Title\Xbox360Title.vstemplate">
       <OutputSubPath>Xbox360Title</OutputSubPath>
     </VSTemplate>
