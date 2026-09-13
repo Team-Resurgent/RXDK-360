@@ -19,10 +19,10 @@
     <Project TargetFileName="$projectname$.vcxproj" File="Xbox360Game.vcxproj" ReplaceParameters="true">
       <ProjectItem ReplaceParameters="true" TargetFileName="main.cpp">main.cpp</ProjectItem>
       <Folder Name="shaders" TargetFolderName="shaders">
-        <ProjectItem ReplaceParameters="false" TargetFileName="tri_vs.h">shaders\tri_vs.h</ProjectItem>
-        <ProjectItem ReplaceParameters="false" TargetFileName="tri_ps.h">shaders\tri_ps.h</ProjectItem>
-        <ProjectItem ReplaceParameters="false" TargetFileName="tri_vs.hlsl">shaders\tri_vs.hlsl</ProjectItem>
-        <ProjectItem ReplaceParameters="false" TargetFileName="tri_ps.hlsl">shaders\tri_ps.hlsl</ProjectItem>
+        <ProjectItem ReplaceParameters="false" TargetFileName="tri_vs.h">tri_vs.h</ProjectItem>
+        <ProjectItem ReplaceParameters="false" TargetFileName="tri_ps.h">tri_ps.h</ProjectItem>
+        <ProjectItem ReplaceParameters="false" TargetFileName="tri_vs.hlsl">tri_vs.hlsl</ProjectItem>
+        <ProjectItem ReplaceParameters="false" TargetFileName="tri_ps.hlsl">tri_ps.hlsl</ProjectItem>
       </Folder>
     </Project>
   </TemplateContent>
