@@ -21,8 +21,13 @@
     <CharacterSet>Unicode</CharacterSet>
     <!-- Modern (clang) toolset: this template uses the XDK Direct3D 9 API, so
          compile against the stock XDK headers and link the translated D3D9
-         libraries. The legacy (2010-01) toolset ignores these and uses the XDK's
-         own headers/libs. -->
+         libraries. Both configurations use the retail (fast) D3D runtime: the
+         stock _DEBUG D3D runtime pulls in xapilibd/xbdm/PIX debug-support libs,
+         and the modern toolchain replaces xapilib with its own runtime, so it
+         cannot satisfy that chain. Debug keeps -O0 + DWARF for source stepping;
+         it simply does not define _DEBUG (see the Debug ItemDefinitionGroup). The
+         legacy (2010-01) toolset ignores these and picks its libs from the
+         #pragma comment(lib) directives in main.cpp instead. -->
     <RxdkModernXdkHeaders>true</RxdkModernXdkHeaders>
     <RxdkModernLibs>d3d9;d3dx9;xgraphics</RxdkModernLibs>
   </PropertyGroup>
@@ -30,7 +35,14 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- _DEBUG is intentionally NOT defined: it selects the stock debug D3D
+           runtime (d3d9d + xapilibd/xbdm/PIX), which the modern toolchain cannot
+           link. The legacy toolset's cl.exe auto-defines _DEBUG from the debug
+           runtime library, so we pin the retail runtime here too - keeping both
+           toolchains on the fast D3D runtime. Debug still gets full symbols
+           (DWARF) and no optimization, so you can breakpoint and step your code. -->
+      <PreprocessorDefinitions>%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
@@ -41,6 +53,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="shaders\tri_vs.h" />
+    <ClInclude Include="shaders\tri_ps.h" />
+    <None Include="shaders\tri_vs.hlsl" />
+    <None Include="shaders\tri_ps.hlsl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
