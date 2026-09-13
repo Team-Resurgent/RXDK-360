@@ -40,6 +40,9 @@ namespace Rxdk.Xbox360.Modern.Build
 
         public string MsTriple { get; set; } = "powerpc-unknown-xbox360";
         public string Optimization { get; set; } = "-O2";
+        /// <summary>Link-time optimisation (Release_LTCG): compile to LLVM bitcode with
+        /// -flto so ld.lld optimises across the whole program at link time.</summary>
+        public bool Lto { get; set; }
         /// <summary>Emit DWARF debug info (Debug configs), for source-level debugging.</summary>
         public bool DebugInformation { get; set; }
 
@@ -95,6 +98,7 @@ namespace Rxdk.Xbox360.Modern.Build
                     // Insert compile flags before the -c (matching mktitle's ordering).
                     var pre = new List<string> { Optimization, "-std=" + (isCpp ? LanguageStandardCpp : LanguageStandardC) };
                     if (DebugInformation) pre.Add("-gdwarf-4");
+                    if (Lto) pre.Add("-flto");
                     pre.AddRange(XdkHeaders ? XdkHeaderFlags() : AutoClangFlags(isCpp));
                     if (AdditionalIncludeDirectories != null)
                         foreach (var inc in AdditionalIncludeDirectories)

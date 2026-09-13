@@ -1,62 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- The project configurations, the per-configuration <PropertyGroup Label=
+       "Configuration"> blocks, and the per-configuration <ItemDefinitionGroup>
+       blocks are emitted by the RXDK-360 template wizard (ToolsetWizard) based on
+       the chosen toolchain: the Legacy (stock XDK) toolset gets the full official
+       config set (Debug/CodeAnalysis/Profile/Profile_FastCap/Release/Release_LTCG)
+       with the matching per-config XDK lib variants; the Modern (clang) toolset
+       gets Debug/Release/Release_LTCG (retail libs; Release_LTCG uses clang/lld
+       LTO). See ToolsetWizard.cs. -->
   <ItemGroup Label="ProjectConfigurations">
-    <ProjectConfiguration Include="Debug|Xbox 360">
-      <Configuration>Debug</Configuration>
-      <Platform>Xbox 360</Platform>
-    </ProjectConfiguration>
-    <ProjectConfiguration Include="Release|Xbox 360">
-      <Configuration>Release</Configuration>
-      <Platform>Xbox 360</Platform>
-    </ProjectConfiguration>
+$rxdkprojectconfigurations$
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{$guid1$}</ProjectGuid>
     <RootNamespace>$safeprojectname$</RootNamespace>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-  <PropertyGroup Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset>$rxdktoolset$</PlatformToolset>
-    <CharacterSet>Unicode</CharacterSet>
-    <!-- This template uses the XDK Direct3D 9 API, so compile against the stock XDK
-         headers. The libraries are listed in the standard Linker -> Input ->
-         Additional Dependencies field below (just like an official title) and both
-         toolsets read them from there: the legacy (2010-01) toolset links them with
-         link.exe, and the modern (clang) toolset maps each .lib to its translated
-         archive (xboxkrnl is resolved as a XEX import via genstubs; the C/C++ runtime
-         is implicit, like libcmt). Both configurations use the retail (fast) D3D
-         runtime - the stock _DEBUG runtime pulls in xapilibd/xbdm/PIX, which the
-         modern toolchain cannot satisfy - so Debug does not define _DEBUG; it still
-         gets -O0 + DWARF for source stepping (see the Debug ItemDefinitionGroup). -->
-    <RxdkModernXdkHeaders>true</RxdkModernXdkHeaders>
-  </PropertyGroup>
+$rxdkconfigurationgroups$
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
-  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
-    <ClCompile>
-      <Optimization>Disabled</Optimization>
-      <!-- _DEBUG is intentionally NOT defined: it selects the stock debug D3D
-           runtime (d3d9d + xapilibd/xbdm/PIX), which the modern toolchain cannot
-           link. The legacy toolset's cl.exe auto-defines _DEBUG from the debug
-           runtime library, so we pin the retail runtime here too - keeping both
-           toolchains on the fast D3D runtime. Debug still gets full symbols
-           (DWARF) and no optimization, so you can breakpoint and step your code. -->
-      <PreprocessorDefinitions>%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-    </ClCompile>
-    <Link>
-      <AdditionalDependencies>xboxkrnl.lib;xapilib.lib;d3d9.lib;d3dx9.lib;xgraphics.lib;%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
-    <ClCompile>
-      <Optimization>MaxSpeed</Optimization>
-      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-    <Link>
-      <AdditionalDependencies>xboxkrnl.lib;xapilib.lib;d3d9.lib;d3dx9.lib;xgraphics.lib;%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
-  </ItemDefinitionGroup>
+$rxdkitemdefinitiongroups$
   <ItemGroup>
     <ClCompile Include="main.cpp" />
   </ItemGroup>

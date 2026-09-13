@@ -74,6 +74,7 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
         Optimization="$(RxdkModernOpt)"
         LanguageStandardCpp="$(RxdkModernCppStd)"
         DebugInformation="$(RxdkModernDebug)"
+        Lto="$(RxdkModernLto)"
         XdkHeaders="$(RxdkModernXdkHeaders)"
         XdkIncludeDirectories="$(RxdkXdkIncludeDir)"
         AdditionalIncludeDirectories="$(_RxdkInc)"
