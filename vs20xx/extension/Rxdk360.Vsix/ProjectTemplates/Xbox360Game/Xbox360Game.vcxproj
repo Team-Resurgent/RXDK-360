@@ -19,17 +19,17 @@
     <ConfigurationType>Application</ConfigurationType>
     <PlatformToolset>$rxdktoolset$</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
-    <!-- Modern (clang) toolset: this template uses the XDK Direct3D 9 API, so
-         compile against the stock XDK headers and link the translated D3D9
-         libraries. Both configurations use the retail (fast) D3D runtime: the
-         stock _DEBUG D3D runtime pulls in xapilibd/xbdm/PIX debug-support libs,
-         and the modern toolchain replaces xapilib with its own runtime, so it
-         cannot satisfy that chain. Debug keeps -O0 + DWARF for source stepping;
-         it simply does not define _DEBUG (see the Debug ItemDefinitionGroup). The
-         legacy (2010-01) toolset ignores these and picks its libs from the
-         #pragma comment(lib) directives in main.cpp instead. -->
+    <!-- This template uses the XDK Direct3D 9 API, so compile against the stock XDK
+         headers. The libraries are listed in the standard Linker -> Input ->
+         Additional Dependencies field below (just like an official title) and both
+         toolsets read them from there: the legacy (2010-01) toolset links them with
+         link.exe, and the modern (clang) toolset maps each .lib to its translated
+         archive (xboxkrnl is resolved as a XEX import via genstubs; the C/C++ runtime
+         is implicit, like libcmt). Both configurations use the retail (fast) D3D
+         runtime - the stock _DEBUG runtime pulls in xapilibd/xbdm/PIX, which the
+         modern toolchain cannot satisfy - so Debug does not define _DEBUG; it still
+         gets -O0 + DWARF for source stepping (see the Debug ItemDefinitionGroup). -->
     <RxdkModernXdkHeaders>true</RxdkModernXdkHeaders>
-    <RxdkModernLibs>d3d9;d3dx9;xgraphics</RxdkModernLibs>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
@@ -44,12 +44,18 @@
       <PreprocessorDefinitions>%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>xboxkrnl.lib;xapilib.lib;d3d9.lib;d3dx9.lib;xgraphics.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>xboxkrnl.lib;xapilib.lib;d3d9.lib;d3dx9.lib;xgraphics.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />

@@ -45,6 +45,11 @@ namespace Rxdk.Xbox360.Modern.Build
 
         /// <summary>Extra libraries: bare name -&gt; CoffDir\name.a, or a full path/.a.</summary>
         public string[] Libraries { get; set; }
+        /// <summary>The project's standard Linker -&gt; Input -&gt; Additional Dependencies
+        /// (e.g. "xboxkrnl.lib;xapilib.lib;d3d9.lib;..."), mirroring an official title.
+        /// Each ".lib" is mapped to the modern toolchain's equivalent - see
+        /// ResolveLibraries.</summary>
+        public string[] AdditionalDependencies { get; set; }
         /// <summary>Do not auto-link the modern runtime (libc.a, libcpp.a, xapilib.a).</summary>
         public bool NoDefaultLibs { get; set; }
 
@@ -172,24 +177,70 @@ namespace Rxdk.Xbox360.Modern.Build
             return Run(LldPath, args);
         }
 
+        // XEX-import modules: on the 360 a title imports these from separate modules
+        // (the kernel, xam.xex, and - dev only - xbdm.xex) via its XEX import table,
+        // NOT by linking their code. Their symbols are left undefined so the trial
+        // link discovers them and XexTool genstubs synthesises the imports (recorded
+        // in the import manifest that 'pack --import-manifest' writes into the XEX).
+        // Their .a's in the lib dir are tiny import stubs; linking one directly would
+        // both duplicate the genstubs and leave the XEX with no declared import, so a
+        // listed xboxkrnl.lib/xam.lib/xbdm.lib is skipped here on purpose.
+        private static readonly HashSet<string> XexImportModules =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "xboxkrnl", "xam", "xbdm" };
+
+        /// <summary>
+        /// Resolve the archives to link. Two sources, treated the same: Libraries
+        /// (the RxdkModernLibs bare-name list) and AdditionalDependencies (the
+        /// project's standard Linker Input field, mirroring an official title). Each
+        /// entry maps like this:
+        ///   * a full path or a *.a           -> taken as-is
+        ///   * the CRT (libc/libcmt/libcpp..) -> the modern runtime archive
+        ///   * an XEX-import module (xboxkrnl/xam/xbdm) -> skipped (genstubs handles it)
+        ///   * anything else                  -> CoffDir\name.a (our translated code;
+        ///                                       --gc-sections drops what the title
+        ///                                       does not use, so over-listing is safe)
+        /// The C/C++ runtime is linked implicitly, like libcmt in an official project.
+        /// </summary>
         private List<string> ResolveLibraries()
         {
             var user = new List<string>();
-            if (Libraries != null)
-                foreach (var spec in Libraries)
-                    foreach (var n in spec.Split(','))
-                    {
-                        var name = n.Trim();
-                        if (name.Length == 0) continue;
-                        if (name.IndexOf(Path.DirectorySeparatorChar) >= 0 || name.EndsWith(".a") || Path.IsPathRooted(name))
-                            user.Add(name);
-                        else
-                            user.Add(Path.Combine(CoffDir ?? "", name + ".a"));
-                    }
 
-            // User libs first, runtime after - matching the official link order
-            // (title libs, then CRT). libcpp.a is always included: libc.a itself
-            // references the C++ runtime, and the two are linked as a group.
+            void AddSpec(string spec)
+            {
+                foreach (var n in spec.Split(',', ';'))
+                {
+                    var name = n.Trim();
+                    if (name.Length == 0) continue;
+                    // A full path or an explicit .a is taken verbatim.
+                    if (name.IndexOf(Path.DirectorySeparatorChar) >= 0 || Path.IsPathRooted(name) ||
+                        name.EndsWith(".a", StringComparison.OrdinalIgnoreCase))
+                    { user.Add(name); continue; }
+                    // Strip a trailing .lib (the Additional Dependencies form).
+                    if (name.EndsWith(".lib", StringComparison.OrdinalIgnoreCase))
+                        name = name.Substring(0, name.Length - 4);
+                    if (name.Length == 0) continue;
+                    var lower = name.ToLowerInvariant();
+                    // CRT aliases (retail + debug spellings) -> the modern runtime.
+                    if (lower == "libc" || lower == "libcmt" || lower == "libcmtd" || lower == "msvcrt")
+                    { if (!string.IsNullOrEmpty(LibcDir)) user.Add(Path.Combine(LibcDir, "libc.a")); continue; }
+                    if (lower == "libcpp" || lower == "libc++" || lower == "libcpmt" || lower == "libcpmtd")
+                    { if (!string.IsNullOrEmpty(LibcDir)) user.Add(Path.Combine(LibcDir, "libcpp.a")); continue; }
+                    if (lower == "xapilib" || lower == "xapilibd")
+                    { if (!string.IsNullOrEmpty(CoffDir)) user.Add(Path.Combine(CoffDir, "xapilib.a")); continue; }
+                    // XEX-import modules are resolved by genstubs, not linked.
+                    if (XexImportModules.Contains(lower)) continue;
+                    // Everything else is a translated static library.
+                    user.Add(Path.Combine(CoffDir ?? "", name + ".a"));
+                }
+            }
+
+            if (Libraries != null) foreach (var spec in Libraries) AddSpec(spec);
+            if (AdditionalDependencies != null) foreach (var spec in AdditionalDependencies) AddSpec(spec);
+
+            // The modern CRT is implicit (like libcmt): title libs first, runtime after.
+            // libcpp.a is always included - libc.a references the C++ runtime and the
+            // two are linked as a group. Kept even when the project lists its libs, and
+            // de-duped below so an explicit xapilib.lib does not double-link.
             if (!NoDefaultLibs)
             {
                 if (!string.IsNullOrEmpty(LibcDir))
@@ -200,7 +251,19 @@ namespace Rxdk.Xbox360.Modern.Build
                 if (!string.IsNullOrEmpty(CoffDir))
                     user.Add(Path.Combine(CoffDir, "xapilib.a"));
             }
-            return user;
+
+            // De-dupe by normalised full path, keeping first occurrence. Link order
+            // within the archive set does not matter: LinkElf wraps them in
+            // --start-group/--end-group.
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var result = new List<string>();
+            foreach (var l in user)
+            {
+                string key;
+                try { key = Path.GetFullPath(l); } catch { key = l; }
+                if (seen.Add(key)) result.Add(l);
+            }
+            return result;
         }
 
         // Unwrap a caller-supplied -Wl,a,b into raw linker arguments (the old zig

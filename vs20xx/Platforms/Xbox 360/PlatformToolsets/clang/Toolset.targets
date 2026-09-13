@@ -90,6 +90,10 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
       <_ModernXex Condition="'$(_ModernXex)' == ''">$(OutDir)$(TargetName).xex</_ModernXex>
       <_ModernBase>@(ImageXex->'%(BaseAddress)')</_ModernBase>
       <_ModernBase Condition="'$(_ModernBase)' == ''">0x82000000</_ModernBase>
+      <!-- The standard Linker -> Input -> Additional Dependencies field, mirroring an
+           official title. The task maps each .lib to the modern equivalent (code
+           archive / CRT / XEX-import-via-genstubs). Same across the Link items. -->
+      <_ModernLinkDeps>@(Link->'%(AdditionalDependencies)'->Distinct())</_ModernLinkDeps>
     </PropertyGroup>
     <ItemGroup>
       <_ModernObj Include="$(IntDir)*.o" />
@@ -107,6 +111,7 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
         LibcDir="$(RxdkLibcDir)"
         BaseAddress="$(_ModernBase)"
         Libraries="$(RxdkModernLibs)"
+        AdditionalDependencies="$(_ModernLinkDeps)"
         NoDefaultLibs="$(RxdkModernNoDefaultLibs)"
         KeepElf="$(RxdkModernDebug)"
         AdditionalOptions="%(Link.AdditionalOptions)" />

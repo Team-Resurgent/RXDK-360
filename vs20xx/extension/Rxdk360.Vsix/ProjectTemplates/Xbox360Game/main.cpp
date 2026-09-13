@@ -5,8 +5,9 @@
 // (clang/LLVM) or Legacy (stock XDK). Run it in Xenia (Ctrl+F5) or deploy to a
 // devkit.
 #include <xtl.h>
-#pragma comment(lib, "d3d9.lib")
-#pragma comment(lib, "d3dx9.lib")
+// Libraries are listed in the project's Linker -> Input -> Additional Dependencies
+// (d3d9.lib / d3dx9.lib / xgraphics.lib / ...), the same place an official title
+// lists them, so both toolsets pick them up from there - no #pragma comment(lib).
 
 // The Xbox 360 GPU has no fixed-function pipeline, so even a triangle needs a
 // vertex + pixel shader. These are precompiled offline with the XDK's fxc.exe
