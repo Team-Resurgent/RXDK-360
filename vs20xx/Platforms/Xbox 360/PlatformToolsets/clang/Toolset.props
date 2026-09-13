@@ -79,11 +79,61 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild; a bad edit here breaks
     <RxdkXdkLibDir Condition="'$(RxdkXdkLibDir)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\lib</RxdkXdkLibDir>
     <RxdkXdkLibDir Condition="'$(RxdkXdkLibDir)' == ''">$(XDKInstallDir)lib\xbox</RxdkXdkLibDir>
 
-    <!-- IntelliSense: point the C++ language service at the same header set. -->
+    <!-- IntelliSense include search order (this is IntelliSense-only: the
+         ClangCompile task builds its own -I list from the Rxdk*Inc properties and
+         ignores $(IncludePath)).
+
+         XDK-headers mode: the stock XDK headers #include <math.h>/<stdlib.h> at file
+         scope (e.g. d3dx9.h), and the IntelliSense parser runs in MSVC mode (no
+         __clang__ predefined). libc++'s C wrappers open 'namespace std {' through
+         macros that DON'T balance under that parser - so if libc++ is searched first
+         for <math.h>, everything the XDK header declares afterwards (D3DXMATRIX, the
+         D3DXMatrix* functions, ...) is parsed into std::__1 and reads as "undefined"
+         at global scope. Put the plain C headers (picolibc/config) and the XDK
+         headers AHEAD of libc++ so the C includes resolve to real C headers; libc++
+         stays on the path (last) so <vector>/<string>/... still resolve for std::.
+
+         Pure-modern mode (no XDK headers): keep libc++ first, the normal layering. -->
+    <IncludePath Condition="'$(IncludePath)' == '' and '$(RxdkModernXdkHeaders)' == 'true'">$(RxdkConfigInc);$(RxdkPicolibcInc);$(RxdkXdkIncludeDir);$(RxdkLibcxxInc);$(RxdkLibcxxabiInc);</IncludePath>
     <IncludePath Condition="'$(IncludePath)' == ''">$(RxdkLibcxxInc);$(RxdkLibcxxabiInc);$(RxdkConfigInc);$(RxdkPicolibcInc);$(RxdkXdkIncludeDir);</IncludePath>
     <LibraryPath Condition="'$(LibraryPath)' == ''">$(RxdkLibcDir);$(RxdkCoffDir);</LibraryPath>
     <ExecutablePath Condition="'$(ExecutablePath)' == ''">$([System.IO.Path]::GetDirectoryName('$(RxdkClangPath)'));$(PATH);</ExecutablePath>
   </PropertyGroup>
+
+  <!-- IntelliSense parity with the real compile. The C++ language service never
+       runs the ClangCompile task, so it only sees $(IncludePath) plus the ClCompile
+       item metadata below - it does NOT see the -include files and -D defines the
+       task puts on the actual clang command line. Give it the same ones here (the
+       task builds its own command line, so these are inert for the real build):
+
+         * Force-include the libc++ site config + prereqs. Without __config_site,
+           libc++'s <__config> never establishes _LIBCPP_ABI_NAMESPACE, so its
+           'namespace std {' opens unbalanced and swallows every *global* XDK
+           declaration (D3DX*, ...) into std::__1 - which is why calls at file
+           scope light up as E0020 "identifier undefined" while the build is clean.
+         * Define _GNU_SOURCE/__Picolibc__ so the libc headers match, and (XDK-
+           headers mode) the Win32/Xbox gates + _XM_NO_INTRINSICS_ so xnamath/
+           xboxmath parse in scalar mode instead of tripping on __vector4 VMX128
+           intrinsics the IntelliSense parser doesn't know.
+
+       These files resolve on $(IncludePath) (all three live in the config dir).
+       This mirrors AutoClangFlags()/XdkHeaderFlags() in ClangCompile.cs - keep the
+       two in sync. -->
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <ForcedIncludeFiles>__config_site;rxdk_libcpp_prereq.h;picolibc.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <PreprocessorDefinitions>__Picolibc__;_GNU_SOURCE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(RxdkModernXdkHeaders)' == 'true'">
+    <ClCompile>
+      <!-- _M_PPC / _M_PPCBE / _XBOX_VER / __VMX128_SUPPORTED are supplied for
+           IntelliSense by the stock xbox_intellisense_platform.h shim (force-included
+           via Microsoft.Cl.Xbox 360.props under __INTELLISENSE__); don't redefine
+           them here or they clash. These are the remaining gates the shim omits. -->
+      <PreprocessorDefinitions>_WIN32=1;_XBOX=1;__export=;_SIZE_T_DEFINED;_XM_NO_INTRINSICS_;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
 
   <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter\*.clang.props" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter')" />
 </Project>
