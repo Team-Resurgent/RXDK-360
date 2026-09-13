@@ -98,6 +98,10 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild; a bad edit here breaks
     <IncludePath Condition="'$(IncludePath)' == ''">$(RxdkLibcxxInc);$(RxdkLibcxxabiInc);$(RxdkConfigInc);$(RxdkPicolibcInc);$(RxdkXdkIncludeDir);</IncludePath>
     <LibraryPath Condition="'$(LibraryPath)' == ''">$(RxdkLibcDir);$(RxdkCoffDir);</LibraryPath>
     <ExecutablePath Condition="'$(ExecutablePath)' == ''">$([System.IO.Path]::GetDirectoryName('$(RxdkClangPath)'));$(PATH);</ExecutablePath>
+    <!-- Surfaced read-only on the General property page (general.xml ->
+         RxdkToolchainDisplay) so it is obvious at a glance which toolchain a
+         project builds with. The legacy 2010-01 toolset sets "Legacy (stock XDK)". -->
+    <RxdkToolchain Condition="'$(RxdkToolchain)' == ''">Modern (clang/LLVM)</RxdkToolchain>
   </PropertyGroup>
 
   <!-- IntelliSense parity with the real compile. The C++ language service never

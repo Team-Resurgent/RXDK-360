@@ -28,6 +28,17 @@
     <DataSource Persistence="ProjectFile" Label="Configuration">
     </DataSource>
   </Rule.DataSource>
+  <StringProperty Name="RxdkToolchainDisplay" Category="General" ReadOnly="true" Default="$(RxdkToolchain)" F1Keyword="VC.Project.VCConfiguration.RxdkToolchain">
+    <StringProperty.DisplayName>
+      <sys:String>RXDK-360 Toolchain</sys:String>
+    </StringProperty.DisplayName>
+    <StringProperty.Description>
+      <sys:String>The RXDK-360 build toolchain this configuration uses - Modern (clang/LLVM) or Legacy (stock XDK) - determined by the Platform Toolset. Read-only.</sys:String>
+    </StringProperty.Description>
+    <StringProperty.DataSource>
+      <DataSource Persistence="ProjectFile" HasConfigurationCondition="false" />
+    </StringProperty.DataSource>
+  </StringProperty>
   <StringProperty Name="OutDir" Category="General" Default="$(ProjectDir)$(Configuration)\" Subtype="folder" F1Keyword="VC.Project.VCConfiguration.OutputDirectory">
     <StringProperty.DisplayName>
       <sys:String>Output Directory</sys:String>

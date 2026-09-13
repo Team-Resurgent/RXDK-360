@@ -49,6 +49,10 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <SourcePath Condition="'$(SourcePath)' == ''">$(XDKInstallDir)\source\crt;$(XDKInstallDir)\source\crt\sys;$(VCInstallDir)atlmfc\src\mfc;$(VCInstallDir)atlmfc\src\mfcm;$(VCInstallDir)atlmfc\src\atl;</SourcePath>
     <ExcludePath Condition="'$(ExcludePath)' == ''">$(XDKInstallDir)\include\xbox;$(XDKInstallDir)\include\xbox\sys;$(XDKInstallDir)\include\xbox\codeanalysis;$(VCInstallDir)include;$(VCInstallDir)atlmfc\include;$(WindowsSdkDir)\include;$(FrameworkSDKDir)include;$(MSBuildToolsPath);$(VCInstallDir)atlmfc\lib;$(VCInstallDir)lib;</ExcludePath>
     <NativeExecutablePath Condition="'$(NativeExecutablePath)' == ''">$(ExecutablePath)</NativeExecutablePath>
+    <!-- Surfaced read-only on the General property page (general.xml ->
+         RxdkToolchainDisplay) so it is obvious at a glance which toolchain a
+         project builds with. The modern clang toolset sets "Modern (clang/LLVM)". -->
+    <RxdkToolchain Condition="'$(RxdkToolchain)' == ''">Legacy (stock XDK)</RxdkToolchain>
   </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter\*.2010-01.props" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter')" />
