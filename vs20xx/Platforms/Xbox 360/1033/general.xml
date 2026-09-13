@@ -28,7 +28,7 @@
     <DataSource Persistence="ProjectFile" Label="Configuration">
     </DataSource>
   </Rule.DataSource>
-  <StringProperty Name="RxdkToolchainDisplay" Category="General" ReadOnly="true" Default="$(RxdkToolchain)" F1Keyword="VC.Project.VCConfiguration.RxdkToolchain">
+  <StringProperty Name="RxdkToolchain" Category="General" ReadOnly="true" F1Keyword="VC.Project.VCConfiguration.RxdkToolchain">
     <StringProperty.DisplayName>
       <sys:String>RXDK-360 Toolchain</sys:String>
     </StringProperty.DisplayName>
