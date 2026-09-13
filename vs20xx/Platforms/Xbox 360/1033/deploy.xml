@@ -187,7 +187,7 @@
     Subtype="file"
     Description="Full path to the Xenia executable (including the .exe), e.g. D:\xenia\xenia_canary.exe. When set, F5 / Ctrl+F5 launches this title in Xenia.">
     <StringProperty.DataSource>
-      <DataSource Persistence="ProjectFile" HasConfigurationCondition="false"/>
+      <DataSource Persistence="ProjectFile" HasConfigurationCondition="true"/>
     </StringProperty.DataSource>
     <StringProperty.ValueEditors>
       <ValueEditor EditorType="DefaultStringPropertyEditor" DisplayName="&lt;Edit...&gt;"/>
@@ -201,7 +201,7 @@
     Category="Xenia"
     Description="Extra command-line arguments passed to Xenia after the title (e.g. --license_mask=-1).">
     <StringProperty.DataSource>
-      <DataSource Persistence="ProjectFile" HasConfigurationCondition="false"/>
+      <DataSource Persistence="ProjectFile" HasConfigurationCondition="true"/>
     </StringProperty.DataSource>
   </StringProperty>
 
@@ -211,7 +211,7 @@
     Category="Xenia"
     Description="Pass --headless=true so Xenia runs without its window (useful for smoke tests / capturing the log).">
     <BoolProperty.DataSource>
-      <DataSource Persistence="ProjectFile" HasConfigurationCondition="false"/>
+      <DataSource Persistence="ProjectFile" HasConfigurationCondition="true"/>
     </BoolProperty.DataSource>
   </BoolProperty>
 
@@ -221,7 +221,7 @@
     Category="Xenia"
     Description="Build an Xbox 360 disc image (XISO/GDFX) from the title (as default.xex) plus the content folder, and boot THAT in Xenia instead of the bare XEX. Use when the title expects a disc layout (game:\ media).">
     <BoolProperty.DataSource>
-      <DataSource Persistence="ProjectFile" HasConfigurationCondition="false"/>
+      <DataSource Persistence="ProjectFile" HasConfigurationCondition="true"/>
     </BoolProperty.DataSource>
   </BoolProperty>
 
@@ -232,7 +232,7 @@
     Subtype="folder"
     Description="Optional folder whose contents are laid into the disc root alongside default.xex (your media / game-data). Only used when 'Launch as Disc Image' is set.">
     <StringProperty.DataSource>
-      <DataSource Persistence="ProjectFile" HasConfigurationCondition="false"/>
+      <DataSource Persistence="ProjectFile" HasConfigurationCondition="true"/>
     </StringProperty.DataSource>
     <StringProperty.ValueEditors>
       <ValueEditor EditorType="DefaultStringPropertyEditor" DisplayName="&lt;Edit...&gt;"/>
@@ -247,7 +247,7 @@
     Subtype="file"
     Description="Path to xdvdfs (Team-Resurgent/XDVDFS-TR) used to pack the disc image. Defaults to the bundled modern-toolchain copy.">
     <StringProperty.DataSource>
-      <DataSource Persistence="ProjectFile" HasConfigurationCondition="false"/>
+      <DataSource Persistence="ProjectFile" HasConfigurationCondition="true"/>
     </StringProperty.DataSource>
     <StringProperty.ValueEditors>
       <ValueEditor EditorType="DefaultStringPropertyEditor" DisplayName="&lt;Edit...&gt;"/>

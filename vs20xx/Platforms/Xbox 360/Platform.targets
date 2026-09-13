@@ -123,7 +123,12 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <LocalDebuggerCommand>$(RxdkXeniaPath)</LocalDebuggerCommand>
     <LocalDebuggerCommandArguments>"$(_RxdkXeniaImage)"$(_RxdkXeniaHeadless) $(RxdkXeniaArgs)</LocalDebuggerCommandArguments>
     <LocalDebuggerWorkingDirectory Condition="'$(RxdkXeniaPath)' != ''">$([System.IO.Path]::GetDirectoryName('$(RxdkXeniaPath)'))</LocalDebuggerWorkingDirectory>
-    <DebuggerType Condition="'$(DebuggerType)' == ''">NativeOnly</DebuggerType>
+    <!-- The WindowsLocalDebugger rule's engine selector is LocalDebuggerDebuggerType
+         (not DebuggerType). Force NativeOnly so VS launches xenia straight instead
+         of running "Auto" engine detection against the emulator + the PPC XEX, which
+         can wedge F5. (Ctrl+F5 / Start Without Debugging launches xenia with no host
+         debugger attached at all - the recommended way to just run the title.) -->
+    <LocalDebuggerDebuggerType Condition="'$(LocalDebuggerDebuggerType)' == ''">NativeOnly</LocalDebuggerDebuggerType>
   </PropertyGroup>
 
 
