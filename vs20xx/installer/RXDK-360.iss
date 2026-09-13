@@ -99,15 +99,24 @@ Source: "..\..\vendor\llvm-project\libcxxabi\include\*"; DestDir: "{app}\modern\
 [Registry]
 ; RXDK-360's own SDK key (read first by the RXDK-360 platform's Toolset.props),
 ; kept separate from the stock HKLM\...\Xbox\2.0\SDK so the two SDKs coexist.
-Root: HKLM; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletekey
-Root: HKLM; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "Version";     ValueData: "{#AppVersion}"
+; IMPORTANT: written to BOTH the 32-bit (HKLM32 = WOW6432Node) and 64-bit views.
+; MSBuild's $(Registry:...) intrinsic - how the Toolset.props read these - resolves
+; through the 32-bit view, so a 64-bit-only write (plain HKLM in 64-bit setup) is
+; invisible to the build and the modern toolchain silently falls back to the stock
+; XDK. HKLM32 is the one the toolset actually needs; HKLM64 is for native readers.
+Root: HKLM32; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletekey
+Root: HKLM64; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletekey
+Root: HKLM32; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "Version";     ValueData: "{#AppVersion}"
+Root: HKLM64; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "Version";     ValueData: "{#AppVersion}"
 ; The relocated XDK now lives under {app}\legacy; both toolsets read XdkPath for the
 ; XDK headers/libs (the legacy toolset uses it directly; the modern toolset reads
 ; the stock import libs for genstubs).
-Root: HKLM; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "XdkPath"; ValueData: "{app}\legacy"; Flags: uninsdeletevalue
+Root: HKLM32; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "XdkPath"; ValueData: "{app}\legacy"; Flags: uninsdeletevalue
+Root: HKLM64; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "XdkPath"; ValueData: "{app}\legacy"; Flags: uninsdeletevalue
 ; Modern toolchain root: the clang Toolset.props + Platform.targets resolve the
 ; Clang/LLVM tools, runtime, libs and xdvdfs from here (see ModernPath, bin\xdvdfs.exe).
-Root: HKLM; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "ModernPath"; ValueData: "{app}\modern"; Components: modern; Flags: uninsdeletevalue
+Root: HKLM32; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "ModernPath"; ValueData: "{app}\modern"; Components: modern; Flags: uninsdeletevalue
+Root: HKLM64; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "ModernPath"; ValueData: "{app}\modern"; Components: modern; Flags: uninsdeletevalue
 
 [Icons]
 ; The XDK's own Start-menu shortcuts are created (under the RXDK-360 group) by
