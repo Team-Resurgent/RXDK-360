@@ -1,5 +1,6 @@
 [Code]
 const EnvironmentKey = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
+  RxdkVsixId = 'Rxdk360.Vsix.add38e43-cc73-4417-9c4b-e2d43131ab14';
 
 function GetUninstallString(appId: String): String;
 var

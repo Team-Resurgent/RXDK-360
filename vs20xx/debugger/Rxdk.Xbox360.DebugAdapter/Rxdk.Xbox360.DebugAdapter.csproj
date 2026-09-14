@@ -3,13 +3,14 @@
   <!--
     RXDK-360 devkit debug adapter (Debug Adapter Protocol).
 
-    Glues the symbol reader (Rxdk.Xbox360.Dwarf) and the devkit transport
+    Glues the symbol readers (Rxdk.Xbox360.Dwarf, Rxdk.Xbox360.Pdb) and the
+    devkit transport
     (Rxdk.Xbox360.Xbdm) into an editor-facing DAP server, so F5-to-devkit steps
     source: reboot the title stopped, set breakpoints at source lines, and on a
     break map the PC to source and read locals from the stopped frame. Windows-only
-    (drives xbdm.dll through the XBDM client).
+    (drives %XEDK%\bin\win32\xbdm.dll through the XBDM client; x86 host).
 
-    Build with dotnet build; run RxdkDebugAdapter with the selftest flag and an elf
+    Build with dotnet build; run Rxdk.Xbox360.DebugAdapter with the selftest flag and an elf
     for the offline symbol-glue check.
   -->
 
@@ -19,9 +20,11 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <Platforms>x64</Platforms>
-    <PlatformTarget>x64</PlatformTarget>
-    <AssemblyName>RxdkDebugAdapter</AssemblyName>
+    <Platforms>x86</Platforms>
+    <PlatformTarget>x86</PlatformTarget>
+    <RuntimeIdentifier>win-x86</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <AssemblyName>Rxdk.Xbox360.DebugAdapter</AssemblyName>
     <RootNamespace>Rxdk.Xbox360.DebugAdapter</RootNamespace>
     <Deterministic>true</Deterministic>
     <Company>Team Resurgent</Company>
@@ -32,6 +35,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Rxdk.Xbox360.Dwarf\Rxdk.Xbox360.Dwarf.csproj" />
     <ProjectReference Include="..\Rxdk.Xbox360.Xbdm\Rxdk.Xbox360.Xbdm.csproj" />
+    <ProjectReference Include="..\Rxdk.Xbox360.Pdb\Rxdk.Xbox360.Pdb.csproj" />
   </ItemGroup>
 
 </Project>

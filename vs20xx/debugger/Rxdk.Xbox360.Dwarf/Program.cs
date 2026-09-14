@@ -4,11 +4,11 @@
 // CLI over the DWARF reader, for validating symbol extraction from a modern
 // title's .elf without a devkit:
 //
-//   RxdkDwarf <title.elf>                 list functions
-//   RxdkDwarf <title.elf> --lines         dump the line table
-//   RxdkDwarf <title.elf> --locals        list functions with their locals
-//   RxdkDwarf <title.elf> --addr 0x82..   resolve an address to function+source
-//   RxdkDwarf <title.elf> --line main.c:2 resolve a source line to an address
+//   Rxdk.Xbox360.Dwarf <title.elf>                 list functions
+//   Rxdk.Xbox360.Dwarf <title.elf> --lines         dump the line table
+//   Rxdk.Xbox360.Dwarf <title.elf> --locals        list functions with their locals
+//   Rxdk.Xbox360.Dwarf <title.elf> --addr 0x82..   resolve an address to function+source
+//   Rxdk.Xbox360.Dwarf <title.elf> --line main.c:2 resolve a source line to an address
 
 using System;
 using System.Globalization;
@@ -16,7 +16,7 @@ using Rxdk.Xbox360.Dwarf;
 
 if (args.Length < 1)
 {
-    Console.Error.WriteLine("usage: RxdkDwarf <title.elf> [--lines|--locals|--addr <hex>|--line <file:line>]");
+    Console.Error.WriteLine("usage: Rxdk.Xbox360.Dwarf <title.elf> [--lines|--locals|--addr <hex>|--line <file:line>]");
     return 1;
 }
 

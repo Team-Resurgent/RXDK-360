@@ -4,7 +4,7 @@
     <sys:String>Xbox 360 Debugger</sys:String>
   </Rule.DisplayName>
   <Rule.Description>
-    <sys:String>Xbox 360 Debugger options</sys:String>
+    <sys:String>Xbox 360 Debugger — hardware (Copy to Hard Drive). F5 deploys the XEX to the kit and debugs over XBDM. Emulate DVD and Xenia use their own launchers.</sys:String>
   </Rule.Description>
   <Rule.DataSource>
     <DataSource Persistence="UserFile">

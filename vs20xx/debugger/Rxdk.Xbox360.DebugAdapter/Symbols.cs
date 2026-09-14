@@ -3,6 +3,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
+using Rxdk.Xbox360.Pdb;
 using Rxdk.Xbox360.Dwarf;
 using Rxdk.Xbox360.Xbdm;
 
@@ -19,26 +21,91 @@ namespace Rxdk.Xbox360.DebugAdapter
         { Name = name; TypeName = type; Size = size; Address = addr; Register = reg; }
     }
 
+    /// <summary>A source position for a kit PC or a planted breakpoint.</summary>
+    public readonly struct SourceLocation
+    {
+        public readonly string File, Function;
+        public readonly int Line;
+        public SourceLocation(string file, int line, string function)
+        { File = file; Line = line; Function = function ?? ""; }
+    }
+
     /// <summary>
-    /// The symbol side of the adapter: it turns a title's DWARF into the queries the
-    /// DAP handlers make - resolve a source breakpoint to an address, map a stopped
-    /// PC to a source frame, and lay out a function's locals against the stopped
-    /// register context. Pure symbol logic (no devkit), so it is unit-testable
-    /// offline against a Debug .elf.
+    /// The symbol side of the adapter: DWARF (.elf, clang) or PDB/XDB (legacy 2010-01).
+    /// Resolves file:line → address (RVA or exe VMA; the session relocates onto the live XEX)
+    /// and kit PC → source. PDB locals/hover go through <see cref="ManagedValues"/>.
     /// </summary>
     public sealed class Symbols
     {
-        public readonly DwarfInfo Info;
-        public Symbols(DwarfInfo info) { Info = info; }
-        public static Symbols FromElf(string elfPath) => new(DwarfReader.Read(elfPath));
+        public DwarfInfo? Info { get; }
+        public string Path { get; }
+        public string Kind { get; }
+        public PdbImage? Pdb => _pdb;
+        private readonly PdbImage? _pdb;
 
-        /// <summary>Lowest address for a source file:line, snapping up to the next line
-        /// that actually has code if the exact line has none.</summary>
+        public Symbols(DwarfInfo info, string path) { Info = info; Path = path; Kind = "elf"; }
+        private Symbols(PdbImage pdb, string path) { _pdb = pdb; Path = path; Kind = System.IO.Path.GetExtension(path).TrimStart('.').ToLowerInvariant(); }
+
+        public static Symbols FromElf(string elfPath) => new(DwarfReader.Read(elfPath), elfPath);
+        public static Symbols FromPdb(string pdbPath) => new(PdbImage.OpenFile(pdbPath), pdbPath);
+
+        /// <summary>Prefer DWARF beside the XEX, then .pdb (C13 lines), then .xdb.</summary>
+        public static Symbols? Open(string program, string? symbols = null)
+        {
+            var candidates = new List<string>();
+            if (!string.IsNullOrEmpty(symbols)) candidates.Add(symbols);
+            if (!string.IsNullOrEmpty(program))
+            {
+                string dir = System.IO.Path.GetDirectoryName(program) ?? "";
+                string name = System.IO.Path.GetFileNameWithoutExtension(program);
+                candidates.Add(System.IO.Path.ChangeExtension(program, ".elf"));
+                candidates.Add(System.IO.Path.Combine(dir, name + ".pdb"));
+                candidates.Add(System.IO.Path.ChangeExtension(program, ".pdb"));
+                candidates.Add(System.IO.Path.Combine(dir, name + ".xdb"));
+                candidates.Add(System.IO.Path.ChangeExtension(program, ".xdb"));
+            }
+
+            Symbols? emptyPdb = null;
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in candidates)
+            {
+                if (string.IsNullOrEmpty(p) || !seen.Add(p) || !File.Exists(p)) continue;
+                string ext = System.IO.Path.GetExtension(p);
+                try
+                {
+                    if (ext.Equals(".elf", StringComparison.OrdinalIgnoreCase))
+                        return FromElf(p);
+                    if (ext.Equals(".pdb", StringComparison.OrdinalIgnoreCase) ||
+                        ext.Equals(".xdb", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var s = FromPdb(p);
+                        if (s.HasLines) return s;
+                        emptyPdb ??= s;
+                    }
+                }
+                catch { /* try the next candidate */ }
+            }
+            return emptyPdb;
+        }
+
+        public bool HasLines =>
+            _pdb != null
+                ? _pdb.Lines.Entries.Count > 0
+                : Info != null && HasDwarfLines(Info);
+
+        /// <summary>Lowest address for a source file:line. DWARF returns a VMA; PDB returns an RVA.
+        /// <see cref="TitleAddress.ExeToXex"/> accepts both.</summary>
         public (ulong address, int line)? ResolveBreakpoint(string file, int line)
         {
+            if (_pdb != null)
+            {
+                if (_pdb.TryResolveLine(file, (uint)line, out uint rva))
+                    return (rva, line);
+                return null;
+            }
+            if (Info == null) return null;
             var exact = Info.AddressFor(file, line);
             if (exact != null) return (exact.Value, line);
-            // Snap to the next line at or after the requested one that has code.
             int bestLine = int.MaxValue; ulong bestAddr = 0; bool found = false;
             foreach (var u in Info.Units)
                 foreach (var r in u.Lines)
@@ -50,11 +117,29 @@ namespace Rxdk.Xbox360.DebugAdapter
             return found ? (bestAddr, bestLine) : null;
         }
 
-        public DwarfFunction? FunctionAt(ulong pc) => Info.FunctionAt(pc);
-        public LineRow? LineAt(ulong pc) => Info.LineAt(pc);
+        public SourceLocation? LineAtKit(uint kitPc, uint xexBase)
+        {
+            if (_pdb != null)
+            {
+                uint rva = TitleAddress.XexToRva(kitPc, xexBase != 0 ? xexBase : TitleAddress.DefaultBase);
+                if (_pdb.TryFindLine(rva, out var file, out var line))
+                {
+                    _pdb.TryFindFunctionName(rva, out var func);
+                    return new SourceLocation(file, (int)line, func);
+                }
+                return null;
+            }
+            if (Info == null) return null;
+            ulong exe = TitleAddress.XexToExe(kitPc, xexBase != 0 ? xexBase : TitleAddress.DefaultBase);
+            var ln = Info.LineAt(exe);
+            if (ln == null) return null;
+            var fn = Info.FunctionAt(exe);
+            return new SourceLocation(ln.File, ln.Line, fn?.Name ?? "");
+        }
 
-        /// <summary>Lay out the locals/params of the function at the stopped PC against
-        /// the register context, computing each variable's guest address.</summary>
+        public DwarfFunction? FunctionAt(ulong pc) => Info?.FunctionAt(pc);
+        public LineRow? LineAt(ulong pc) => Info?.LineAt(pc);
+
         public List<VarSlot> Locals(DwarfFunction fn, XContext ctx)
         {
             var outv = new List<VarSlot>();
@@ -68,14 +153,20 @@ namespace Rxdk.Xbox360.DebugAdapter
             return outv;
         }
 
-        // frame_base is typically DW_OP_regN (the frame pointer) or DW_OP_call_frame_cfa.
+        private static bool HasDwarfLines(DwarfInfo info)
+        {
+            foreach (var u in info.Units)
+                if (u.Lines.Count > 0) return true;
+            return false;
+        }
+
         private static ulong EvalFrameBase(byte[] loc, XContext ctx)
         {
             if (loc.Length == 0) return ctx.Gpr[1];
             byte op = loc[0];
-            if (op >= 0x50 && op <= 0x6f) return ctx.Gpr[op - 0x50];            // DW_OP_reg0..31
-            if (op == 0x9c) return ctx.Gpr[1];                                  // DW_OP_call_frame_cfa ~= r1 (sp)
-            if (op >= 0x70 && op <= 0x8f)                                       // DW_OP_breg0..31
+            if (op >= 0x50 && op <= 0x6f) return ctx.Gpr[op - 0x50];
+            if (op == 0x9c) return ctx.Gpr[1];
+            if (op >= 0x70 && op <= 0x8f)
             {
                 var c = new ByteReader(loc, 1);
                 return (ulong)((long)ctx.Gpr[op - 0x70] + c.SLeb());
@@ -83,23 +174,22 @@ namespace Rxdk.Xbox360.DebugAdapter
             return ctx.Gpr[1];
         }
 
-        // Location expressions the compiler emits for a title's locals.
         private static (uint? addr, int? reg) EvalLocation(byte[] loc, ulong frameBase, XContext ctx)
         {
             if (loc.Length == 0) return (null, null);
             byte op = loc[0];
-            if (op == 0x91)                                                     // DW_OP_fbreg <sleb>
+            if (op == 0x91)
             {
                 var c = new ByteReader(loc, 1);
                 return ((uint)((long)frameBase + c.SLeb()), null);
             }
-            if (op == 0x03 && loc.Length >= 5)                                  // DW_OP_addr <u32>
+            if (op == 0x03 && loc.Length >= 5)
             {
                 var c = new ByteReader(loc, 1);
                 return (c.U32BE(), null);
             }
-            if (op >= 0x50 && op <= 0x6f) return (null, op - 0x50);            // DW_OP_reg0..31
-            if (op >= 0x70 && op <= 0x8f)                                       // DW_OP_breg0..31
+            if (op >= 0x50 && op <= 0x6f) return (null, op - 0x50);
+            if (op >= 0x70 && op <= 0x8f)
             {
                 var c = new ByteReader(loc, 1);
                 return ((uint)((long)ctx.Gpr[op - 0x70] + c.SLeb()), null);
@@ -110,13 +200,13 @@ namespace Rxdk.Xbox360.DebugAdapter
         public static int SizeOf(string type)
         {
             string t = type.Replace("const ", "").Trim();
-            if (t.EndsWith("*")) return 4;                                      // PPC32 pointer
+            if (t.EndsWith("*")) return 4;
             return t switch
             {
                 "char" or "signed char" or "unsigned char" or "_Bool" or "bool" => 1,
                 "short" or "short int" or "unsigned short" => 2,
                 "long long" or "long long int" or "unsigned long long" or "double" => 8,
-                _ => 4,                                                          // int/unsigned/long/float/enum
+                _ => 4,
             };
         }
 
@@ -126,7 +216,6 @@ namespace Rxdk.Xbox360.DebugAdapter
             have.EndsWith("\\" + want, StringComparison.OrdinalIgnoreCase) ||
             have.EndsWith("/" + want, StringComparison.OrdinalIgnoreCase);
 
-        /// <summary>Minimal SLEB/BE reader for decoding location bytes.</summary>
         private sealed class ByteReader
         {
             private readonly byte[] _b; private int _p;

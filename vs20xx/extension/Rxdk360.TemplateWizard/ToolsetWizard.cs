@@ -150,7 +150,10 @@ namespace Rxdk360.TemplateWizard
         private static readonly string LegacyItemDefs =
             ItemDef("CodeAnalysis",    "Disabled", "MultiThreadedDebug", "_DEBUG;",        DbgLibs,
                     "      <EnablePREfast>true</EnablePREfast>\r\n") +
-            ItemDef("Debug",           "Disabled", "MultiThreadedDebug", "_DEBUG;",        DbgLibs) +
+            ItemDef("Debug",           "Disabled", "MultiThreadedDebug", "_DEBUG;",        DbgLibs,
+                    "      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>\r\n",
+                    "      <GenerateDebugInformation>true</GenerateDebugInformation>\r\n" +
+                    "      <ProgramDatabaseFile>$(OutDir)$(ProjectName).pdb</ProgramDatabaseFile>\r\n") +
             ItemDef("Profile",         "MaxSpeed", "MultiThreaded",      "NDEBUG;PROFILE;", ProfLibs,
                     "", "      <IgnoreSpecificDefaultLibraries>xapilib.lib;d3d9.lib</IgnoreSpecificDefaultLibraries>\r\n") +
             ItemDef("Profile_FastCap", "MaxSpeed", "MultiThreaded",      "NDEBUG;PROFILE;FASTCAP;", FcapLibs) +

@@ -1,0 +1,15 @@
+// -----------------------------------------------------------------------------
+// RXDK-360 — Debug Adapter Host registration for type "rxdk360".
+// F5 on Copy to Hard Drive writes a launch JSON and runs DebugAdapterHost.Launch.
+// -----------------------------------------------------------------------------
+
+[$RootKey$\DebugAdapterHost\Configurations\rxdk360]
+"ConfigurationName"="rxdk360"
+"Adapter"="$PackageFolder$\tools\Rxdk.Xbox360.DebugAdapter.exe"
+"Args"=""
+"Comm"="stdio"
+"Label"="Xbox 360 (RXDK-360)"
+"Languages"="C++;C"
+
+[$RootKey$\DebugAdapterHost\Launchers\rxdk360]
+"ConfigurationName"="rxdk360"

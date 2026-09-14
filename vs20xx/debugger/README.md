@@ -7,7 +7,8 @@ Xbox 360 devkit. Three pieces:
 | Project | What it is |
 |---|---|
 | `Rxdk.Xbox360.Dwarf` | Reads the `.debug_*` sections of a Debug build's `.elf` into functions, a line table and locals (address ↔ source, both ways). Standalone .NET. |
-| `Rxdk.Xbox360.Xbdm` | Managed façade over the XDK's `xbdm.dll` (P/Invoke of the DM\* APIs): connect, deploy, reboot-into-title-stopped, breakpoints, stop/go, memory, PPC registers, debug-event notifications. Windows-only. |
+| `Rxdk.Xbox360.Pdb` | Reads C13 PDB/XDB from the legacy 2010-01 toolset (`Rxdk.Xbox360.Pdb.dll`). |
+| `Rxdk.Xbox360.Xbdm` | Managed façade over `%XEDK%\bin\win32\xbdm.dll` (P/Invoke of the `Dm*` APIs in `include\win32\xbdm.h`): connect, deploy, reboot-into-title-stopped, breakpoints, stop/go, memory, PPC registers, debug-event notifications. **Windows x86** (the host DLL is PE32). |
 | `Rxdk.Xbox360.DebugAdapter` | A Debug Adapter Protocol server that glues the two: F5-to-devkit steps source. |
 
 A Debug build emits DWARF and keeps `<title>.elf` beside `<title>.xex` (the
@@ -43,7 +44,7 @@ Build the adapter, then add a debug configuration that launches it (a small
 }
 ```
 
-(Register `RxdkDebugAdapter.exe` as the `rxdk360` debug type via a small VS Code
+(Register `Rxdk.Xbox360.DebugAdapter.exe` as the `rxdk360` debug type via a small VS Code
 extension, or launch it as an external DAP server.) Wiring the same adapter into
 a Visual Studio `.vcxproj` F5 is a further integration step.
 
@@ -51,3 +52,12 @@ a Visual Studio `.vcxproj` F5 is a further integration step.
 
 The symbol reader and the DAP/symbol glue are validated offline; the live path
 (connect → deploy → break → step → read locals) needs a real devkit to exercise.
+
+The XBDM host DLL is **32-bit**. `Rxdk.Xbox360.Xbdm` / `Rxdk.Xbox360.DebugAdapter` therefore target
+`win-x86` and load the RXDK-360 copy first:
+
+`%RXDK360%\bin\win32\xbdm.dll`  (`InstallPath` / `XdkPath` = `{app}`)
+
+falling back to stock `%XEDK%\bin\win32\xbdm.dll`. The kit name is
+`$(DefaultConsole)` = `HKCU\SOFTWARE\Microsoft\XenonSDK\XboxName`.
+Modern (`{app}\modern`) is the clang/LLVM sidecar and does not ship `xbdm.dll`.

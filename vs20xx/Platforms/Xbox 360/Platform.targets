@@ -18,10 +18,15 @@ Copyright (C) Microsoft Corporation. All rights reserved.
   <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\Microsoft.CppCommon.Xbox 360.targets"/>
   <Import Project="$(VCTargetsPath)\Microsoft.CppCommon.targets" Condition="'$(ConfigurationType)'!='Makefile'"/>
 
-  <UsingTask TaskName="Xbox360CL"                AssemblyFile="$(MSBuildThisFileDirectory)Rxdk.Xbox360.Build.dll"/>
-  <UsingTask TaskName="Xbox360Link"              AssemblyFile="$(MSBuildThisFileDirectory)Rxdk.Xbox360.Build.dll"/>
-  <UsingTask TaskName="ImageXex"          AssemblyFile="$(MSBuildThisFileDirectory)Rxdk.Xbox360.Build.dll"/>
-  <UsingTask TaskName="DeployToHardDrive" AssemblyFile="$(MSBuildThisFileDirectory)Rxdk.Xbox360.Build.dll"/>
+  <!-- Load from the VC toolset directory (sibling of Microsoft.Build.CPPTasks.Common.dll).
+       The assembly references that VC task base; LoadFrom the platform folder cannot
+       resolve it, and MSBuild 18 then instantiates a metadata-only type (MSB4061).
+       Do not set Runtime/Architecture: Architecture="x86" on 64-bit VS forces the same
+       out-of-proc MetadataLoadContext path. Stock CL UsingTask is in-proc for the same reason. -->
+  <UsingTask TaskName="Xbox360CL"         AssemblyFile="$(MSBuildThisFileDirectory)..\..\Rxdk.Xbox360.Build.dll"/>
+  <UsingTask TaskName="Xbox360Link"       AssemblyFile="$(MSBuildThisFileDirectory)..\..\Rxdk.Xbox360.Build.dll"/>
+  <UsingTask TaskName="ImageXex"          AssemblyFile="$(MSBuildThisFileDirectory)..\..\Rxdk.Xbox360.Build.dll"/>
+  <UsingTask TaskName="DeployToHardDrive" AssemblyFile="$(MSBuildThisFileDirectory)..\..\Rxdk.Xbox360.Build.dll"/>
 
 
   <PropertyGroup>
@@ -95,27 +100,32 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <Deploy Include="$(NMakeOutput)"/>
   </ItemGroup>
 
-  <!-- Xenia: the "Xenia Emulator" section of the Console Deployment page sets the
-       Xenia executable (a project property). When it is set, F5 / Ctrl+F5 runs the
-       built XEX (or a packed disc image) in Xenia via the built-in Local Windows
-       Debugger, overriding the (not-yet-wired) Xbox 360 remote debugger. Works for
-       both toolsets - the XEX is the same. (Reading the Deployment Type combo as a
-       property is not reliable at evaluation time, so the Xenia executable being
-       set is the trigger.) -->
+  <!-- Console Deployment F5 / debugger flavor follow Deployment Type.
+       Prefer $(DeploymentType) (project property). Fall back to Deploy-item
+       metadata, first token only — @(Deploy) can list several items. -->
   <PropertyGroup Condition="'$(ConfigurationType)' != 'Makefile' and '$(ConfigurationType)' != 'StaticLibrary'">
-    <!-- Disc-image output path + xdvdfs default (bundled modern payload, so no
-         RXDK-Tools dependency); an explicit XDVDFS Tool path wins. -->
+    <!-- Disc-image output path + xdvdfs default ({app}\bin\xdvdfs.exe). -->
     <RxdkXeniaIsoPath Condition="'$(RxdkXeniaIsoPath)' == ''">$(OutDir)$(TargetName).iso</RxdkXeniaIsoPath>
-    <_RxdkModernPath Condition="'$(_RxdkModernPath)' == '' and '$(RxdkModernRoot)' != ''">$(RxdkModernRoot)</_RxdkModernPath>
-    <_RxdkModernPath Condition="'$(_RxdkModernPath)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\TeamResurgent\RXDK-360@ModernPath)</_RxdkModernPath>
-    <_RxdkModernPath Condition="'$(_RxdkModernPath)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\TeamResurgent\RXDK-360@ModernPath)</_RxdkModernPath>
     <RxdkXdvdfsPath Condition="'$(RxdkXdvdfsPath)' == '' and '$(RXDK_XDVDFS)' != ''">$(RXDK_XDVDFS)</RxdkXdvdfsPath>
-    <RxdkXdvdfsPath Condition="'$(RxdkXdvdfsPath)' == '' and '$(_RxdkModernPath)' != '' and Exists('$(_RxdkModernPath)\bin\xdvdfs.exe')">$(_RxdkModernPath)\bin\xdvdfs.exe</RxdkXdvdfsPath>
-    <RxdkXdvdfsPath Condition="'$(RxdkXdvdfsPath)' == '' and '$(_RxdkModernPath)' != '' and Exists('$(_RxdkModernPath)\tools\xdvdfs.exe')">$(_RxdkModernPath)\tools\xdvdfs.exe</RxdkXdvdfsPath>
+    <RxdkXdvdfsPath Condition="'$(RxdkXdvdfsPath)' == '' and '$(RxdkInstallDir)' != ''">$(RxdkInstallDir)bin\xdvdfs.exe</RxdkXdvdfsPath>
+    <!-- Host tools (imagexex, xbcp) live at {app}\bin\win32, not XdkPath\bin\win32. -->
+    <_RxdkToolRoot Condition="'$(_RxdkToolRoot)' == '' and '$(RxdkInstallDir)' != ''">$(RxdkInstallDir)</_RxdkToolRoot>
+    <_RxdkToolRoot Condition="'$(_RxdkToolRoot)' == ''">$(XDKInstallDir)</_RxdkToolRoot>
+    <_RxdkDt Condition="'$(_RxdkDt)' == ''">$(DeploymentType)</_RxdkDt>
+    <_RxdkDt Condition="'$(_RxdkDt)' == ''">@(Deploy->'%(DeploymentType)')</_RxdkDt>
+    <_RxdkDtSemi Condition="'$(_RxdkDt)' != ''">$(_RxdkDt.IndexOf(';'))</_RxdkDtSemi>
+    <_RxdkDt Condition="'$(_RxdkDtSemi)' != '' and $(_RxdkDtSemi) &gt;= 0">$(_RxdkDt.Substring(0, $(_RxdkDtSemi)))</_RxdkDt>
   </PropertyGroup>
 
-  <!-- Override the debugger launch to Xenia when a Xenia executable is configured. -->
-  <PropertyGroup Condition="'$(RxdkXeniaPath)' != '' and '$(ConfigurationType)' != 'Makefile' and '$(ConfigurationType)' != 'StaticLibrary'">
+  <ItemGroup Condition="'$(_RxdkDt)' != ''">
+    <Deploy Update="@(Deploy)">
+      <DeploymentType>$(_RxdkDt)</DeploymentType>
+    </Deploy>
+  </ItemGroup>
+
+  <!-- Xenia: switch the debugger dropdown to Local Windows Debugger and point
+       it at the emulator. Copy to Hard Drive forces Xbox 360 Debugger. -->
+  <PropertyGroup Condition="'$(_RxdkDt)' == 'Xenia' and '$(RxdkXeniaPath)' != '' and '$(ConfigurationType)' != 'Makefile' and '$(ConfigurationType)' != 'StaticLibrary'">
     <_RxdkXeniaHeadless Condition="'$(RxdkXeniaHeadless)' == 'true'"> --headless=true</_RxdkXeniaHeadless>
     <_RxdkXeniaImage Condition="'$(RxdkXeniaUseIso)' == 'true'">$(RxdkXeniaIsoPath)</_RxdkXeniaImage>
     <_RxdkXeniaImage Condition="'$(_RxdkXeniaImage)' == ''">$(ImagePath)</_RxdkXeniaImage>
@@ -565,7 +575,7 @@ Copyright (C) Microsoft Corporation. All rights reserved.
         KinectElevationControl  ="%(ImageXex.KinectElevationControl)"
         KinectSupportLevel      ="%(ImageXex.KinectSupportLevel)"
         ConfigurationFile       ="%(ImageXex.ConfigurationFile)"
-        XDKInstallDir           ="$(XDKInstallDir)"
+        XDKInstallDir           ="$(_RxdkToolRoot)"
     />
     
   </Target>
@@ -590,7 +600,7 @@ Copyright (C) Microsoft Corporation. All rights reserved.
         ForceCopy             = "%(Deploy.ForceCopy)"
         DeploymentFiles       = "%(Deploy.DeploymentFiles)"
         DeploymentRoot        = "%(Deploy.RemoteRoot)"
-        XDKInstallDir         = "$(XDKInstallDir)"
+        XDKInstallDir         = "$(_RxdkToolRoot)"
         ProjectDir            = "$(ProjectDir)"
         DefaultConsole        = "$(DefaultConsole)"
     />
@@ -601,5 +611,13 @@ Copyright (C) Microsoft Corporation. All rights reserved.
 
   <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\PlatformToolsets\$(PlatformToolset)\Toolset.targets" />
   <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter\*.targets" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter')" />
+
+  <!-- After toolset imports so DebuggerFlavor actually updates the dropdown. -->
+  <PropertyGroup Condition="'$(_RxdkDt)' == 'Xenia' and '$(RxdkXeniaPath)' != ''">
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(_RxdkDt)' == 'CopyToHardDrive'">
+    <DebuggerFlavor>Xbox360Debugger</DebuggerFlavor>
+  </PropertyGroup>
 </Project>
 

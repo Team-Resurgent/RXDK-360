@@ -64,6 +64,11 @@ namespace Rxdk.Xdk.Unpacker
         private int _nextHandle = 1;
         private string _destDir;
         private int _extracted;
+        // Paths written during the current FDICopy. The XDK packs en-US then
+        // ja-JP under the same cab name (XDK\ReadMe1st.txt, RelNotes.htm, …);
+        // keeping the first copy preserves English. A later cabinet in the
+        // setup chain still overwrites — that is a real file update.
+        private HashSet<string> _writtenThisCab;
 
         // keep delegates alive for the duration of the call
         private readonly PfnAlloc _a; private readonly PfnFree _f; private readonly PfnOpen _o;
@@ -81,6 +86,7 @@ namespace Rxdk.Xdk.Unpacker
         {
             _destDir = destDir;
             _extracted = 0;
+            _writtenThisCab = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var erf = new ERF();
             IntPtr hfdi = FDICreate(_a, _f, _o, _r, _w, _c, _s, 0 /*cpuUNKNOWN*/, ref erf);
             if (hfdi == IntPtr.Zero)
@@ -148,6 +154,8 @@ namespace Rxdk.Xdk.Unpacker
                 {
                     string rel = Marshal.PtrToStringAnsi(p.psz1) ?? "";
                     string outPath = Path.Combine(_destDir, rel.Replace('/', Path.DirectorySeparatorChar));
+                    if (!_writtenThisCab.Add(outPath))
+                        return IntPtr.Zero; // skip localized duplicate in this cab
                     Directory.CreateDirectory(Path.GetDirectoryName(outPath));
                     return Register(File.Create(outPath));
                 }

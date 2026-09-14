@@ -4,8 +4,8 @@
 // The RXDK-360 devkit debug adapter. Normally launched by the editor and spoken to
 // over stdio in the Debug Adapter Protocol:
 //
-//   RxdkDebugAdapter                     run the DAP server on stdio (editor use)
-//   RxdkDebugAdapter --selftest <elf>    offline check of the symbol glue (no devkit)
+//   Rxdk.Xbox360.DebugAdapter                     run the DAP server on stdio (editor use)
+//   Rxdk.Xbox360.DebugAdapter --selftest <elf>    offline check of the symbol glue (no devkit)
 
 using System;
 using System.Collections.Generic;
@@ -32,6 +32,7 @@ return 0;
 static int SelfTest(string elf)
 {
     var sym = Symbols.FromElf(elf);
+    if (sym.Info == null) { Console.Error.WriteLine("no DWARF"); return 1; }
     int fns = 0; foreach (var _ in sym.Info.Functions) fns++;
     Console.WriteLine($"symbols: {fns} function(s)");
 

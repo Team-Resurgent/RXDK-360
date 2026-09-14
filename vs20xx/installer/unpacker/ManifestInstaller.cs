@@ -4,8 +4,13 @@
 // Manifest-driven installer. The Xbox 360 XDK setup carries a manifest.csv that
 // maps every payload file to a destination token and lists registry, shortcut
 // and self-register actions. This engine replays those actions RELOCATED for
-// RXDK-360 (XDK -> the chosen install dir; Start-menu group -> "RXDK-360"), so
-// the result is a faithful install that can live side by side with a stock XDK.
+// RXDK-360 (XDK token -> {app}; Start-menu group -> "RXDK-360"):
+//   include\          -> {app}\legacy\include\
+//   lib\xbox\*        -> {app}\legacy\lib\*       (console .libs, no xbox\ folder)
+//   lib\<other>\      -> {app}\lib\<other>\       (host libs stay at the root)
+//   everything else   -> {app}\                   (bin, doc, source, shortcuts)
+// {app}\modern is the clang sidecar. Never rewrites the stock Xbox\2.0\SDK /
+// XenonSDK keys.
 //
 // Columns:  lcid,arch,action,destToken,arg1,arg2,arg3,hash
 //   file/copy : arg1 = <destToken>\relpath (source in staging), arg2 = flags (SO=self-register)
@@ -27,7 +32,7 @@ namespace Rxdk.Xdk.Unpacker
     internal sealed class ManifestInstaller
     {
         private readonly string _staging;   // where the cabs were extracted
-        private readonly string _installDir; // XDK -> here (e.g. C:\Program Files\RXDK-360)
+        private readonly string _installDir; // product root (C:\Program Files\RXDK-360)
         private readonly string _group = "RXDK-360"; // Start-menu program group
         private readonly List<string> _undo = new List<string>();
         private int _files, _regs, _links, _selfreg, _skipped, _lastReport;
@@ -112,6 +117,25 @@ namespace Rxdk.Xdk.Unpacker
             return i >= 0 ? p.Substring(i + 1) : p;
         }
 
+        // Console compile SDK under {app}\legacy: include\ as-is, lib\xbox files
+        // flattened into legacy\lib (no xbox subfolder). Other lib folders stay
+        // under {app}\lib.
+        private string Relocate(string token, string rel)
+        {
+            rel = (rel ?? "").Replace('/', '\\');
+            if (!string.Equals(token, "XDK", StringComparison.OrdinalIgnoreCase))
+                return Path.Combine(ResolveDir(token) ?? "", rel);
+            if (rel.StartsWith("include\\", StringComparison.OrdinalIgnoreCase) ||
+                rel.Equals("include", StringComparison.OrdinalIgnoreCase))
+                return Path.Combine(_installDir, "legacy", rel);
+            const string xboxLib = "lib\\xbox";
+            if (rel.Equals(xboxLib, StringComparison.OrdinalIgnoreCase))
+                return Path.Combine(_installDir, "legacy", "lib");
+            if (rel.StartsWith(xboxLib + "\\", StringComparison.OrdinalIgnoreCase))
+                return Path.Combine(_installDir, "legacy", "lib", rel.Substring(xboxLib.Length + 1));
+            return Path.Combine(_installDir, rel);
+        }
+
         // ---- file / copy -------------------------------------------------------
         private void DoFile(string token, string srcRelWithToken, string flags)
         {
@@ -120,7 +144,7 @@ namespace Rxdk.Xdk.Unpacker
             string rel = Rel(srcRelWithToken);
             string src = Path.Combine(_staging, srcRelWithToken.Replace('/', '\\'));
             if (!File.Exists(src)) { _skipped++; return; }
-            string dst = Path.Combine(destBase, rel.Replace('/', '\\'));
+            string dst = Relocate(token, rel);
             bool so = flags.Trim().Equals("SO", StringComparison.Ordinal); // self-registering object
             _files++;
             if (so) _selfreg++;
@@ -149,7 +173,7 @@ namespace Rxdk.Xdk.Unpacker
             if (destBase == null || string.IsNullOrEmpty(dstRelWithToken)) { _skipped++; return; }
             string src = Path.Combine(_staging, srcRelWithToken.Replace('/', '\\'));
             if (!File.Exists(src)) { _skipped++; return; }
-            string dst = Path.Combine(destBase, Rel(dstRelWithToken).Replace('/', '\\'));
+            string dst = Relocate(token, Rel(dstRelWithToken));
             _files++;
             if (DryRun) return;
             if (!(File.Exists(dst) && new FileInfo(dst).Length == new FileInfo(src).Length))
@@ -202,7 +226,11 @@ namespace Rxdk.Xdk.Unpacker
         private string Expand(string s)
         {
             if (string.IsNullOrEmpty(s)) return s;
-            return s.Replace("%XDK%", _installDir + "\\")
+            string root = _installDir.TrimEnd('\\') + "\\";
+            string legacy = Path.Combine(_installDir, "legacy").TrimEnd('\\') + "\\";
+            return s.Replace("%XDK%include", legacy + "include")
+                    .Replace("%XDK%lib", legacy + "lib")
+                    .Replace("%XDK%", root)
                     .Replace("%SYSTEM_DIR%", ResolveDir("SYSTEM_DIR") + "\\");
         }
 
@@ -221,14 +249,14 @@ namespace Rxdk.Xdk.Unpacker
             if (targetBase == null || string.IsNullOrEmpty(linkName)) { _skipped++; return; }
             // shortcut target paths are already relative to the token (no prefix) -
             // unlike file rows, so do NOT strip a leading segment here.
-            string target = Path.Combine(targetBase, targetRel.Replace('/', '\\'));
+            string target = Path.Combine(targetBase, (targetRel ?? "").Replace('/', '\\'));
             string linkDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms), _group);
             string link = Path.Combine(linkDir, linkName.Replace('/', '\\'));
             _links++;
             if (DryRun) return;
             Directory.CreateDirectory(Path.GetDirectoryName(link));
-            // workdir (optional) is a path relative to the same token
-            string wd = string.IsNullOrEmpty(workdir) ? Path.GetDirectoryName(target)
+            string wd = string.IsNullOrEmpty(workdir)
+                ? Path.GetDirectoryName(target)
                 : Path.Combine(targetBase, workdir.Replace('/', '\\'));
             ShellLink.Create(link, target, null, wd, description, target, 0);
             _undo.Add("shortcut|" + link);
@@ -237,7 +265,9 @@ namespace Rxdk.Xdk.Unpacker
         // ---- uninstall (reverse the undo log) ----------------------------------
         public static void Uninstall(string undoLogPath)
         {
-            if (!File.Exists(undoLogPath)) return;
+            string installDir = Path.GetDirectoryName(undoLogPath);
+            if (File.Exists(undoLogPath))
+            {
             var lines = File.ReadAllLines(undoLogPath);
             Array.Reverse(lines);
             foreach (var l in lines)
@@ -247,8 +277,8 @@ namespace Rxdk.Xdk.Unpacker
                 {
                     switch (f[0])
                     {
-                        case "file": if (File.Exists(f[1])) File.Delete(f[1]); break;
-                        case "shortcut": if (File.Exists(f[1])) File.Delete(f[1]); break;
+                        case "file": TryDeleteFile(f[1]); break;
+                        case "shortcut": TryDeleteFile(f[1]); break;
                         case "selfreg": SelfRegister(f[2], f[1] == "64", true); break;
                         case "reg":
                             RegistryHive hive = f[1].Equals("HKCU", StringComparison.OrdinalIgnoreCase)
@@ -272,6 +302,10 @@ namespace Rxdk.Xdk.Unpacker
                 }
                 catch { }
             }
+            TryDeleteFile(undoLogPath);
+            }
+            try { WipeInstallPayload(installDir); } catch { }
+            try { DeleteEmptyDirectories(installDir); } catch { }
             // remove the now-empty RXDK-360 Start-menu group (shortcuts already gone)
             try
             {
@@ -279,6 +313,50 @@ namespace Rxdk.Xdk.Unpacker
                 if (Directory.Exists(grp)) Directory.Delete(grp, true);
             }
             catch { }
+        }
+
+        private static void TryDeleteFile(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+            File.SetAttributes(path, FileAttributes.Normal);
+            File.Delete(path);
+        }
+
+        // XDK + stagemodern leftovers. Leave tools, vsintegration, and the Inno
+        // uninstaller so later UninstallRun entries and Inno itself can finish.
+        private static void WipeInstallPayload(string installDir)
+        {
+            if (string.IsNullOrEmpty(installDir) || !Directory.Exists(installDir)) return;
+            foreach (var dir in Directory.GetDirectories(installDir))
+            {
+                string name = Path.GetFileName(dir);
+                if (name.Equals("tools", StringComparison.OrdinalIgnoreCase)) continue;
+                if (name.Equals("vsintegration", StringComparison.OrdinalIgnoreCase)) continue;
+                try
+                {
+                    foreach (var f in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
+                        TryDeleteFile(f);
+                    Directory.Delete(dir, true);
+                }
+                catch { }
+            }
+            foreach (var file in Directory.GetFiles(installDir))
+            {
+                string name = Path.GetFileName(file);
+                if (name.StartsWith("unins", StringComparison.OrdinalIgnoreCase)) continue;
+                TryDeleteFile(file);
+            }
+        }
+
+        // Drop empty folders the manifest left behind. Does not remove installDir
+        // itself when it still has files (Inno still needs tools + the uninstaller).
+        private static void DeleteEmptyDirectories(string root)
+        {
+            if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) return;
+            foreach (var dir in Directory.GetDirectories(root))
+                DeleteEmptyDirectories(dir);
+            if (Directory.GetFileSystemEntries(root).Length == 0)
+                Directory.Delete(root);
         }
     }
 }

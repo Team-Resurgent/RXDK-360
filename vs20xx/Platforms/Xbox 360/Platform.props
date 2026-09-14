@@ -86,6 +86,20 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\Microsoft.Lib.Xbox 360.props"/>
   </ImportGroup>
 
+  <!-- Debug + legacy: /Zi and linker /DEBUG so a C13 .pdb sits next to the XEX.
+       Official VS2010 Xbox 360 Debug projects set these in the vcxproj; the Link
+       props default GenerateDebugInformation to false. Copy-to-Drive F5 needs the
+       PDB (line info is not in .xdb). Modern Debug uses DWARF (-gdwarf-4 + KeepElf). -->
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug' and '$(PlatformToolset)'=='2010-01'">
+    <ClCompile>
+      <DebugInformationFormat Condition="'%(ClCompile.DebugInformationFormat)'==''">ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation Condition="'%(Link.GenerateDebugInformation)'==''">true</GenerateDebugInformation>
+      <ProgramDatabaseFile Condition="'%(Link.ProgramDatabaseFile)'==''">$(OutDir)$(TargetName).pdb</ProgramDatabaseFile>
+    </Link>
+  </ItemDefinitionGroup>
+
   <PropertyGroup Condition="'$(ConfigurationType)' != 'Makefile'">
     <TargetExt  Condition="'$(TargetExt)'  == '' and '$(ConfigurationType)'=='StaticLibrary'">.lib</TargetExt>
     <OutputFile Condition="'$(OutputFile)' == ''">$(OutDir)$(TargetName)$(TargetExt)</OutputFile>

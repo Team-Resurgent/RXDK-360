@@ -11,7 +11,7 @@ namespace Rxdk.Xbox360.Xbdm
     /// count register are 64-bit; the instruction address (Iar) is the program
     /// counter a source-level debugger maps through DWARF.
     /// </summary>
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Pack = 8)]
     public struct XContext
     {
         public uint ContextFlags;

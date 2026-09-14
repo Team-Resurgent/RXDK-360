@@ -17,8 +17,12 @@ namespace Rxdk.Xdk.Unpacker
     {
         private const string UndoLog = "rxdk360-uninstall.log";
 
+        [DllImport("kernel32.dll")]
+        private static extern bool AttachConsole(int dwProcessId);
+
         private static int Main(string[] args)
         {
+            AttachConsole(-1);
             int rc = 1;
             try { rc = Run(args); }
             finally
@@ -31,53 +35,73 @@ namespace Rxdk.Xdk.Unpacker
             return rc;
         }
 
-        // Populate the modern tree's XDK-derived parts from the (relocated) legacy
-        // XDK: its stock headers (for the XDK-headers compile mode) and its COFF
+        // Populate the modern tree's XDK-derived parts from the relocated XDK
+        // at {app}: stock headers (for the XDK-headers compile mode) and COFF
         // import .libs (which genstubs reads for the console ordinals). This makes
-        // the modern toolchain self-contained - it never reaches into the legacy
-        // tree while building.
-        private static void StageModern(string legacyRoot, string modernRoot)
+        // the modern toolchain self-contained.
+        private static void StageModern(string xdkRoot, string modernRoot)
         {
-            string srcInc = Path.Combine(legacyRoot, "include", "xbox");
+            var undo = new List<string>();
+            string srcInc = Path.Combine(xdkRoot, "include", "xbox");
             if (Directory.Exists(srcInc))
             {
                 string dstInc = Path.Combine(modernRoot, "include", "xbox");
-                CopyDir(srcInc, dstInc);
+                CopyDir(srcInc, dstInc, undo);
                 Report.Line("staged XDK headers -> {0}", dstInc);
             }
-            string srcLib = Path.Combine(legacyRoot, "lib", "xbox");
+            string srcLib = Path.Combine(xdkRoot, "lib");
             if (Directory.Exists(srcLib))
             {
                 string dstLib = Path.Combine(modernRoot, "lib");
                 Directory.CreateDirectory(dstLib);
                 int n = 0;
                 foreach (var f in Directory.GetFiles(srcLib, "*.lib"))
-                { File.Copy(f, Path.Combine(dstLib, Path.GetFileName(f)), true); n++; }
+                {
+                    string dst = Path.Combine(dstLib, Path.GetFileName(f));
+                    File.Copy(f, dst, true);
+                    undo.Add("file|" + dst);
+                    n++;
+                }
                 Report.Line("staged {0} XDK import libs -> {1}", n, dstLib);
             }
+            // {app}\rxdk360-uninstall.log sits next to modern\, not under legacy\.
+            string undoLog = Path.GetFullPath(Path.Combine(modernRoot, "..", UndoLog));
+            if (undo.Count > 0 && File.Exists(undoLog))
+                File.AppendAllLines(undoLog, undo);
         }
 
-        private static void CopyDir(string src, string dst)
+        private static void CopyDir(string src, string dst, List<string> undo)
         {
             Directory.CreateDirectory(dst);
             foreach (var d in Directory.GetDirectories(src, "*", SearchOption.AllDirectories))
                 Directory.CreateDirectory(d.Replace(src, dst));
             foreach (var f in Directory.GetFiles(src, "*", SearchOption.AllDirectories))
-                File.Copy(f, f.Replace(src, dst), true);
+            {
+                string dest = f.Replace(src, dst);
+                File.Copy(f, dest, true);
+                undo.Add("file|" + dest);
+            }
         }
 
         private static int Run(string[] args)
         {
             try
             {
-                // verbs: unpack <setup> <outDir> | install <setup> <installDir>
-                //      | uninstall <installDir> | stagemodern <legacyRoot> <modernRoot>
+                // verbs: unpack | install | uninstall | stagemodern | vsinstall | vsuninstall
                 if (args.Length >= 1 && args[0].Equals("uninstall", StringComparison.OrdinalIgnoreCase))
                 {
                     if (args.Length < 2) return Usage();
                     ManifestInstaller.Uninstall(Path.Combine(args[1], UndoLog));
                     Report.Line("uninstalled from " + args[1]);
                     return 0;
+                }
+
+                if (args.Length >= 1 && (args[0].Equals("vsinstall", StringComparison.OrdinalIgnoreCase)
+                    || args[0].Equals("vsuninstall", StringComparison.OrdinalIgnoreCase)))
+                {
+                    var rest = new string[Math.Max(0, args.Length - 1)];
+                    if (rest.Length > 0) Array.Copy(args, 1, rest, 0, rest.Length);
+                    return VsIntegration.Run(args[0].Equals("vsuninstall", StringComparison.OrdinalIgnoreCase), rest);
                 }
 
                 if (args.Length >= 1 && args[0].Equals("stagemodern", StringComparison.OrdinalIgnoreCase))
@@ -142,6 +166,9 @@ namespace Rxdk.Xdk.Unpacker
             Console.Error.WriteLine("  RxdkXdkUnpacker <XDKSetup.exe> <outDir>            (extract the XDK\\ tree)");
             Console.Error.WriteLine("  RxdkXdkUnpacker install <XDKSetup.exe> <installDir> (manifest-driven install)");
             Console.Error.WriteLine("  RxdkXdkUnpacker uninstall <installDir>              (reverse an install)");
+            Console.Error.WriteLine("  RxdkXdkUnpacker stagemodern <xdkRoot> <modernRoot>  (copy include/lib into modern)");
+            Console.Error.WriteLine("  RxdkXdkUnpacker vsinstall   <vs20xx|vsintegrationDir> [--skip-vsix] [--skip-platform]");
+            Console.Error.WriteLine("  RxdkXdkUnpacker vsuninstall <vs20xx|vsintegrationDir>");
             return 2;
         }
 

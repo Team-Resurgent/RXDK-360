@@ -47,8 +47,11 @@
     Name="DeploymentType"
     DisplayName="Deployment Type"
     Category="General"
-    Description="Specifies whether media files are emulated from the PC or deployed to the Xenon hard drive.  Emulation can mimic game performance on DVD media."
+    Description="Specifies how the title is launched. Copy to Hard Drive deploys to the kit and F5 debugs over XBDM. Emulate DVD Drive uses PC DVD emulation. Xenia Emulator (PC) runs the title in Xenia via the Local Windows Debugger."
     F1Keyword="VC.Project.VCX360DeploymentTool.DeploymentType">
+    <EnumProperty.DataSource>
+      <DataSource Persistence="ProjectFile" ItemType="" Label="" HasConfigurationCondition="true" />
+    </EnumProperty.DataSource>
 
     <EnumValue
       Name="CopyToHardDrive"
@@ -185,7 +188,7 @@
     DisplayName="Xenia Executable"
     Category="Xenia"
     Subtype="file"
-    Description="Full path to the Xenia executable (including the .exe), e.g. D:\xenia\xenia_canary.exe. When set, F5 / Ctrl+F5 launches this title in Xenia.">
+    Description="Full path to the Xenia executable (including the .exe), e.g. D:\xenia\xenia_canary.exe. Used when Deployment Type is Xenia Emulator (PC).">
     <StringProperty.DataSource>
       <DataSource Persistence="ProjectFile" HasConfigurationCondition="true"/>
     </StringProperty.DataSource>
@@ -245,7 +248,7 @@
     DisplayName="XDVDFS Tool"
     Category="Xenia"
     Subtype="file"
-    Description="Path to xdvdfs (Team-Resurgent/XDVDFS-TR) used to pack the disc image. Defaults to the bundled modern-toolchain copy.">
+    Description="Path to xdvdfs (Team-Resurgent/XDVDFS-TR) used to pack the disc image. Defaults to {RXDK-360}\bin\xdvdfs.exe.">
     <StringProperty.DataSource>
       <DataSource Persistence="ProjectFile" HasConfigurationCondition="true"/>
     </StringProperty.DataSource>

@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 
 namespace Rxdk.Xbox360.DebugAdapter
@@ -21,6 +22,9 @@ namespace Rxdk.Xbox360.DebugAdapter
         private readonly object _writeLock = new();
         private int _seq;
 
+        /// <summary>Called with each DAP JSON frame except output events (those are the Debug pane).</summary>
+        public Action<string, string>? ProtocolTrace { get; set; }
+
         public DapConnection(Stream input, Stream output) { _in = input; _out = output; }
 
         /// <summary>A parsed incoming message (request), as raw JSON.</summary>
@@ -31,6 +35,18 @@ namespace Rxdk.Xbox360.DebugAdapter
             public string Command = "";
             public JsonElement Arguments;
             public bool HasArguments;
+        }
+
+        private static readonly string LogPath = Path.Combine(Path.GetTempPath(), "rxdk360-dap.log");
+
+        private static void LogLine(string direction, string json)
+        {
+            try
+            {
+                File.AppendAllText(LogPath,
+                    DateTime.Now.ToString("HH:mm:ss.fff") + " " + direction + " " + json + Environment.NewLine);
+            }
+            catch { }
         }
 
         public Message? Read()
@@ -45,6 +61,9 @@ namespace Rxdk.Xbox360.DebugAdapter
                 if (n <= 0) return null;
                 got += n;
             }
+            string json = Encoding.UTF8.GetString(buf);
+            LogLine("IN ", json);
+            ProtocolTrace?.Invoke("IN", json);
             using var doc = JsonDocument.Parse(buf);
             var root = doc.RootElement;
             var m = new Message
@@ -109,11 +128,17 @@ namespace Rxdk.Xbox360.DebugAdapter
             Write(evt);
         }
 
-        private static readonly JsonSerializerOptions JsonOpts = new() { IncludeFields = true };
+        private static readonly JsonSerializerOptions JsonOpts = new()
+        {
+            IncludeFields = true,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        };
 
         private void Write(object payload)
         {
             byte[] json = JsonSerializer.SerializeToUtf8Bytes(payload, JsonOpts);
+            string text = Encoding.UTF8.GetString(json);
+            LogLine("OUT", text);
             byte[] header = Encoding.ASCII.GetBytes($"Content-Length: {json.Length}\r\n\r\n");
             lock (_writeLock)
             {
@@ -121,6 +146,18 @@ namespace Rxdk.Xbox360.DebugAdapter
                 _out.Write(json, 0, json.Length);
                 _out.Flush();
             }
+            if (IsOutputEvent(payload)) return;
+            ProtocolTrace?.Invoke("OUT", text);
+        }
+
+        private static bool IsOutputEvent(object payload)
+        {
+            if (payload is Dictionary<string, object?> d &&
+                d.TryGetValue("event", out var ev) &&
+                ev is string name &&
+                string.Equals(name, "output", StringComparison.Ordinal))
+                return true;
+            return false;
         }
     }
 }

@@ -27,7 +27,7 @@ format and (b) speaks xbdm's address protocol. The symbol format is our choice.
 RXDK (the Xbox 1 toolchain) already ships this: a custom DAP debugger with its
 own managed symbol reader, value visualizers, and locals/watch over the debug
 bridge. Xbox 1 is x86 PE/COFF, so there clang `-gcodeview` + `lld-link` yield
-real PDBs read by `Rxdk.Pdb`.
+real PDBs read by `Rxdk.Xbox360.Pdb`.
 
 For 360-ELF the same DAP architecture points at a **DWARF** reader instead of a
 PDB reader. Everything downstream -- breakpoint placement, stepping, stack

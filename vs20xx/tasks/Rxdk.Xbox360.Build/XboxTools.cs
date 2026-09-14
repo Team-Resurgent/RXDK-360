@@ -22,9 +22,16 @@ namespace Rxdk.Xbox360.Build.Tasks
         [Required]
         public ITaskItem XDKInstallDir { get; set; }
 
+        /// <summary>Directory that contains the XDK host tools (cl, xbcp, imagexex).
+        /// Product-root <c>bin\win32</c>; falls back to <see cref="XDKInstallDir"/>\bin\win32.</summary>
+        public ITaskItem XDKBinDir { get; set; }
+
         protected override string GenerateFullPathToTool()
         {
-            return Path.Combine(XDKInstallDir.ItemSpec, Path.Combine("bin\\win32", ToolName));
+            string bin = (XDKBinDir != null && !string.IsNullOrEmpty(XDKBinDir.ItemSpec))
+                ? XDKBinDir.ItemSpec
+                : Path.Combine(XDKInstallDir.ItemSpec, "bin\\win32");
+            return Path.Combine(bin, ToolName);
         }
     }
 

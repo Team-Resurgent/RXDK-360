@@ -3,18 +3,14 @@
 ;
 ; RXDK-360 installer (Inno Setup 6).
 ;
-; Takes the user's own Xbox 360 XDK setup EXE, extracts it (7-Zip), and lays it
-; down RELOCATED to C:\Program Files\RXDK-360, registered under RXDK-360's own
-; key + env var so it lives SIDE BY SIDE with a stock "Microsoft Xbox 360 SDK".
-; Then wires up the modern-VS integration (RXDK-360 MSBuild platform + task
-; assemblies + project-template VSIX).
-;
-; The XDK payload is NOT bundled (licensed Microsoft content); it comes from the
-; user's own setup EXE at install time.
-;
-; Build:  "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" RXDK-360.iss
+; Takes the user's own Xbox 360 XDK setup EXE and lays it down RELOCATED to
+; C:\Program Files\RXDK-360, side by side with a stock Microsoft Xbox 360 SDK.
+; Setup copies the Xbox 360 platform + net472 task DLLs into every VS 2022
+; (v170) and VS 2026/18 (v170 + v180) install, then VSIXInstaller does templates
+; and the DAP.
 
 #include "Uninstall.iss"
+#include "VsIntegration.iss"
 
 #define AppName    "RXDK-360"
 #define AppVersion "0.1.0"
@@ -39,6 +35,7 @@ SolidCompression=yes
 OutputBaseFilename=RXDK-360-Setup
 WizardStyle=modern
 SetupIconFile=Icon.ico
+UninstallDisplayIcon={app}\Icon.ico
 WizardImageFile=WizardImage.bmp
 WizardSmallImageFile=WizardSmallImage.bmp
 MissingRunOnceIdsWarning=no
@@ -51,8 +48,8 @@ Name: "custom"; Description: "Custom"; Flags: iscustom
 [Components]
 ; The relocated XDK and the VS integration always install (the modern toolchain
 ; also uses the XDK's import libraries). The modern component adds the self-
-; contained Clang/LLVM toolchain, XexTool and xdvdfs so RXDK-360 needs no external
-; toolchain and does not depend on an RXDK-Tools install.
+; contained Clang/LLVM toolchain, XexTool and xdvdfs so RXDK-360 needs no
+; external toolchain.
 Name: "modern"; Description: "Modern toolchain (Clang/LLVM + XexTool + xdvdfs, self-contained)"; Types: full
 
 [Tasks]
@@ -66,26 +63,34 @@ Name: "vs";        Description: "Install the Visual Studio integration (RXDK-360
 ; our own tools + the VS integration.
 Source: "unpacker\bin\Release\net472\RxdkXdkUnpacker.exe"; DestDir: "{app}\tools"
 Source: "unpacker\bin\Release\net472\RxdkXdkUnpacker.exe"; Flags: dontcopy
-Source: "..\Platforms\*"; DestDir: "{app}\vsintegration\Platforms"; Flags: recursesubdirs createallsubdirs; Excludes: "*.dll"
-Source: "..\tasks\*";     DestDir: "{app}\vsintegration\tasks";     Flags: recursesubdirs createallsubdirs; Excludes: "\*\bin\*,\*\obj\*"
-Source: "..\extension\*"; DestDir: "{app}\vsintegration\extension"; Flags: recursesubdirs createallsubdirs; Excludes: "\*\bin\*,\*\obj\*"
-Source: "..\install.ps1"; DestDir: "{app}\vsintegration"
+Source: "Icon.ico"; DestDir: "{app}"
+; VS integration: platform + task DLLs (Setup copies these into each VS), then
+; the VSIX (templates + DAP) which VSIXInstaller installs.
+Source: "..\Platforms\Xbox 360\*"; DestDir: "{app}\vsintegration\MSBuild\Xbox 360"; Flags: recursesubdirs createallsubdirs; Excludes: "*.dll"
+Source: "..\tasks\v170\Rxdk.Xbox360.Build.dll"; DestDir: "{app}\vsintegration\MSBuild\tasks\v170"
+Source: "..\tasks\v180\Rxdk.Xbox360.Build.dll"; DestDir: "{app}\vsintegration\MSBuild\tasks\v180"
+Source: "..\extension\Rxdk360.Vsix\obj\Release\msbuild-tasks\v170\Rxdk.Xbox360.Build.dll"; DestDir: "{app}\vsintegration\MSBuild\tasks\v170"; Flags: skipifsourcedoesntexist
+Source: "..\extension\Rxdk360.Vsix\obj\Release\msbuild-tasks\v180\Rxdk.Xbox360.Build.dll"; DestDir: "{app}\vsintegration\MSBuild\tasks\v180"; Flags: skipifsourcedoesntexist
+Source: "..\extension\Rxdk360.Vsix\obj\Release\msbuild-tasks\modern\Rxdk.Xbox360.Modern.Build.dll"; DestDir: "{app}\vsintegration\MSBuild\tasks"; Flags: skipifsourcedoesntexist
+Source: "..\tasks\Rxdk.Xbox360.Modern.Build\bin\Release\net472\Rxdk.Xbox360.Modern.Build.dll"; DestDir: "{app}\vsintegration\MSBuild\tasks"; Flags: skipifsourcedoesntexist
+Source: "..\extension\Rxdk360.Vsix\bin\Release\Rxdk360.Vsix.vsix"; DestDir: "{app}\vsintegration"
 Source: "..\README.md";   DestDir: "{app}\vsintegration"
 
 ; --- Modern (Clang/LLVM) toolchain payload -------------------------------------
 ; Self-contained, clean {bin,lib,include} tree under {app}\modern: our Clang +
 ; ld.lld (only the two binaries we drive + clang's resource headers, not the full
-; LLVM bin), XexTool, xdvdfs, the modern C/C++ runtime archives + headers. The XDK
-; stock headers (include\xbox) and import .libs (lib\*.lib for genstubs) are copied
-; in at install time from {app}\legacy by the unpacker's stagemodern step, so this
-; tree never reaches into the legacy XDK while building.
+; LLVM bin), XexTool, the modern C/C++ runtime archives + headers. xdvdfs lives
+; in {app}\bin (product-root host tools), not modern\bin. The XDK stock headers
+; (include\xbox) and import .libs (lib\*.lib for genstubs) are copied
+; in at install time from the legacy tree by the unpacker's stagemodern step, so
+; this tree never reaches into the stock XDK while building.
 ; Requires build/ to be populated (build the LLVM/runtime; drop xdvdfs in
 ; build\tools per build\tools\README.md) before compiling the installer.
 ; bin\ - the tools the build drives
 Source: "..\..\build\llvm\bin\clang.exe";   DestDir: "{app}\modern\bin"; Components: modern
 Source: "..\..\build\llvm\bin\ld.lld.exe";  DestDir: "{app}\modern\bin"; Components: modern
 Source: "..\..\vendor\xextool\build\Release\XexTool.exe"; DestDir: "{app}\modern\bin"; Components: modern
-Source: "..\..\build\tools\xdvdfs.exe";     DestDir: "{app}\modern\bin"; Components: modern
+Source: "..\..\build\tools\xdvdfs.exe";     DestDir: "{app}\bin"; Components: modern
 ; lib\ - clang's resource dir (found relative to bin\..\lib\clang) + all archives
 Source: "..\..\build\llvm\lib\clang\*";     DestDir: "{app}\modern\lib\clang"; Flags: recursesubdirs createallsubdirs; Components: modern
 Source: "..\..\build\libc\*.a";             DestDir: "{app}\modern\lib"; Components: modern
@@ -108,39 +113,30 @@ Root: HKLM32; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; Valu
 Root: HKLM64; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletekey
 Root: HKLM32; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "Version";     ValueData: "{#AppVersion}"
 Root: HKLM64; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "Version";     ValueData: "{#AppVersion}"
-; The relocated XDK now lives under {app}\legacy; both toolsets read XdkPath for the
-; XDK headers/libs (the legacy toolset uses it directly; the modern toolset reads
-; the stock import libs for genstubs).
+; Headers + xbox import libs live under {app}\legacy (XdkPath). Bin, other lib
+; folders (win32, ...), and the rest live at {app} (InstallPath / %RXDK360%).
 Root: HKLM32; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "XdkPath"; ValueData: "{app}\legacy"; Flags: uninsdeletevalue
 Root: HKLM64; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "XdkPath"; ValueData: "{app}\legacy"; Flags: uninsdeletevalue
 ; Modern toolchain root: the clang Toolset.props + Platform.targets resolve the
-; Clang/LLVM tools, runtime, libs and xdvdfs from here (see ModernPath, bin\xdvdfs.exe).
+; Clang/LLVM tools and runtime from here (see ModernPath). xdvdfs is {app}\bin.
 Root: HKLM32; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "ModernPath"; ValueData: "{app}\modern"; Components: modern; Flags: uninsdeletevalue
 Root: HKLM64; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "ModernPath"; ValueData: "{app}\modern"; Components: modern; Flags: uninsdeletevalue
 
 [Icons]
 ; The XDK's own Start-menu shortcuts are created (under the RXDK-360 group) by
 ; the manifest engine. Here we only add the uninstaller entry.
-Name: "{group}\Uninstall RXDK-360"; Filename: "{uninstallexe}"
-
-[Run]
-; The XDK install itself (unpack + manifest replay) runs from [Code] with a live
-; progress page (see DoManifestInstall). Here we only wire up the VS integration.
-; The RXDK-360 platform reads XDKInstallDir from the registry key written above,
-; so it targets {app} automatically.
-Filename: "powershell.exe"; \
-  Parameters: "-ExecutionPolicy Bypass -NoProfile -File ""{app}\vsintegration\install.ps1"""; \
-  StatusMsg: "Installing the Visual Studio integration..."; \
-  Flags: runhidden waituntilterminated; Tasks: vs
+Name: "{group}\Uninstall RXDK-360"; Filename: "{uninstallexe}"; IconFilename: "{app}\Icon.ico"
 
 [UninstallRun]
-; Reverse the manifest install (files, registry, shortcuts, shell ext) first...
-Filename: "{app}\tools\RxdkXdkUnpacker.exe"; Parameters: "uninstall ""{app}\legacy"""; \
-  Flags: waituntilterminated; RunOnceId: "RxdkXdkUninstall"
-; ...then remove the VS integration.
-Filename: "powershell.exe"; \
-  Parameters: "-ExecutionPolicy Bypass -NoProfile -File ""{app}\vsintegration\install.ps1"" -Uninstall"; \
-  Flags: runhidden waituntilterminated; RunOnceId: "RxdkVsUninstall"
+; Reverse the manifest install (files, registry, shortcuts, shell ext).
+; Unpacker is WinExe (no console PE); runhidden still required so any window is hidden.
+Filename: "{app}\tools\RxdkXdkUnpacker.exe"; Parameters: "uninstall ""{app}"""; \
+  Flags: runhidden waituntilterminated; RunOnceId: "RxdkXdkUninstall"
+
+; Inno only removes files it copied in [Files]. The XDK tree, stagemodern copies,
+; and extra files vsinstall copies into VS are not Inno-tracked. Wipe {app}.
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}"
 
 [Code]
 var
@@ -200,7 +196,7 @@ var
   finished, started: Boolean;
 begin
   ProgressPage := CreateOutputProgressPage('Installing the Xbox 360 XDK',
-    'Unpacking your XDK and installing it, relocated to ' + ExpandConstant('{app}\legacy') + '.');
+    'Unpacking your XDK and installing it, relocated to ' + ExpandConstant('{app}') + '.');
   ProgressPage.Show;
   try
     ProgressPage.SetProgress(0, 100);
@@ -208,7 +204,7 @@ begin
     DeleteFile(progFile);
     ExtractTemporaryFile('RxdkXdkUnpacker.exe');
     started := Exec(ExpandConstant('{tmp}\RxdkXdkUnpacker.exe'),
-      'install --progress "' + progFile + '" "' + GetSetupExe('') + '" "' + ExpandConstant('{app}\legacy') + '"',
+      'install --progress "' + progFile + '" "' + GetSetupExe('') + '" "' + ExpandConstant('{app}') + '"',
       '', SW_HIDE, ewNoWait, code);
     if not started then
     begin
@@ -257,13 +253,13 @@ begin
     { clean upgrade: remove a prior RXDK-360 before laying down the new one }
     if IsUpgrade('RXDK-360') then
       UnInstallOldVersion('RXDK-360');
-    { install the XDK (unpack + manifest) into the legacy tree with a live progress page }
+    { install the XDK (unpack + manifest) at the product root }
     DoManifestInstall();
   end
   else if CurStep = ssPostInstall then
   begin
-    { self-contained modern tree: copy the XDK stock headers + import libs from the
-      legacy tree into the modern tree (its files are already laid down by now) }
+    { self-contained modern tree: copy the XDK stock headers + import libs from
+      the product root into the modern tree (its files are already laid down) }
     if WizardIsComponentSelected('modern') then
     begin
       ExtractTemporaryFile('RxdkXdkUnpacker.exe');
@@ -273,12 +269,21 @@ begin
     end;
     { machine-wide RXDK360 env var -> the (relocated) XDK; Uninstall removes it }
     if WizardIsTaskSelected('envvar') then
-      RegWriteExpandStringValue(HKEY_LOCAL_MACHINE, EnvironmentKey, 'RXDK360', ExpandConstant('{app}\legacy'));
+      RegWriteExpandStringValue(HKEY_LOCAL_MACHINE, EnvironmentKey, 'RXDK360', ExpandConstant('{app}'));
+    { VS 2022 (v170) + VS 2026/18 (v170/v180): platform files first, then VSIX. }
+    if WizardIsTaskSelected('vs') then
+      InstallVsIntegration;
   end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
+  begin
     RegDeleteValue(HKEY_LOCAL_MACHINE, EnvironmentKey, 'RXDK360');
+    UninstallVsIntegration;
+  end;
+  (* After Inno deletes its own files, remove anything still under the app dir. *)
+  if CurUninstallStep = usPostUninstall then
+    DelTree(ExpandConstant('{app}'), True, True, True);
 end;

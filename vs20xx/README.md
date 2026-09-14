@@ -18,7 +18,7 @@ custom toolchain (clang/lld/coff2elf) — it drives the XDK's own
 | **Application** build (cl → link → imagexex → `.xex`) | ✅ boots + runs in xenia |
 | VS project templates ("Xbox 360 Title" / "Static Library") | ✅ built into a `.vsix` |
 | VSIX packaging (templates) | ✅ `extension/Rxdk360.Vsix` builds a `.vsix` |
-| Single-installer (`install.ps1`: platform + tasks + VSIX, self-elevating) | ✅ installs into VS2022 + VS18 |
+| Single-installer (`RxdkXdkUnpacker vsinstall`: platform + tasks + VSIX, self-elevating) | ✅ installs into VS2022 + VS18 |
 | Remote debugger (VSPackage) | ⏳ (deferred; separate native VSIX) |
 
 Verified end to end under `VS2022\MSBuild\Current\Bin\MSBuild.exe`, invoking the
@@ -75,18 +75,18 @@ install via `HKLM\...\Xbox\2.0\SDK@InstallPath`.
 
 ## Install
 
-`install.ps1` is the single installer — it **self-elevates** and does everything:
+`RxdkXdkUnpacker vsinstall` deploys the **already-built** VSIX (it self-elevates;
+it does not compile):
 
-```powershell
-powershell -ExecutionPolicy Bypass -File vs20xx\install.ps1
+```
+vs20xx\installer\unpacker\bin\Release\net472\RxdkXdkUnpacker.exe vsinstall vs20xx
 ```
 
-1. builds the RXDK-360 task assembly from source,
-2. installs the `RXDK-360` platform (+ task assembly) into every detected VS
-   install's `MSBuild\Microsoft\VC\{v170,v180}\Platforms`,
-3. builds and installs the VSIX (project templates) into each VS.
+1. copies the Xbox 360 platform + net472 task DLLs from inside the VSIX into each
+   VS `MSBuild\Microsoft\VC\{v170,v180}\Platforms\Xbox 360`,
+2. runs VSIXInstaller for templates + DAP.
 
-`-Uninstall` removes all of it; `-SkipVsix` / `-SkipPlatform` do one half.
+`vsuninstall` removes all of it; `--skip-vsix` / `--skip-platform` do one half.
 Verified installing into VS2022 (v170) and VS "18"/2026 (v170 + v180).
 
 After a VS restart: **New Project → "Xbox 360 Title" / "Xbox 360 Static
@@ -107,7 +107,7 @@ msbuild extension\Rxdk360.Vsix\Rxdk360.Vsix.csproj /restore /p:Configuration=Rel
 
 The extension ships templates only — a VSIX cannot write into the VS install's
 `VC\<toolset>\Platforms`, so the `RXDK-360` platform + task assembly are installed
-by the elevated `install.ps1`, which also builds and installs this VSIX. Building
+by the elevated `RxdkXdkUnpacker vsinstall`. Building
 it standalone (above) is only needed when iterating on the templates themselves.
 
 ## Layout
@@ -119,5 +119,5 @@ vs20xx/
   extension/Rxdk360.Vsix/    VS extension: "Xbox 360 Title"/"Static Library" templates
   tests/hello/               minimal StaticLibrary smoke test
   tests/apphello/            minimal Application -> bootable .xex
-  install.ps1                build + install the platform into detected VS installs
+  installer/unpacker/        XDK unpack + vsinstall / vsuninstall (no PowerShell)
 ```

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    RXDK-360 PDB/CodeView reader for the legacy 2010-01 toolset. Pure managed
+    (no dbghelp/DIA). The debug adapter uses this for C13 line info next to a
+    XEX; DWARF titles go through Rxdk.Xbox360.Dwarf instead.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Rxdk.Xbox360.Pdb</RootNamespace>
+    <AssemblyName>Rxdk.Xbox360.Pdb</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+    <Company>Team Resurgent</Company>
+    <Product>RXDK-360</Product>
+    <Copyright>Copyright (C) Team Resurgent. GPL-3.0-or-later.</Copyright>
+  </PropertyGroup>
+
+</Project>

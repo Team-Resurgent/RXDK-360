@@ -14,7 +14,9 @@
             -> extracts the XDK\ tree into <outDir>
   -->
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <!-- WinExe: Windows never allocates a console. Exe + Inno runhidden/SW_HIDE
+         still flashes a terminal because the PE subsystem is CONSOLE. -->
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net472</TargetFramework>
     <AssemblyName>RxdkXdkUnpacker</AssemblyName>
     <RootNamespace>Rxdk.Xdk.Unpacker</RootNamespace>
@@ -25,5 +27,4 @@
     <Company>Team Resurgent</Company>
     <Product>RXDK-360</Product>
   </PropertyGroup>
-
 </Project>

@@ -3,10 +3,10 @@
   RXDK-360 Visual Studio extension: ships the "Xbox 360 Title" and
   "Xbox 360 Static Library" project templates for the RXDK-360 platform.
 
-  Templates-only VSIX (no managed package assembly). The RXDK-360 MSBuild
-  platform and task assembly are installed separately by ..\..\install.ps1
-  (they must live under the VS install's VC\<toolset>\Platforms, which a VSIX
-  cannot write without elevation).
+  Templates, F5 interceptor, Xbox 360 MSBuild platform, and prebuilt net472
+  task DLLs. vsinstall copies the MSBuild payload into each VS VC\Platforms
+  folder (a VSIX cannot write there) and runs VSIXInstaller. Hardware F5 is
+  Copy to Hard Drive only.
 
   Build:  msbuild Rxdk360.Vsix.csproj /restore /p:Configuration=Release
   Output: bin\Release\Rxdk360.Vsix.vsix
@@ -51,6 +51,10 @@
     <Content Include="LICENSE.txt">
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
+    <Content Include="..\Rxdk360.Package\DebugAdapterHost.pkgdef">
+      <IncludeInVSIX>true</IncludeInVSIX>
+      <Link>DebugAdapterHost.pkgdef</Link>
+    </Content>
     <!-- The project-template wizard: build it first (build-order only, no compile
          reference), then ship its DLL in the VSIX root so the WizardExtension binds. -->
     <Content Include="..\Rxdk360.TemplateWizard\bin\$(Configuration)\net472\Rxdk360.TemplateWizard.dll">
@@ -63,6 +67,11 @@
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
       <Private>false</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\Rxdk360.Package\Rxdk360.Package.csproj">
+      <Name>Rxdk360.Package</Name>
+      <IncludeOutputGroupsInVSIX>BuiltProjectOutputGroup;GetCopyToOutputDirectoryItems;PkgdefProjectOutputGroup</IncludeOutputGroupsInVSIX>
+      <IncludeOutputGroupsInVSIXLocalOnly>DebugSymbolsProjectOutputGroup</IncludeOutputGroupsInVSIXLocalOnly>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
@@ -98,6 +107,58 @@
     <ItemGroup>
       <VSIXSourceItem Include="$(OutputPath)ProjectTemplates\**\*.zip">
         <VSIXSubPath>ProjectTemplates\%(RecursiveDir)</VSIXSubPath>
+      </VSIXSourceItem>
+    </ItemGroup>
+  </Target>
+
+  <!-- net472 task DLLs + Xbox 360 platform files. Built here (pack time), never on the target. -->
+  <Target Name="PackRxdk360Msbuild" BeforeTargets="GetVsixSourceItems">
+    <PropertyGroup>
+      <_PlatRoot>$(MSBuildThisFileDirectory)..\..\Platforms\Xbox 360\</_PlatRoot>
+      <_StockProj>$(MSBuildThisFileDirectory)..\..\tasks\Rxdk.Xbox360.Build\Rxdk.Xbox360.Build.csproj</_StockProj>
+      <_ModernProj>$(MSBuildThisFileDirectory)..\..\tasks\Rxdk.Xbox360.Modern.Build\Rxdk.Xbox360.Modern.Build.csproj</_ModernProj>
+      <_TaskOut>$(MSBuildThisFileDirectory)obj\$(Configuration)\msbuild-tasks\</_TaskOut>
+      <_Vs2022 Condition="Exists('C:\Program Files\Microsoft Visual Studio\2022\Enterprise')">C:\Program Files\Microsoft Visual Studio\2022\Enterprise</_Vs2022>
+      <_Vs2022 Condition="'$(_Vs2022)' == '' AND Exists('C:\Program Files\Microsoft Visual Studio\2022\Professional')">C:\Program Files\Microsoft Visual Studio\2022\Professional</_Vs2022>
+      <_Vs2022 Condition="'$(_Vs2022)' == '' AND Exists('C:\Program Files\Microsoft Visual Studio\2022\Community')">C:\Program Files\Microsoft Visual Studio\2022\Community</_Vs2022>
+      <_Vs18 Condition="Exists('C:\Program Files\Microsoft Visual Studio\18\Enterprise')">C:\Program Files\Microsoft Visual Studio\18\Enterprise</_Vs18>
+      <_Vs18 Condition="'$(_Vs18)' == '' AND Exists('C:\Program Files\Microsoft Visual Studio\18\Professional')">C:\Program Files\Microsoft Visual Studio\18\Professional</_Vs18>
+      <_Vs18 Condition="'$(_Vs18)' == '' AND Exists('C:\Program Files\Microsoft Visual Studio\18\Community')">C:\Program Files\Microsoft Visual Studio\18\Community</_Vs18>
+    </PropertyGroup>
+    <Error Condition="'$(_Vs2022)' == ''" Text="VS 2022 not found; needed to bind Rxdk.Xbox360.Build.dll against v170 CPPTasks." />
+    <MakeDir Directories="$(_TaskOut)v170;$(_TaskOut)v180;$(_TaskOut)modern" />
+    <Exec Command="dotnet build &quot;$(_ModernProj)&quot; -c $(Configuration) -o &quot;$(_TaskOut)modern&quot; -v q -nologo" />
+    <Exec Command="dotnet build &quot;$(_StockProj)&quot; -c $(Configuration) -o &quot;$(_TaskOut)v170&quot; -p:VcTaskVersion=v170 -p:VsInstallDir=&quot;$(_Vs2022)\\&quot; -v q -nologo" />
+    <Exec Condition="'$(_Vs18)' != ''" Command="dotnet build &quot;$(_StockProj)&quot; -c $(Configuration) -o &quot;$(_TaskOut)v180&quot; -p:VcTaskVersion=v180 -p:VsInstallDir=&quot;$(_Vs18)\\&quot; -v q -nologo" />
+    <ItemGroup>
+      <_Plat Include="$(_PlatRoot)**\*" Exclude="$(_PlatRoot)**\*.dll" />
+      <VSIXSourceItem Include="@(_Plat)">
+        <VSIXSubPath>MSBuild\Xbox 360\%(RecursiveDir)</VSIXSubPath>
+      </VSIXSourceItem>
+      <VSIXSourceItem Include="$(_TaskOut)v170\Rxdk.Xbox360.Build.dll">
+        <VSIXSubPath>MSBuild\tasks\v170</VSIXSubPath>
+      </VSIXSourceItem>
+      <VSIXSourceItem Include="$(_TaskOut)v180\Rxdk.Xbox360.Build.dll" Condition="Exists('$(_TaskOut)v180\Rxdk.Xbox360.Build.dll')">
+        <VSIXSubPath>MSBuild\tasks\v180</VSIXSubPath>
+      </VSIXSourceItem>
+      <VSIXSourceItem Include="$(_TaskOut)modern\Rxdk.Xbox360.Modern.Build.dll">
+        <VSIXSubPath>MSBuild\tasks</VSIXSubPath>
+      </VSIXSourceItem>
+    </ItemGroup>
+  </Target>
+
+  <!-- win-x86 DAP host (P/Invoke xbdm.dll). Copy-to-Drive F5 launches this via Debug Adapter Host. -->
+  <Target Name="PublishRxdk360Adapter" BeforeTargets="GetVsixSourceItems">
+    <PropertyGroup>
+      <_AdapterProj>$(MSBuildThisFileDirectory)..\..\debugger\Rxdk.Xbox360.DebugAdapter\Rxdk.Xbox360.DebugAdapter.csproj</_AdapterProj>
+      <_AdapterOut>$(IntermediateOutputPath)adapter\</_AdapterOut>
+    </PropertyGroup>
+    <Message Importance="high" Text="RXDK-360: publishing Rxdk.Xbox360.DebugAdapter (win-x86) into the VSIX under tools\ ..." />
+    <Exec Command="dotnet publish &quot;$(_AdapterProj)&quot; -c $(Configuration) -r win-x86 --self-contained true -o &quot;$(_AdapterOut.TrimEnd('\'))&quot; -v q -nologo" />
+    <ItemGroup>
+      <_AdapterFile Include="$(_AdapterOut)**\*" Exclude="$(_AdapterOut)**\*.pdb" />
+      <VSIXSourceItem Include="@(_AdapterFile)">
+        <VSIXSubPath>tools\%(RecursiveDir)</VSIXSubPath>
       </VSIXSourceItem>
     </ItemGroup>
   </Target>

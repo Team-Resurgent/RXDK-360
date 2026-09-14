@@ -5,8 +5,10 @@ tests/**/Release/
 tests/**/Debug/
 *.user
 
-# staged task assembly (built from tasks/ by build.ps1 / install.ps1)
+# staged / pack-time task assemblies (net472, built before Setup / vsinstall)
 Platforms/Xbox 360/Rxdk.Xbox360.Build.dll
+tasks/v170/
+tasks/v180/
 *.tlog
 *.FileListAbsolute.txt
 
@@ -14,8 +16,13 @@ Platforms/Xbox 360/Rxdk.Xbox360.Build.dll
 extension/**/bin/
 extension/**/obj/
 
+# debugger project build outputs
+debugger/**/bin/
+debugger/**/obj/
+
 # Inno Setup output
 installer/Output/
+installer/OutputNew/
 
 # unpacker build outputs
 installer/unpacker/bin/

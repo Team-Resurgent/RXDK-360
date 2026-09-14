@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
+  <!-- Stub: this project does not produce a .vsix (CreateVsixContainer=false).
+       Rxdk360.Vsix packs the generated pkgdef + assembly. -->
+  <Metadata>
+    <Identity Id="Rxdk360.Package" Version="0.1.0" Language="en-US" Publisher="Team Resurgent" />
+    <DisplayName>RXDK-360 Package</DisplayName>
+    <Description>F5 interceptor for Copy to Hard Drive. Packed by Rxdk360.Vsix.</Description>
+  </Metadata>
+  <Installation>
+    <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.0,19.0)" />
+  </Installation>
+  <Assets>
+    <Asset Type="Microsoft.VisualStudio.VsPackage" Path="Rxdk360.Package.pkgdef" />
+  </Assets>
+</PackageManifest>
