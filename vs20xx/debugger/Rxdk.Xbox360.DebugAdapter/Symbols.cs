@@ -17,8 +17,9 @@ namespace Rxdk.Xbox360.DebugAdapter
         public readonly int Size;
         public readonly uint? Address;   // memory location
         public readonly int? Register;   // or GPR index
-        public VarSlot(string name, string type, int size, uint? addr, int? reg)
-        { Name = name; TypeName = type; Size = size; Address = addr; Register = reg; }
+        public readonly ulong TypeOffset;
+        public VarSlot(string name, string type, int size, uint? addr, int? reg, ulong typeOffset = 0)
+        { Name = name; TypeName = type; Size = size; Address = addr; Register = reg; TypeOffset = typeOffset; }
     }
 
     /// <summary>A source position for a kit PC or a planted breakpoint.</summary>
@@ -146,9 +147,9 @@ namespace Rxdk.Xbox360.DebugAdapter
             ulong frameBase = EvalFrameBase(fn.FrameBase, ctx);
             foreach (var v in fn.Variables)
             {
-                int size = SizeOf(v.TypeName);
+                int size = Info != null && v.TypeOffset != 0 ? Info.SizeOf(v.TypeOffset) : SizeOf(v.TypeName);
                 var (addr, reg) = EvalLocation(v.Location, frameBase, ctx);
-                outv.Add(new VarSlot(v.Name, v.TypeName, size, addr, reg));
+                outv.Add(new VarSlot(v.Name, v.TypeName, size, addr, reg, v.TypeOffset));
             }
             return outv;
         }

@@ -24,15 +24,30 @@ namespace Rxdk360.Package.Commands
     {
         private readonly AsyncPackage _package;
         private int _reentry;
+        private int _queued;
+        private int _passthroughStart;
+        // COM event sinks must be fields or they are collected and stop firing.
+        private EnvDTE.Events _dteEvents;
+        private EnvDTE.CommandEvents _cmdAll;
 
         private StartDebugInterceptor(AsyncPackage package) => _package = package;
 
         public static async Task RegisterAsync(AsyncPackage package)
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            var interceptor = new StartDebugInterceptor(package);
             var register = (IVsRegisterPriorityCommandTarget)await package.GetServiceAsync(typeof(SVsRegisterPriorityCommandTarget));
             if (register == null) return;
-            register.RegisterPriorityCommandTarget(0, new StartDebugInterceptor(package), out _);
+            register.RegisterPriorityCommandTarget(0, interceptor, out _);
+
+            var dte = Microsoft.VisualStudio.Shell.Package.GetGlobalService(typeof(EnvDTE._DTE)) as EnvDTE.DTE;
+            if (dte?.Events == null) return;
+            interceptor._dteEvents = dte.Events;
+            // Unfiltered: CommandEvents[guid,id] never fired for F5 (13:52 log had
+            // "hooked" then intercept with no "default cancelled").
+            interceptor._cmdAll = interceptor._dteEvents.CommandEvents;
+            interceptor._cmdAll.BeforeExecute += interceptor.OnBeforeAnyCommand;
+            Log("interceptor registered (CommandEvents hooked)");
         }
 
         private static bool IsStart(ref Guid group, uint cmdId) =>
@@ -40,8 +55,79 @@ namespace Rxdk360.Package.Commands
             (cmdId == (uint)VSConstants.VSStd97CmdID.Start ||
              cmdId == (uint)VSConstants.VSStd97CmdID.StartNoDebug);
 
-        public int QueryStatus(ref Guid pguidCmdGroup, uint cCmds, OLECMD[] prgCmds, IntPtr pCmdText) =>
-            (int)Microsoft.VisualStudio.OLE.Interop.Constants.OLECMDERR_E_NOTSUPPORTED;
+        public int QueryStatus(ref Guid pguidCmdGroup, uint cCmds, OLECMD[] prgCmds, IntPtr pCmdText)
+        {
+            if (prgCmds == null || cCmds == 0)
+                return (int)Microsoft.VisualStudio.OLE.Interop.Constants.OLECMDERR_E_NOTSUPPORTED;
+
+            // Must claim Start here. QueryStatus NOTSUPPORTED lets VS also dispatch
+            // Debug.Start to Xbox360Debugger, which has no engine and shows
+            // "Unable to start debugging. Check your debugger settings...".
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                var dte = Microsoft.VisualStudio.Shell.Package.GetGlobalService(typeof(EnvDTE._DTE)) as EnvDTE.DTE;
+                if (AlreadyDebugging(dte) || string.IsNullOrEmpty(FirstXbox360ProjectPath(dte)))
+                    return (int)Microsoft.VisualStudio.OLE.Interop.Constants.OLECMDERR_E_NOTSUPPORTED;
+            }
+            catch
+            {
+                return (int)Microsoft.VisualStudio.OLE.Interop.Constants.OLECMDERR_E_NOTSUPPORTED;
+            }
+
+            bool ours = false;
+            for (uint i = 0; i < cCmds; i++)
+            {
+                if (!IsStart(ref pguidCmdGroup, prgCmds[i].cmdID))
+                    continue;
+                prgCmds[i].cmdf = (uint)(OLECMDF.OLECMDF_SUPPORTED | OLECMDF.OLECMDF_ENABLED);
+                ours = true;
+            }
+            return ours
+                ? VSConstants.S_OK
+                : (int)Microsoft.VisualStudio.OLE.Interop.Constants.OLECMDERR_E_NOTSUPPORTED;
+        }
+
+        private void OnBeforeAnyCommand(string guid, int id, object customIn, object customOut, ref bool cancelDefault)
+        {
+            if (!Guid.TryParse(guid, out var g) || g != VSConstants.GUID_VSStandardCommandSet97)
+                return;
+            if (id != (int)VSConstants.VSStd97CmdID.Start &&
+                id != (int)VSConstants.VSStd97CmdID.StartNoDebug)
+                return;
+            Log("CommandEvents Start guid=" + guid + " id=" + id);
+            TryCancelDefaultStart(id == (int)VSConstants.VSStd97CmdID.StartNoDebug, ref cancelDefault);
+        }
+
+        private void TryCancelDefaultStart(bool noDebug, ref bool cancelDefault)
+        {
+            // Only Xenia/fallthrough re-issue sets _passthroughStart. _reentry is set
+            // for the whole hardware F5 (including MSBuild); skipping cancel then lets
+            // the delayed default Debug.Start through and shows the settings dialog.
+            if (Volatile.Read(ref _passthroughStart) > 0)
+                return;
+            string hint = null;
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                var dte = Microsoft.VisualStudio.Shell.Package.GetGlobalService(typeof(EnvDTE._DTE)) as EnvDTE.DTE;
+                if (AlreadyDebugging(dte))
+                    return;
+                hint = FirstXbox360ProjectPath(dte);
+                if (string.IsNullOrEmpty(hint))
+                    return;
+            }
+            catch
+            {
+                return;
+            }
+
+            // Returning S_OK from the priority Exec does not stop VC DebugLaunch
+            // (Xbox360Debugger has no engine → "Unable to start debugging...").
+            cancelDefault = true;
+            Log("Debug.Start default cancelled hint=" + hint);
+            QueueLaunch(noDebug, hint);
+        }
 
         public int Exec(ref Guid pguidCmdGroup, uint nCmdID, uint nCmdexecopt, IntPtr pvaIn, IntPtr pvaOut)
         {
@@ -73,11 +159,22 @@ namespace Rxdk360.Package.Commands
             }
 
             bool noDebug = nCmdID == (uint)VSConstants.VSStd97CmdID.StartNoDebug;
-            string hintCapture = hint;
-            _package.JoinableTaskFactory
-                .RunAsync(() => AfterStartAsync(noDebug, hintCapture))
-                .FileAndForget("rxdk360/f5-debug");
+            QueueLaunch(noDebug, hint);
             return VSConstants.S_OK;
+        }
+
+        private void QueueLaunch(bool noDebug, string hintVcxproj)
+        {
+            if (Interlocked.CompareExchange(ref _queued, 1, 0) != 0)
+                return;
+            string hintCapture = hintVcxproj;
+            _package.JoinableTaskFactory
+                .RunAsync(async () =>
+                {
+                    try { await AfterStartAsync(noDebug, hintCapture); }
+                    finally { Interlocked.Exchange(ref _queued, 0); }
+                })
+                .FileAndForget("rxdk360/f5-debug");
         }
 
         private async Task AfterStartAsync(bool noDebug, string hintVcxproj)
@@ -99,8 +196,7 @@ namespace Rxdk360.Package.Commands
 
                 if (HardwareDebugLauncher.IsXeniaFallthrough(info))
                 {
-                    var dte = (EnvDTE.DTE)await _package.GetServiceAsync(typeof(EnvDTE.DTE));
-                    dte?.ExecuteCommand(noDebug ? "Debug.StartWithoutDebugging" : "Debug.Start");
+                    await ExecuteDefaultStartAsync(noDebug);
                     return;
                 }
 
@@ -128,8 +224,7 @@ namespace Rxdk360.Package.Commands
                     return;
                 }
 
-                var dte2 = (EnvDTE.DTE)await _package.GetServiceAsync(typeof(EnvDTE.DTE));
-                dte2?.ExecuteCommand(noDebug ? "Debug.StartWithoutDebugging" : "Debug.Start");
+                await ExecuteDefaultStartAsync(noDebug);
             }
             catch (Exception ex)
             {
@@ -139,6 +234,20 @@ namespace Rxdk360.Package.Commands
             finally
             {
                 Interlocked.Decrement(ref _reentry);
+            }
+        }
+
+        private async Task ExecuteDefaultStartAsync(bool noDebug)
+        {
+            Interlocked.Increment(ref _passthroughStart);
+            try
+            {
+                var dte = (EnvDTE.DTE)await _package.GetServiceAsync(typeof(EnvDTE.DTE));
+                dte?.ExecuteCommand(noDebug ? "Debug.StartWithoutDebugging" : "Debug.Start");
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _passthroughStart);
             }
         }
 

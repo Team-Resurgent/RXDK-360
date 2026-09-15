@@ -326,6 +326,15 @@ def build_import_libraries(imports):
     Layout (xex2_opt_import_libraries): total size, then a string table
     (size, count, padded names), then one xex2_import_library per library.
     """
+    # ImageXex writes the target module's HV export-table id here (same value
+    # on every title that imports that module). Zero makes HvxResolveImports
+    # return C0000225 (STATUS_NOT_FOUND). Values from a 21256 title that loads
+    # on this kit; retry after import records carry the name-table index.
+    module_ids = {
+        "xboxkrnl.exe": 0x45DC17E0,
+        "xam.xex":      0xFCA15C76,
+        "xbdm.xex":     0xECEB8109,
+    }
     names = [name for name, _ in imports]
     name_data = b""
     name_index = {}
@@ -340,9 +349,10 @@ def build_import_libraries(imports):
         count = len(records)
         lib = struct.pack(">I", 0x28 + count * 4)     # size
         lib += b"\0" * 0x14                            # next_import_digest
-        lib += struct.pack(">I", 0)                    # id
-        lib += struct.pack(">I", 0)                    # version_value
-        lib += struct.pack(">I", 0)                    # version_min_value
+        lib += struct.pack(">I", module_ids.get(name, 0))  # id
+        # Same packed versions ImageXex writes (v2.0.21256, min v2.0.1861).
+        lib += struct.pack(">I", 0x20530800)           # version_value
+        lib += struct.pack(">I", 0x20074500)           # version_min_value
         lib += struct.pack(">H", name_index[name])     # name_index
         lib += struct.pack(">H", count)                # count
         for rec in records:
@@ -409,13 +419,10 @@ def build_page_descriptors(base, sections, image_size, page_size):
         kinds[0] = SECTIONINFO_CODE
         forced = True
 
-    descriptors = []                                   # [page_count, info] runs
-    for info in kinds:
-        if descriptors and descriptors[-1][1] == info:
-            descriptors[-1][0] += 1
-        else:
-            descriptors.append([1, info])
-    descriptors = [(count, info) for count, info in descriptors]
+    # One HV descriptor per 64KB page, like ImageXex. Coalescing adjacent
+    # pages of the same kind (e.g. 6xCODE as one descriptor) produces a
+    # hash chain the kit rejects with LDRX C0000221 after a debug sign.
+    descriptors = [(1, info) for info in kinds]
 
     notes = []
     if shared_code_write:

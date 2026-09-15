@@ -18,6 +18,9 @@ $rxdkprojectconfigurations$
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
 $rxdkconfigurationgroups$
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <DeploymentType>CopyToHardDrive</DeploymentType>
+  </PropertyGroup>
 $rxdkitemdefinitiongroups$
   <ItemGroup>
     <ClCompile Include="main.cpp" />

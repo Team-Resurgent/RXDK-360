@@ -126,8 +126,11 @@ namespace Rxdk.Xbox360.Modern.Build
                 return false;
             }
 
-            // Pack the ELF into a devkit XEX2.
-            var packArgs = new List<string> { "pack", elf, "-o", OutputFile };
+            // Pack the ELF into a XEX2, then debug-sign it. A zero RSA signature
+            // is classified Retail; this kit then returns LDRX C000007B. `-m d`
+            // fills hashes and the debug signature (observed required for load).
+            string packed = OutputFile + ".unsigned.xex";
+            var packArgs = new List<string> { "pack", elf, "-o", packed };
             if (manifest != null) { packArgs.Add("--import-manifest"); packArgs.Add(manifest); }
             var pack = Run(XexToolPath, packArgs);
             Log.LogMessage(MessageImportance.Normal, pack.StdOut);
@@ -135,6 +138,15 @@ namespace Rxdk.Xbox360.Modern.Build
             {
                 LogDiagnostics(pack.Combined);
                 Log.LogError("pack failed");
+                return false;
+            }
+            var sign = Run(XexToolPath, new[] { "-m", "d", "-o", OutputFile, packed });
+            Log.LogMessage(MessageImportance.Normal, sign.StdOut);
+            try { File.Delete(packed); } catch { }
+            if (sign.ExitCode != 0)
+            {
+                LogDiagnostics(sign.Combined);
+                Log.LogError("XexTool -m d failed");
                 return false;
             }
 
@@ -313,9 +325,7 @@ namespace Rxdk.Xbox360.Modern.Build
 $@"ENTRY(_start)
 SECTIONS {{
   . = 0x{baseAddr:X8};
-  . += 0x1000;                       /* room for the synthesised PE headers */
-  .text   : {{ *(.text*) }}
-  . = ALIGN(0x{page:X});             /* read-only data on its own page */
+  . += 0x1000;                       /* PE headers; first 64KB page is headers + RO */
   .rodata : {{
     *(.rodata*)
     *(.gcc_except_table .gcc_except_table.*)
@@ -328,7 +338,6 @@ SECTIONS {{
     *(.xdata)
     *(.xdata.*)
   }}
-  . = ALIGN(0x{page:X});             /* DWARF EH tables on their own read-only page */
   .eh_frame : {{
     PROVIDE_HIDDEN(__eh_frame_start = .);
     KEEP(*(.eh_frame))
@@ -337,6 +346,12 @@ SECTIONS {{
     PROVIDE_HIDDEN(__eh_frame_hdr_start = .);
     PROVIDE_HIDDEN(__eh_frame_hdr_end = .);
   }}
+  . = ALIGN(0x{page:X});             /* CODE after RO: ImageXex IM1031 if RX shares the header page */
+  .text   : {{ *(.text*) }}
+  . = ALIGN(0x{page:X});             /* import thunks on their own CODE page */
+  .kthunks : ALIGN(16) {{ KEEP(*(.kthunks)) }}
+  . = ALIGN(0x{page:X});             /* writable region: IAT then data. HV patches .kvars in place (C0000225 if RO). */
+  .kvars  : {{ KEEP(*(.kvars)) }}
   .init_array : {{                   /* C++ static constructors, run pre-main */
     PROVIDE_HIDDEN(__init_array_start = .);
     KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*)))
@@ -354,10 +369,6 @@ SECTIONS {{
     KEEP(*(SORT_BY_NAME(.CRT$XC*)))
     PROVIDE_HIDDEN(__xc_z = .);
   }}
-  .kvars  : {{ KEEP(*(.kvars)) }}    /* import var records: keep past --gc-sections */
-  . = ALIGN(0x{page:X});             /* import thunks on their own CODE page */
-  .kthunks : ALIGN(16) {{ KEEP(*(.kthunks)) }}
-  . = ALIGN(0x{page:X});             /* writable region on its own page(s) */
   .data : {{ *(.data*) }}
   .bss  : {{ *(.bss*) *(COMMON) }}
   /DISCARD/ : {{ *(.comment) *(.note*) }}

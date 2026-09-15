@@ -21,7 +21,7 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <Deploy>
 
       <!-- Base Deploy -->
-      <DeploymentType        Condition="'%(Deploy.DeploymentType)'        == ''">EmulateDvd</DeploymentType>
+      <DeploymentType        Condition="'%(Deploy.DeploymentType)'        == ''">CopyToHardDrive</DeploymentType>
       <TargetConsole         Condition="'%(Deploy.TargetConsole)'         == ''">$(RemoteMachine)</TargetConsole>
       <SuppressStartupBanner Condition="'%(Deploy.SuppressStartupBanner)' == ''">true</SuppressStartupBanner>
       <ExcludedFromBuild     Condition="'%(Deploy.ExcludedFromBuild)'     == ''">false</ExcludedFromBuild>

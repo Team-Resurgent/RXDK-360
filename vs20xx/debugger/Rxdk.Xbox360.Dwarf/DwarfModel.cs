@@ -20,11 +20,43 @@ namespace Rxdk.Xbox360.Dwarf
             (EndSequence ? "  (end)" : IsStmt ? "  (stmt)" : "");
     }
 
+    /// <summary>A field of a struct / class / union.</summary>
+    public sealed class DwarfMember
+    {
+        public string Name = "";
+        public int Offset;
+        public ulong TypeOffset;
+    }
+
+    /// <summary>A DWARF type DIE: size, encoding, and members for Locals expansion.</summary>
+    public sealed class DwarfType
+    {
+        public ulong Offset;
+        public int Tag;
+        public string Name = "";
+        public int ByteSize;
+        public int Encoding;
+        public ulong ReferentOffset;
+        public int ArrayCount;
+        public readonly List<DwarfMember> Members = new();
+
+        public bool IsPointer => Tag == DW_TAG.pointer_type;
+        public bool IsArray => Tag == DW_TAG.array_type;
+        public bool IsStruct =>
+            Tag == DW_TAG.structure_type || Tag == DW_TAG.class_type || Tag == DW_TAG.union_type;
+        public bool IsBase => Tag == DW_TAG.base_type;
+        public bool IsFloat => Encoding == DW_ATE.float_;
+        public bool IsQualifier =>
+            Tag == DW_TAG.typedef || Tag == DW_TAG.const_type ||
+            Tag == DW_TAG.volatile_type || Tag == DW_TAG.restrict_type;
+    }
+
     /// <summary>A local variable or parameter of a function.</summary>
     public sealed class DwarfVariable
     {
         public string Name = "";
         public string TypeName = "";
+        public ulong TypeOffset;
         public int DeclLine;
         public bool IsParameter;
         /// <summary>Raw DWARF location expression (e.g. DW_OP_fbreg &lt;offset&gt;).</summary>
@@ -62,6 +94,7 @@ namespace Rxdk.Xbox360.Dwarf
     public sealed class DwarfInfo
     {
         public readonly List<CompileUnit> Units = new();
+        public readonly Dictionary<ulong, DwarfType> Types = new();
 
         public IEnumerable<DwarfFunction> Functions
         {
@@ -94,6 +127,95 @@ namespace Rxdk.Xbox360.Dwarf
                 }
             }
             return best;
+        }
+
+        /// <summary>Follow typedef / const / volatile / restrict to the underlying type.</summary>
+        public DwarfType? Peel(DwarfType? type)
+        {
+            int n = 0;
+            while (type != null && type.IsQualifier && type.ReferentOffset != 0 && n++ < 16)
+            {
+                if (!Types.TryGetValue(type.ReferentOffset, out var next))
+                    break;
+                type = next;
+            }
+            return type;
+        }
+
+        public DwarfType? TypeOf(ulong offset)
+        {
+            if (offset == 0 || !Types.TryGetValue(offset, out var t))
+                return null;
+            return Peel(t);
+        }
+
+        public int SizeOf(ulong typeOffset)
+        {
+            if (typeOffset != 0 && Types.TryGetValue(typeOffset, out var raw))
+                return SizeOf(raw);
+            return 4;
+        }
+
+        public int SizeOf(DwarfType? type)
+        {
+            type = Peel(type);
+            if (type == null)
+                return 4;
+            if (type.ByteSize > 0)
+                return type.ByteSize;
+            if (type.IsPointer)
+                return 4;
+            if (type.IsArray && type.ReferentOffset != 0)
+            {
+                int elem = SizeOf(type.ReferentOffset);
+                return type.ArrayCount > 0 ? elem * type.ArrayCount : elem;
+            }
+            return 4;
+        }
+
+        public string DisplayName(ulong typeOffset)
+        {
+            if (typeOffset == 0 || !Types.TryGetValue(typeOffset, out var t))
+                return "";
+            return DisplayName(t, 0);
+        }
+
+        private string DisplayName(DwarfType t, int depth)
+        {
+            if (depth > 16)
+                return "";
+            if (t.IsPointer)
+                return (t.ReferentOffset != 0 && Types.TryGetValue(t.ReferentOffset, out var pointee)
+                    ? DisplayName(pointee, depth + 1) : "void") + "*";
+            if (t.Tag == DW_TAG.const_type)
+                return "const " + (t.ReferentOffset != 0 && Types.TryGetValue(t.ReferentOffset, out var c)
+                    ? DisplayName(c, depth + 1) : "void");
+            if (t.IsArray)
+            {
+                string elem = t.ReferentOffset != 0 && Types.TryGetValue(t.ReferentOffset, out var e)
+                    ? DisplayName(e, depth + 1) : "";
+                return t.ArrayCount > 0 ? $"{elem}[{t.ArrayCount}]" : elem + "[]";
+            }
+            if (!string.IsNullOrEmpty(t.Name))
+                return t.IsStruct && t.Tag == DW_TAG.structure_type ? "struct " + t.Name : t.Name;
+            if (t.IsQualifier && t.ReferentOffset != 0 && Types.TryGetValue(t.ReferentOffset, out var q))
+                return DisplayName(q, depth + 1);
+            return t.IsStruct ? "{struct}" : "";
+        }
+
+        public bool IsExpandable(DwarfType? type)
+        {
+            type = Peel(type);
+            if (type == null)
+                return false;
+            if (type.IsPointer)
+            {
+                var r = TypeOf(type.ReferentOffset);
+                return r != null && (r.IsStruct || r.IsArray || r.IsPointer);
+            }
+            if (type.IsArray)
+                return type.ArrayCount > 0 || type.ReferentOffset != 0;
+            return type.Members.Count > 0;
         }
 
         /// <summary>The lowest address mapped to a given file:line (for setting a

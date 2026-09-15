@@ -63,11 +63,11 @@ def write_layout(path, base, page):
         f.write(f"""ENTRY(_start)
 SECTIONS {{
   . = 0x{base:08X};
-  . += 0x1000;                       /* room for the synthesised PE headers */
-  .text   : {{ *(.text*) }}
-  . = ALIGN(0x{page:X});             /* read-only data on its own page: keeps it out
-                                        of the CODE page so xenia's code analyser
-                                        does not disassemble format strings as code */
+  . += 0x1000;                       /* room for the synthesised PE headers.
+                                        First 64KB page is headers + RO data (the
+                                        ImageXex .rdata layout). Putting .text here
+                                        mixed CODE with the header page; HW imagexex
+                                        then reports IM1031 and LDRX C000007B. */
   .rodata : {{
     *(.rodata*)
     /* Merge the per-function LSDA sections (-fexceptions emits one
@@ -99,12 +99,10 @@ SECTIONS {{
     *(.xdata)
     *(.xdata.*)
   }}
-  . = ALIGN(0x{page:X});             /* DWARF EH tables on their own read-only page:
-                                        libunwind recovers the section's true length
-                                        from the PE section table at runtime, so it
-                                        must be a distinct section (not merged with
-                                        .rodata) and its markers give the start. */
-  .eh_frame : {{
+  .eh_frame : {{                     /* distinct RO section (not merged with .rodata):
+                                        libunwind recovers length from the PE section
+                                        table at runtime. Same attributes as .rodata
+                                        so it may share the header/RO 64KB page. */
     PROVIDE_HIDDEN(__eh_frame_start = .);
     KEEP(*(.eh_frame))
     KEEP(*(.eh_frame.*))
@@ -115,6 +113,17 @@ SECTIONS {{
     PROVIDE_HIDDEN(__eh_frame_hdr_start = .);
     PROVIDE_HIDDEN(__eh_frame_hdr_end = .);
   }}
+  . = ALIGN(0x{page:X});             /* CODE after RO so xenia does not disassemble
+                                        format strings, and so HW does not mix RX
+                                        with the header page (IM1031 / C000007B). */
+  .text   : {{ *(.text*) }}
+  . = ALIGN(0x{page:X});             /* import thunks on their own CODE page, clear
+                                        of both the entry code and the rodata */
+  .kthunks : ALIGN(16) {{ KEEP(*(.kthunks)) }}
+  . = ALIGN(0x{page:X});             /* writable region. .kvars is the IAT: HV patches
+                                        it in place (LDRX C0000225 STATUS_NOT_FOUND if
+                                        the records sit on a Header/Resource page). */
+  .kvars  : {{ KEEP(*(.kvars)) }}
   .init_array : {{                   /* C++ static constructors, run pre-main by start.c */
     PROVIDE_HIDDEN(__init_array_start = .);
     KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*)))
@@ -136,11 +145,6 @@ SECTIONS {{
     KEEP(*(SORT_BY_NAME(.CRT$XC*)))
     PROVIDE_HIDDEN(__xc_z = .);
   }}
-  .kvars  : {{ KEEP(*(.kvars)) }}    /* import var records: keep past --gc-sections */
-  . = ALIGN(0x{page:X});             /* import thunks on their own CODE page, clear
-                                        of both the entry code and the rodata */
-  .kthunks : ALIGN(16) {{ KEEP(*(.kthunks)) }}
-  . = ALIGN(0x{page:X});             /* writable region on its own page(s) */
   .data : {{ *(.data*) }}
   .bss  : {{ *(.bss*) *(COMMON) }}
   /DISCARD/ : {{ *(.comment) *(.note*) }}

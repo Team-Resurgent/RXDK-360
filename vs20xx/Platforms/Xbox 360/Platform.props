@@ -32,7 +32,11 @@ Copyright (C) Microsoft Corporation. All rights reserved.
   </PropertyGroup>
 
   <PropertyGroup>
-    <DebuggerFlavor Condition="'$(DebuggerFlavor)'==''">Xbox360Debugger</DebuggerFlavor>
+    <DebuggerFlavor Condition="'$(DebuggerFlavor)'==''">RxdkXbox360Debugger</DebuggerFlavor>
+    <!-- Project property the Console Deployment page binds to. New titles used to
+         leave this unset, so the dropdown was blank even though Deploy-item
+         metadata defaulted to EmulateDvd. Copy to Hard Drive matches F5 / DAP. -->
+    <DeploymentType Condition="'$(DeploymentType)'==''">CopyToHardDrive</DeploymentType>
     <EmbedManifest>false</EmbedManifest>
     
     <!-- $(Xbox360InstallDir) is deprecated, and may be removed in a future XDK release.  Use $(XDKInstallDir) instead. -->

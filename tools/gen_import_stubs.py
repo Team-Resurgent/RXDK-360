@@ -141,33 +141,32 @@ def main():
         else:
             unresolved.append(name)
 
-    # Emit the stub assembly. Two import forms, matching how xenia reads each
-    # import record's value (top byte selects the kind, xex_module.cc):
+    # Emit the stub assembly. Two import forms (xex_module.cc / ImageXex):
     #
-    #   function -> a 16-byte call thunk in .kthunks whose first word is
-    #     0x010000<ord> (top byte 1 => xenia rewrites it to a syscall so `bl
-    #     <name>` calls the export) PLUS a 4-byte .kvars record __imp_<name> =
-    #     <ord> (top byte 0; for a function xenia parks 0xDEADC0DE there).
+    #   record = (kind << 24) | (module_index << 16) | ordinal
+    #     kind 0 = IAT slot, kind 1 = thunk first word, kind 2 = thunk second word
+    #     module_index is the library's index in the XEX name table (ImageXex).
+    #     xenia ignores bits 16-23; HvxResolveImports uses them (C0000225 if 0
+    #     on a non-first library, e.g. XGetVideoMode looked up in xboxkrnl).
     #
-    #   variable -> ONE 4-byte .kvars record = <ord> (top byte 0 => xenia writes
-    #     the export's address into it), with the base symbol <name> aliased onto
-    #     that same slot and NO .kthunks thunk -- so reading `<name>` as data
-    #     yields the pointer the loader patched in (e.g. char* ExLoadedCommandLine).
-    #     A thunk here would make xenia treat the export as a function.
+    #   function -> 16-byte .kthunks (kind1, kind2, mtctr, bctr) PLUS .kvars IAT
+    #   variable -> ONE 4-byte .kvars IAT, base symbol aliased onto that slot
     lines = ["# Generated import thunks -- do not edit.", "    .section .kthunks,\"ax\"", ""]
-    for module, funcs in resolved.items():
+    for module_index, (module, funcs) in enumerate(resolved.items()):
         for name, ordinal, is_var in funcs:
             if is_var:
                 continue
+            rec = (module_index << 16) | ordinal
             lines += [f"    .globl {name}", f"{name}:",
-                      f"    .long 0x{0x01000000 | ordinal:08X}, 0, 0, 0", ""]
-    lines += ["    .section .kvars,\"a\"", ""]
-    for module, funcs in resolved.items():
+                      f"    .long 0x{0x01000000 | rec:08X}, 0x{0x02000000 | rec:08X}, 0x7D6903A6, 0x4E800420", ""]
+    lines += ["    .section .kvars,\"aw\"", ""]
+    for module_index, (module, funcs) in enumerate(resolved.items()):
+        rec_mod = module_index << 16
         for name, ordinal, is_var in funcs:
             lines += [f"    .globl __imp_{name}"]
             if is_var:                     # base symbol reads the patched pointer
                 lines += [f"    .globl {name}", "    .p2align 2", f"{name}:"]
-            lines += [f"__imp_{name}:", f"    .long 0x{ordinal:08X}", ""]
+            lines += [f"__imp_{name}:", f"    .long 0x{rec_mod | ordinal:08X}", ""]
     with open(args.out, "w", newline="\n") as f:
         f.write("\n".join(lines))
 

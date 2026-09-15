@@ -272,17 +272,16 @@ namespace Rxdk.Xbox360.DebugAdapter
             {
                 if (TryPdbValues(out var pdbVals, out var ctx, out var memory))
                     pdbVals.TryEmitMembers(expandKey, ref ctx, list, memory);
+                else if (TryDwarfValues(out var dwarfVals, out var dwarfMem))
+                    dwarfVals.TryEmitMembers(expandKey, list, dwarfMem);
             }
             else if (TryPdbValues(out var pdbLocals, out var locCtx, out var locMem))
             {
                 pdbLocals.EmitLocals(ref locCtx, list, locMem);
             }
-            else if (_haveCtx && _sym != null && _ctx.Gpr != null)
+            else if (TryDwarfValues(out var dwarfLocals, out var dwarfLocMem))
             {
-                var fn = _sym.FunctionAt(_ctx.Iar);
-                if (fn != null)
-                    foreach (var s in _sym.Locals(fn, _ctx))
-                        vars.Add(new { name = s.Name, value = ReadValue(s), type = s.TypeName, variablesReference = 0 });
+                dwarfLocals.EmitLocals(list, dwarfLocMem);
             }
 
             foreach (var row in list.Rows)
@@ -321,30 +320,27 @@ namespace Rxdk.Xbox360.DebugAdapter
                 return;
             }
 
+            if (expression.Length > 0 && TryDwarfValues(out var dwarf, out var dwarfMem)
+                && dwarf.TryEvaluate(expression, dwarfMem, out var dwarfValue, out var dwarfExpand, out var dwarfKey))
+            {
+                int child = 0;
+                if (dwarfExpand && dwarfKey.Length > 0)
+                {
+                    child = _nextChildRef++;
+                    _expand[child] = dwarfKey;
+                }
+                _dap.SendResponse(req, true, new Dictionary<string, object?>
+                {
+                    ["result"] = dwarfValue,
+                    ["variablesReference"] = child,
+                });
+                return;
+            }
+
             if (isHover)
             {
                 _dap.SendResponse(req, false, message: error ?? "not available");
                 return;
-            }
-
-            if (expression.Length > 0 && _haveCtx && _sym?.Info != null && _ctx.Gpr != null)
-            {
-                var fn = _sym.FunctionAt(_ctx.Iar);
-                if (fn != null)
-                {
-                    foreach (var s in _sym.Locals(fn, _ctx))
-                    {
-                        if (!string.Equals(s.Name, expression, StringComparison.Ordinal)
-                            && !string.Equals(s.Name, expression, StringComparison.OrdinalIgnoreCase))
-                            continue;
-                        _dap.SendResponse(req, true, new Dictionary<string, object?>
-                        {
-                            ["result"] = ReadValue(s),
-                            ["variablesReference"] = 0,
-                        });
-                        return;
-                    }
-                }
             }
 
             _dap.SendResponse(req, true, new Dictionary<string, object?>
@@ -368,6 +364,17 @@ namespace Rxdk.Xbox360.DebugAdapter
             return true;
         }
 
+        private bool TryDwarfValues(out DwarfValues values, out KitMemory memory)
+        {
+            values = null!;
+            memory = null!;
+            if (!_haveCtx || _kit == null || _sym?.Info == null || _ctx.Gpr == null)
+                return false;
+            values = new DwarfValues(_sym, _ctx);
+            memory = new KitMemory(_kit);
+            return true;
+        }
+
         private object DapVar(ValueRow row)
         {
             int child = 0;
@@ -383,48 +390,6 @@ namespace Rxdk.Xbox360.DebugAdapter
                 ["type"] = row.Type,
                 ["variablesReference"] = child,
             };
-        }
-
-        private string ReadValue(VarSlot s)
-        {
-            try
-            {
-                ulong raw;
-                if (s.Register is int reg) raw = _ctx.Gpr[reg];
-                else if (s.Address is uint addr && _kit != null)
-                {
-                    var b = _kit.ReadMemory(addr, s.Size);
-                    raw = 0; foreach (var x in b) raw = (raw << 8) | x;      // big-endian
-                }
-                else return "<optimized out>";
-                return Format(s.TypeName, raw, s.Size);
-            }
-            catch { return "<unavailable>"; }
-        }
-
-        private static string Format(string type, ulong raw, int size)
-        {
-            string t = type.Replace("const ", "").Trim();
-            if (t.EndsWith("*")) return $"0x{raw:X8}";
-            if (t is "char" or "signed char" or "unsigned char")
-            {
-                char ch = (char)(raw & 0xff);
-                return char.IsControl(ch) ? ((long)raw).ToString() : $"'{ch}' ({(long)raw})";
-            }
-            if (t is "_Bool" or "bool") return raw != 0 ? "true" : "false";
-            bool unsigned = t.Contains("unsigned");
-            if (!unsigned)
-            {
-                long sv = size switch
-                {
-                    1 => (sbyte)raw,
-                    2 => (short)raw,
-                    4 => (int)raw,
-                    _ => (long)raw,
-                };
-                return sv.ToString();
-            }
-            return raw.ToString();
         }
 
         private void Continue(DapConnection.Message req)

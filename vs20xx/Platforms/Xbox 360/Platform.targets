@@ -101,8 +101,9 @@ Copyright (C) Microsoft Corporation. All rights reserved.
   </ItemGroup>
 
   <!-- Console Deployment F5 / debugger flavor follow Deployment Type.
-       Prefer $(DeploymentType) (project property). Fall back to Deploy-item
-       metadata, first token only — @(Deploy) can list several items. -->
+       Prefer $(DeploymentType) (project property, default CopyToHardDrive).
+       Fall back to Deploy-item metadata, first token only — @(Deploy) can
+       list several items. -->
   <PropertyGroup Condition="'$(ConfigurationType)' != 'Makefile' and '$(ConfigurationType)' != 'StaticLibrary'">
     <!-- Disc-image output path + xdvdfs default ({app}\bin\xdvdfs.exe). -->
     <RxdkXeniaIsoPath Condition="'$(RxdkXeniaIsoPath)' == ''">$(OutDir)$(TargetName).iso</RxdkXeniaIsoPath>
@@ -617,7 +618,7 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
   <PropertyGroup Condition="'$(_RxdkDt)' == 'CopyToHardDrive'">
-    <DebuggerFlavor>Xbox360Debugger</DebuggerFlavor>
+    <DebuggerFlavor>RxdkXbox360Debugger</DebuggerFlavor>
   </PropertyGroup>
 </Project>
 

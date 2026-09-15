@@ -47,6 +47,7 @@
     Name="DeploymentType"
     DisplayName="Deployment Type"
     Category="General"
+    Default="CopyToHardDrive"
     Description="Specifies how the title is launched. Copy to Hard Drive deploys to the kit and F5 debugs over XBDM. Emulate DVD Drive uses PC DVD emulation. Xenia Emulator (PC) runs the title in Xenia via the Local Windows Debugger."
     F1Keyword="VC.Project.VCX360DeploymentTool.DeploymentType">
     <EnumProperty.DataSource>

@@ -6,16 +6,25 @@ namespace Rxdk.Xbox360.Dwarf
     // The DWARF v4 constants we consume. Values per the DWARF 4 spec.
     internal static class DW_TAG
     {
+        public const int array_type = 0x01;
+        public const int class_type = 0x02;
+        public const int enumeration_type = 0x04;
+        public const int formal_parameter = 0x05;
+        public const int member = 0x0d;
+        public const int pointer_type = 0x0f;
         public const int compile_unit = 0x11;
+        public const int structure_type = 0x13;
+        public const int typedef = 0x16;
+        public const int union_type = 0x17;
+        public const int base_type = 0x24;
+        public const int const_type = 0x26;
         public const int subprogram = 0x2e;
         public const int variable = 0x34;
-        public const int formal_parameter = 0x05;
-        public const int base_type = 0x24;
-        public const int pointer_type = 0x0f;
-        public const int const_type = 0x26;
-        public const int typedef = 0x16;
-        public const int structure_type = 0x13;
+        public const int volatile_type = 0x35;
+        public const int restrict_type = 0x37;
         public const int lexical_block = 0x0b;
+        public const int subrange_type = 0x21;
+        public const int inheritance = 0x1c;
     }
 
     internal static class DW_AT
@@ -34,6 +43,29 @@ namespace Rxdk.Xbox360.Dwarf
         public const int location = 0x02;
         public const int frame_base = 0x40;
         public const int external = 0x3f;
+        public const int data_member_location = 0x38;
+        public const int count = 0x37;
+        public const int upper_bound = 0x2f;
+        public const int specification = 0x47;
+    }
+
+    internal static class DW_ATE
+    {
+        public const int boolean = 0x02;
+        public const int float_ = 0x04;
+        public const int signed = 0x05;
+        public const int signed_char = 0x06;
+        public const int unsigned = 0x07;
+        public const int unsigned_char = 0x08;
+    }
+
+    internal static class DW_OP
+    {
+        public const int constu = 0x10;
+        public const int consts = 0x11;
+        public const int plus_uconst = 0x23;
+        public const int lit0 = 0x30;
+        public const int lit31 = 0x4f;
     }
 
     internal static class DW_FORM

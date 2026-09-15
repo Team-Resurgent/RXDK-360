@@ -53,7 +53,11 @@ static int SelfTest(string elf)
         foreach (var s in sym.Locals(fn, ctx))
         {
             string where = s.Address is uint a ? $"@0x{a:X8}" : s.Register is int r ? $"r{r}" : "<none>";
-            Console.WriteLine($"    {(s.TypeName + " " + s.Name).PadRight(24)} {where}  (size {s.Size})");
+            int members = 0;
+            if (s.TypeOffset != 0)
+                members = sym.Info.TypeOf(s.TypeOffset)?.Members.Count ?? 0;
+            Console.WriteLine($"    {(s.TypeName + " " + s.Name).PadRight(24)} {where}  (size {s.Size}" +
+                              (members > 0 ? $", {members} members" : "") + ")");
         }
     }
     return 0;

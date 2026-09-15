@@ -18,8 +18,10 @@ using Task = System.Threading.Tasks.Task;
 namespace Rxdk360.Package.Services
 {
     /// <summary>
-    /// F5 for Xbox 360 + Copy to Hard Drive: build (which xbcp's via Deploy), then
-    /// Debug Adapter Host → Rxdk.Xbox360.DebugAdapter.
+    /// F5 for Xbox 360 + Copy to Hard Drive: start the Debug Adapter Host immediately
+    /// (Play disables like the stock XDK engine), then the adapter copies the XEX
+    /// onto the kit. A full MSBuild (including Deploy) is only run when the XEX is
+    /// missing, because awaiting it leaves VS in design mode for the whole copy.
     ///
     /// Copy to Hard Drive is the only F5 this package owns. Xenia and Emulate DVD
     /// fall through. RxdkXeniaPath is not a trigger — Deployment Type is.
@@ -80,6 +82,7 @@ namespace Rxdk360.Package.Services
                 return false;
             return string.Equals(info.DeploymentType, CopyToHardDrive, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(info.DebuggerFlavor, "Xbox360Debugger", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(info.DebuggerFlavor, "RxdkXbox360Debugger", StringComparison.OrdinalIgnoreCase)
                 || string.IsNullOrEmpty(info.DeploymentType);
         }
 
@@ -136,19 +139,29 @@ namespace Rxdk360.Package.Services
                 return;
             }
 
-            if (!await BuildProjectAsync(package, info))
-            {
-                await ShowAsync(package, "Build failed — see the Output / Error List.");
-                return;
-            }
-
             string xex = info.ImagePath;
             if (string.IsNullOrEmpty(xex) || !File.Exists(xex))
                 xex = GuessXex(info);
             if (string.IsNullOrEmpty(xex) || !File.Exists(xex))
             {
-                await ShowAsync(package, "No XEX at ImagePath. Build the Xbox 360 title, then F5.");
-                return;
+                F5Log("F5 no local XEX; MSBuild then DAP");
+                if (!await BuildProjectAsync(package, info))
+                {
+                    await ShowAsync(package, "Build failed — see the Output / Error List.");
+                    return;
+                }
+                xex = info.ImagePath;
+                if (string.IsNullOrEmpty(xex) || !File.Exists(xex))
+                    xex = GuessXex(info);
+                if (string.IsNullOrEmpty(xex) || !File.Exists(xex))
+                {
+                    await ShowAsync(package, "No XEX at ImagePath. Build the Xbox 360 title, then F5.");
+                    return;
+                }
+            }
+            else
+            {
+                F5Log("F5 DAP now (XEX exists); kit copy is inside the adapter");
             }
 
             string name = Path.GetFileNameWithoutExtension(xex);
@@ -593,9 +606,24 @@ namespace Rxdk360.Package.Services
         {
             if (string.IsNullOrWhiteSpace(image)) return null;
             if (image.IndexOf("$(", StringComparison.Ordinal) >= 0) return null;
-            if (!Path.IsPathRooted(image) && !string.IsNullOrEmpty(projectDir))
-                return Path.GetFullPath(Path.Combine(projectDir, image));
-            return image;
+            // Kit paths (devkit:\...) and some evaluated ImagePath values make
+            // GetFullPath throw NotSupportedException ("The given path's format
+            // is not supported") and used to abort GetStartupInfo entirely.
+            try
+            {
+                if (image.IndexOf(':') >= 0 &&
+                    !(image.Length >= 2 && image[1] == ':' &&
+                      (image.Length == 2 || image[2] == '\\' || image[2] == '/')))
+                    return image.Trim();
+                if (!Path.IsPathRooted(image) && !string.IsNullOrEmpty(projectDir))
+                    return Path.GetFullPath(Path.Combine(projectDir, image));
+                return image;
+            }
+            catch (Exception ex) when (ex is NotSupportedException || ex is ArgumentException)
+            {
+                F5Log("ExpandPath skip " + ex.GetType().Name + " " + image);
+                return null;
+            }
         }
 
         private static string FirstNonEmpty(params string[] values)

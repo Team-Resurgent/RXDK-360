@@ -60,6 +60,7 @@ namespace Rxdk.Xbox360.Dwarf
                 var cu = r.ReadCompileUnit(cur);
                 if (cu != null) info.Units.Add(cu);
             }
+            r.AttachTypes(info);
             return info;
         }
 
@@ -124,13 +125,23 @@ namespace Rxdk.Xbox360.Dwarf
             {
                 if (child.Tag == DW_TAG.variable || child.Tag == DW_TAG.formal_parameter)
                 {
+                    Die named = child;
+                    if (child.Has(DW_AT.specification) &&
+                        _byOffset.TryGetValue(child.U(DW_AT.specification), out var spec))
+                        named = spec;
+                    ulong typeOff = child.Has(DW_AT.type) ? child.U(DW_AT.type)
+                        : named.Has(DW_AT.type) ? named.U(DW_AT.type) : 0;
+                    string name = child.Has(DW_AT.name) ? child.Str(DW_AT.name) : named.Str(DW_AT.name);
+                    byte[] loc = child.Has(DW_AT.location) ? child.Blk(DW_AT.location)
+                        : named.Blk(DW_AT.location);
                     fn.Variables.Add(new DwarfVariable
                     {
-                        Name = child.Str(DW_AT.name),
+                        Name = name,
                         IsParameter = child.Tag == DW_TAG.formal_parameter,
-                        DeclLine = (int)child.U(DW_AT.decl_line),
-                        Location = child.Blk(DW_AT.location),
-                        TypeName = child.Has(DW_AT.type) ? TypeName(child.U(DW_AT.type), 0) : "",
+                        DeclLine = (int)(child.Has(DW_AT.decl_line) ? child.U(DW_AT.decl_line) : named.U(DW_AT.decl_line)),
+                        Location = loc,
+                        TypeOffset = typeOff,
+                        TypeName = typeOff != 0 ? TypeName(typeOff, 0) : "",
                     });
                 }
                 else if (child.Tag == DW_TAG.lexical_block)
@@ -138,6 +149,87 @@ namespace Rxdk.Xbox360.Dwarf
                     CollectVariables(child, fn, files);   // locals in nested scopes
                 }
             }
+        }
+
+        private void AttachTypes(DwarfInfo info)
+        {
+            foreach (var kv in _byOffset)
+            {
+                var die = kv.Value;
+                var t = new DwarfType
+                {
+                    Offset = kv.Key,
+                    Tag = die.Tag,
+                    Name = die.Str(DW_AT.name),
+                    ByteSize = die.Has(DW_AT.byte_size) ? (int)die.U(DW_AT.byte_size) : 0,
+                    Encoding = die.Has(DW_AT.encoding) ? (int)die.U(DW_AT.encoding) : 0,
+                    ReferentOffset = die.Has(DW_AT.type) ? die.U(DW_AT.type) : 0,
+                };
+                if (die.Tag == DW_TAG.array_type)
+                    t.ArrayCount = ArrayBound(die);
+                info.Types[kv.Key] = t;
+            }
+            foreach (var kv in _byOffset)
+            {
+                if (kv.Value.Tag != DW_TAG.structure_type &&
+                    kv.Value.Tag != DW_TAG.class_type &&
+                    kv.Value.Tag != DW_TAG.union_type)
+                    continue;
+                FillMembers(info.Types[kv.Key], kv.Value);
+            }
+        }
+
+        private static int ArrayBound(Die die)
+        {
+            int n = 1;
+            bool any = false;
+            foreach (var child in die.Children)
+            {
+                if (child.Tag != DW_TAG.subrange_type) continue;
+                any = true;
+                if (child.Has(DW_AT.count))
+                    n *= (int)child.U(DW_AT.count);
+                else if (child.Has(DW_AT.upper_bound))
+                    n *= (int)child.U(DW_AT.upper_bound) + 1;
+            }
+            return any ? n : 0;
+        }
+
+        private static void FillMembers(DwarfType type, Die die)
+        {
+            foreach (var child in die.Children)
+            {
+                if (child.Tag != DW_TAG.member && child.Tag != DW_TAG.inheritance)
+                    continue;
+                type.Members.Add(new DwarfMember
+                {
+                    Name = child.Tag == DW_TAG.inheritance ? "" : child.Str(DW_AT.name),
+                    Offset = MemberOffset(child),
+                    TypeOffset = child.Has(DW_AT.type) ? child.U(DW_AT.type) : 0,
+                });
+            }
+        }
+
+        private static int MemberOffset(Die die)
+        {
+            if (!die.Has(DW_AT.data_member_location) ||
+                !die.Attrs.TryGetValue(DW_AT.data_member_location, out var v))
+                return 0;
+            if (v is ulong u) return (int)u;
+            if (v is byte[] b) return DecodeMemberLoc(b);
+            return 0;
+        }
+
+        private static int DecodeMemberLoc(byte[] loc)
+        {
+            if (loc.Length == 0) return 0;
+            var c = new ByteCursor(loc);
+            byte op = c.U8();
+            if (op == DW_OP.plus_uconst) return (int)c.ULeb();
+            if (op >= DW_OP.lit0 && op <= DW_OP.lit31) return op - DW_OP.lit0;
+            if (op == DW_OP.constu) return (int)c.ULeb();
+            if (op == DW_OP.consts) return (int)c.SLeb();
+            return 0;
         }
 
         private string TypeName(ulong offset, int depth)
@@ -153,7 +245,12 @@ namespace Rxdk.Xbox360.Dwarf
                 case DW_TAG.const_type:
                     return "const " + (t.Has(DW_AT.type) ? TypeName(t.U(DW_AT.type), depth + 1) : "void");
                 case DW_TAG.structure_type:
+                case DW_TAG.class_type:
                     return "struct " + t.Str(DW_AT.name);
+                case DW_TAG.union_type:
+                    return "union " + t.Str(DW_AT.name);
+                case DW_TAG.array_type:
+                    return (t.Has(DW_AT.type) ? TypeName(t.U(DW_AT.type), depth + 1) : "") + "[]";
                 default:
                     return t.Str(DW_AT.name);
             }
