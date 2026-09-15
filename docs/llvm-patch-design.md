@@ -1,6 +1,6 @@
 # The LLVM patch: design
 
-Branch `xbox360-msppc` in `vendor/llvm-project`.
+Branch `teamresurgent` in `vendor/llvm-project`.
 
 ## The key realisation
 
@@ -84,7 +84,7 @@ lowering with a Lv2-style 32-bit-pointer data layout, and override five things".
 
 ## Status
 
-Branch `xbox360-msppc`, six commits building on the design above:
+Branch `teamresurgent`, six commits building on the design above:
 
 | commit | contents |
 |---|---|

@@ -67,8 +67,8 @@ Source: "Icon.ico"; DestDir: "{app}"
 ; VS integration: platform + task DLLs (Setup copies these into each VS), then
 ; the VSIX (templates + DAP) which VSIXInstaller installs.
 Source: "..\Platforms\Xbox 360\*"; DestDir: "{app}\vsintegration\MSBuild\Xbox 360"; Flags: recursesubdirs createallsubdirs; Excludes: "*.dll"
-Source: "..\tasks\v170\Rxdk.Xbox360.Build.dll"; DestDir: "{app}\vsintegration\MSBuild\tasks\v170"
-Source: "..\tasks\v180\Rxdk.Xbox360.Build.dll"; DestDir: "{app}\vsintegration\MSBuild\tasks\v180"
+Source: "..\tasks\v170\Rxdk.Xbox360.Build.dll"; DestDir: "{app}\vsintegration\MSBuild\tasks\v170"; Flags: skipifsourcedoesntexist
+Source: "..\tasks\v180\Rxdk.Xbox360.Build.dll"; DestDir: "{app}\vsintegration\MSBuild\tasks\v180"; Flags: skipifsourcedoesntexist
 Source: "..\extension\Rxdk360.Vsix\obj\Release\msbuild-tasks\v170\Rxdk.Xbox360.Build.dll"; DestDir: "{app}\vsintegration\MSBuild\tasks\v170"; Flags: skipifsourcedoesntexist
 Source: "..\extension\Rxdk360.Vsix\obj\Release\msbuild-tasks\v180\Rxdk.Xbox360.Build.dll"; DestDir: "{app}\vsintegration\MSBuild\tasks\v180"; Flags: skipifsourcedoesntexist
 Source: "..\extension\Rxdk360.Vsix\obj\Release\msbuild-tasks\modern\Rxdk.Xbox360.Modern.Build.dll"; DestDir: "{app}\vsintegration\MSBuild\tasks"; Flags: skipifsourcedoesntexist
@@ -84,8 +84,9 @@ Source: "..\README.md";   DestDir: "{app}\vsintegration"
 ; (include\xbox) and import .libs (lib\*.lib for genstubs) are copied
 ; in at install time from the legacy tree by the unpacker's stagemodern step, so
 ; this tree never reaches into the stock XDK while building.
-; Requires build/ to be populated (build the LLVM/runtime; drop xdvdfs in
-; build\tools per build\tools\README.md) before compiling the installer.
+; CI fills build/llvm from Team-Resurgent/llvm-project xbox360-windows-x64.zip
+; (scripts/fetch-clang.ps1), xdvdfs from Team-Resurgent/XDVDFS-TR, XexTool from
+; this tree. coff/*.a are XDK translations (not redistributable); skip if absent.
 ; bin\ - the tools the build drives
 Source: "..\..\build\llvm\bin\clang.exe";   DestDir: "{app}\modern\bin"; Components: modern
 Source: "..\..\build\llvm\bin\ld.lld.exe";  DestDir: "{app}\modern\bin"; Components: modern
@@ -94,12 +95,12 @@ Source: "..\..\build\tools\xdvdfs.exe";     DestDir: "{app}\bin"; Components: mo
 ; lib\ - clang's resource dir (found relative to bin\..\lib\clang) + all archives
 Source: "..\..\build\llvm\lib\clang\*";     DestDir: "{app}\modern\lib\clang"; Flags: recursesubdirs createallsubdirs; Components: modern
 Source: "..\..\build\libc\*.a";             DestDir: "{app}\modern\lib"; Components: modern
-Source: "..\..\build\coff\*.a";             DestDir: "{app}\modern\lib"; Components: modern
+Source: "..\..\build\coff\*.a";             DestDir: "{app}\modern\lib"; Flags: skipifsourcedoesntexist; Components: modern
 ; include\ - the modern C/C++23 runtime headers (xbox\ is staged in at install time)
 Source: "..\..\runtime\config\*";           DestDir: "{app}\modern\include\config"; Flags: recursesubdirs createallsubdirs; Components: modern
 Source: "..\..\vendor\picolibc\libc\include\*";          DestDir: "{app}\modern\include\picolibc"; Flags: recursesubdirs createallsubdirs; Components: modern
-Source: "..\..\vendor\llvm-project\libcxx\include\*";    DestDir: "{app}\modern\include\libcxx"; Flags: recursesubdirs createallsubdirs; Components: modern
-Source: "..\..\vendor\llvm-project\libcxxabi\include\*"; DestDir: "{app}\modern\include\libcxxabi"; Flags: recursesubdirs createallsubdirs; Components: modern
+Source: "..\..\build\llvm\libcxx\include\*";    DestDir: "{app}\modern\include\libcxx"; Flags: recursesubdirs createallsubdirs; Components: modern
+Source: "..\..\build\llvm\libcxxabi\include\*"; DestDir: "{app}\modern\include\libcxxabi"; Flags: recursesubdirs createallsubdirs; Components: modern
 
 [Registry]
 ; RXDK-360's own SDK key (read first by the RXDK-360 platform's Toolset.props),

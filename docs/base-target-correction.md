@@ -92,7 +92,7 @@ thunked items were already in the bounded set measured in
 
 ## Status
 
-Committed on `xbox360-msppc`:
+Committed on `teamresurgent`:
 
 | commit | contents |
 |---|---|

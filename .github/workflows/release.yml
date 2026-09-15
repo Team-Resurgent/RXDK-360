@@ -1,0 +1,155 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Build the VSIX + Inno installer and publish a rolling "latest" GitHub Release.
+# Clang/lld come from Team-Resurgent/llvm-project xbox360-windows-x64.zip.
+# xdvdfs comes from Team-Resurgent/XDVDFS-TR latest Windows zip.
+# XexTool, libc/libcpp, unpacker, and the VSIX are built here.
+
+name: Installer
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: xbox360-windows-x64
+    runs-on: windows-2022
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: Init picolibc + XexTool
+        shell: pwsh
+        run: |
+          powershell -NoProfile -File scripts/init-submodules.ps1
+          git -c core.longpaths=true submodule update --init vendor/xextool
+
+      - name: Download Xbox 360 clang
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: powershell -NoProfile -File scripts/fetch-clang.ps1
+
+      - name: Download xdvdfs (XDVDFS-TR latest Windows)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path deps | Out-Null
+          gh release download --repo Team-Resurgent/XDVDFS-TR `
+            --pattern "xdvdfs-windows-*.zip" --dir deps
+          $zip = Get-ChildItem deps/xdvdfs-windows-*.zip | Select-Object -First 1
+          if (-not $zip) { throw "no xdvdfs-windows-*.zip on XDVDFS-TR latest" }
+          Expand-Archive $zip.FullName -DestinationPath deps/xdvdfs -Force
+          $exe = Get-ChildItem deps/xdvdfs -Recurse -Filter xdvdfs.exe | Select-Object -First 1
+          if (-not $exe) { throw "xdvdfs.exe missing from $($zip.Name)" }
+          New-Item -ItemType Directory -Force -Path build/tools | Out-Null
+          Copy-Item $exe.FullName "build/tools/xdvdfs.exe"
+          Write-Host "xdvdfs -> build/tools/xdvdfs.exe ($($exe.Length) bytes)"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build XexTool
+        shell: pwsh
+        run: |
+          cmake -S vendor/xextool -B vendor/xextool/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build vendor/xextool/build --config Release --parallel
+          if (-not (Test-Path "vendor/xextool/build/Release/XexTool.exe")) {
+            throw "XexTool.exe not at vendor/xextool/build/Release/XexTool.exe"
+          }
+
+      - name: Build libc + libcpp
+        shell: pwsh
+        run: |
+          $root = (Get-Location).Path
+          $env:RXDK_CLANG = Join-Path $root "build\llvm\bin\clang.exe"
+          $env:RXDK_AR = Join-Path $root "build\llvm\bin\llvm-ar.exe"
+          $env:RXDK_LLVM = Join-Path $root "build\llvm"
+          if (-not (Test-Path $env:RXDK_AR)) { throw "llvm-ar.exe missing from clang zip" }
+          python tools/build_libc.py
+          python tools/build_libcpp.py
+
+      - name: Build unpacker
+        run: dotnet build vs20xx/installer/unpacker/RxdkXdkUnpacker.csproj -c Release -v m
+
+      - name: Build VSIX
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
+          if (-not $msbuild) { throw "MSBuild not found" }
+          & $msbuild vs20xx\extension\Rxdk360.Vsix\Rxdk360.Vsix.csproj /restore /p:Configuration=Release /v:m
+          if ($LASTEXITCODE -ne 0) { throw "VSIX build failed" }
+          if (-not (Test-Path "vs20xx\extension\Rxdk360.Vsix\bin\Release\Rxdk360.Vsix.vsix")) {
+            throw "VSIX not produced"
+          }
+
+      - name: Compile installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe not found" }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          & $iscc /Odist vs20xx\installer\RXDK-360.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+          Copy-Item "vs20xx\extension\Rxdk360.Vsix\bin\Release\Rxdk360.Vsix.vsix" dist\
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rxdk-360-windows
+          path: |
+            dist/RXDK-360-Setup.exe
+            dist/Rxdk360.Vsix.vsix
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    needs: [build]
+    if: github.event_name == 'workflow_dispatch' || github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rxdk-360-windows
+          path: dist
+
+      - name: Move the rolling latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete latest --repo "${{ github.repository }}" --cleanup-tag --yes || true
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          target_commitish: ${{ github.sha }}
+          name: RXDK-360 latest
+          make_latest: true
+          generate_release_notes: true
+          files: |
+            dist/RXDK-360-Setup.exe
+            dist/Rxdk360.Vsix.vsix

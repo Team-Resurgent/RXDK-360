@@ -63,8 +63,10 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild; a bad edit here breaks
     <RxdkConfigInc    Condition="'$(RxdkConfigInc)'    == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\include\config</RxdkConfigInc>
     <RxdkConfigInc    Condition="'$(RxdkConfigInc)'    == ''">$(RxdkModernRoot)\runtime\config</RxdkConfigInc>
     <RxdkLibcxxInc    Condition="'$(RxdkLibcxxInc)'    == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\include\libcxx</RxdkLibcxxInc>
+    <RxdkLibcxxInc    Condition="'$(RxdkLibcxxInc)'    == '' and Exists('$(RxdkModernRoot)\build\llvm\libcxx\include')">$(RxdkModernRoot)\build\llvm\libcxx\include</RxdkLibcxxInc>
     <RxdkLibcxxInc    Condition="'$(RxdkLibcxxInc)'    == ''">$(RxdkModernRoot)\vendor\llvm-project\libcxx\include</RxdkLibcxxInc>
     <RxdkLibcxxabiInc Condition="'$(RxdkLibcxxabiInc)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\include\libcxxabi</RxdkLibcxxabiInc>
+    <RxdkLibcxxabiInc Condition="'$(RxdkLibcxxabiInc)' == '' and Exists('$(RxdkModernRoot)\build\llvm\libcxxabi\include')">$(RxdkModernRoot)\build\llvm\libcxxabi\include</RxdkLibcxxabiInc>
     <RxdkLibcxxabiInc Condition="'$(RxdkLibcxxabiInc)' == ''">$(RxdkModernRoot)\vendor\llvm-project\libcxxabi\include</RxdkLibcxxabiInc>
 
     <!-- XDK headers (for XDK-headers mode) + import .libs (for genstubs). The clean

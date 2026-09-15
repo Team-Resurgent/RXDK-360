@@ -134,16 +134,15 @@ ELF rather than the platform's rules.
 
 ## The toolchain
 
-`vendor/llvm-project` is a git submodule (see `.gitmodules`) tracking branch
-`xbox360-msppc`, which adds a `powerpc-unknown-xbox360` target implementing the
-platform ABI. Initialise it (and the other submodules) after cloning with
-`git submodule update --init --recursive`. See
-[docs/llvm-patch-design.md](docs/llvm-patch-design.md).
+Clang/lld for `powerpc-unknown-xbox360` is the rolling
+[llvm-project `latest` release](https://github.com/Team-Resurgent/llvm-project/releases/latest)
+(`xbox360-windows-x64.zip` on this OS). Unpack it with `scripts/fetch-clang.ps1`.
 
 ```
-tools/build-llvm.bat    build the patched clang + lld (PowerPC backend only)
-tools/verify_abi.py     compile the probes with both cl.exe and the patched
-                        clang and report agreement, rule by rule
+scripts/fetch-clang.ps1   download clang, lld, lib/clang, libcxx/libcxxabi/libunwind
+tools/build-llvm.bat      optional: rebuild clang from a local llvm-project clone
+tools/verify_abi.py       compile the probes with both cl.exe and the patched
+                          clang and report agreement, rule by rule
 ```
 
 `verify_abi.py` is the acceptance test: every row corresponds to one measured
@@ -157,7 +156,7 @@ spike/abi/     stack layout, mixed int/float, struct and varargs probes
 spike/abi2/    callee-side probes: structs, 64-bit args, varargs homing, red zone
 spike/vmx/     vector ABI and callee-saved vector register probes
 tools/         scanners, toolchain build, ABI verification
-vendor/        llvm-project, picolibc and xextool (git submodules)
+vendor/        picolibc and xextool (git submodules)
 ```
 
 ## Prerequisites
@@ -165,7 +164,6 @@ vendor/        llvm-project, picolibc and xextool (git submodules)
 - Xbox 360 XDK, full install (not `InstallType=Minimum` — that omits `include\`,
   `lib\` and the compiler). Windows only, and needed only for the spikes that compare
   against `cl.exe` and for the shipped `lib\xbox\*.lib` the toolchain reuses.
-- The patched clang + lld, built once from the `vendor/llvm-project` submodule via
-  `tools/build-llvm.bat`. This is the real toolchain.
+- The patched clang + lld from `xbox360-windows-x64.zip` (`scripts/fetch-clang.ps1`).
 - zig 0.16.0 or newer — optional, only for the legacy PPC-EABI path (`mktitle.py
   --cc zig`) and the early ABI spikes.

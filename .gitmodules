@@ -2,10 +2,6 @@
 	path = vendor/picolibc
 	url = https://github.com/Team-Resurgent/picolibc.git
 	branch = xbox360
-[submodule "vendor/llvm-project"]
-	path = vendor/llvm-project
-	url = https://github.com/Team-Resurgent/llvm-project.git
-	branch = xbox360-msppc
 [submodule "vendor/xextool"]
 	path = vendor/xextool
 	url = https://github.com/Team-Resurgent/XexTool.git

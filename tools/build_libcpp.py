@@ -19,12 +19,23 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-LLVM = os.path.join(ROOT, "vendor", "llvm-project")
+
+
+def _llvm_root():
+    env = os.environ.get("RXDK_LLVM")
+    for candidate in (env, os.path.join(ROOT, "build", "llvm"),
+                      os.path.join(ROOT, "vendor", "llvm-project")):
+        if candidate and os.path.isdir(os.path.join(candidate, "libcxx", "include")):
+            return candidate
+    return os.path.join(ROOT, "build", "llvm")
+
+
+LLVM = _llvm_root()
 PICO = os.path.join(ROOT, "vendor", "picolibc")
 CONFIG = os.path.join(ROOT, "runtime", "config")
 
 CLANG = os.environ.get("RXDK_CLANG", os.path.join(ROOT, "build", "llvm", "bin", "clang.exe"))
-AR = os.environ.get("RXDK_AR", r"C:\Program Files\LLVM\bin\llvm-ar.exe")
+AR = os.environ.get("RXDK_AR", os.path.join(ROOT, "build", "llvm", "bin", "llvm-ar.exe"))
 TRIPLE = "powerpc-unknown-xbox360"
 
 # NOTE: the picolibc C-header include must come AFTER the C++ header dirs, or

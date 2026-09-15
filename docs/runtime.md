@@ -17,15 +17,11 @@ upstream is a re-pin plus a patch refresh.
 
 | submodule | source | role |
 |---|---|---|
-| `vendor/picolibc` | picolibc/picolibc (pristine) | the C23 libc subset (string/mem/stdio/math), patched at build time |
-| `vendor/llvm-project` | Team-Resurgent/llvm-project, branch `xbox360-msppc` | the patched MS-PPC clang **and** the C++ runtime sources (`libcxx`, `libcxxabi`, `libunwind`) |
+| `vendor/picolibc` | Team-Resurgent/picolibc, branch `xbox360` | the C23 libc subset (string/mem/stdio/math) |
+| llvm-project zip | Team-Resurgent/llvm-project `latest` (`scripts/fetch-clang.ps1` → `build/llvm`) | patched MS-PPC clang/lld **and** C++ runtime sources (`libcxx`, `libcxxabi`, `libunwind`) |
 
-The compiler patches are large and integral, so they live as commits on the fork's
-`xbox360-msppc` branch rather than as build-time patches; the runtime-library
-patches (picolibc, and any libcxx tweaks) are build-time patches under `patches/`.
-`vendor/llvm-project` is a sparse checkout: the compiler cone (`clang`, `lld`,
-`llvm`, `cmake`, `libc`, `third-party`) plus the runtime cone (`libcxx`,
-`libcxxabi`, `libunwind`).
+The compiler patches live as commits on the fork's `teamresurgent` branch. Unpack
+`xbox360-windows-x64.zip` into `build/llvm`; do not submodule llvm-project.
 
 ## Bring-up order
 
@@ -176,7 +172,7 @@ Mirrored from RXDK-Libs (`runtime/xbox/`):
    `CallerSP` downward with the second slot at `-8` -- so a saved GPR (r30)
    landed on top of the return address and `blr` jumped to garbage. SVR4 escapes
    this because its LR offset is positive (in the caller's frame). Fixed on the
-   `xbox360-msppc` fork by reserving the LR doubleword before packing the CSR
+   `teamresurgent` fork by reserving the LR doubleword before packing the CSR
    areas; `arith`/`string` now save r30 at `0x50` (LR at `0x58`) and power off
    cleanly. The corpus dropped from ~2 min of hang-retries to ~3 s, and the ABI
    still matches `cl.exe` 4/4. (`.rodata` is also on its own READONLY page now,

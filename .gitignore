@@ -26,5 +26,12 @@ build-log*.txt
 /xdksetup/*
 !/xdksetup/README.md
 
+# Downloaded llvm/xdvdfs zips (scripts/fetch-clang.ps1).
+/deps/
+
 # real hand-written asm sources (the *.s rule above is for generated files)
 !runtime/xbox/*.S
+
+# Local llvm-project clone (no longer a submodule; clang comes from
+# xbox360-windows-x64.zip into build/llvm via scripts/fetch-clang.ps1).
+/vendor/llvm-project/

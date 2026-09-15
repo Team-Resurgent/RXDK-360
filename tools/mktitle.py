@@ -172,8 +172,11 @@ def auto_clang_flags(is_cpp):
         # posix_memalign/nanosleep ... are gated behind it in picolibc's headers).
         return ["-D__Picolibc__", "-D_GNU_SOURCE", "-I" + cfg, "-I" + pico,
                 "-include", "picolibc.h"]
-    lx = os.path.join(ROOT, "vendor", "llvm-project", "libcxx", "include")
-    la = os.path.join(ROOT, "vendor", "llvm-project", "libcxxabi", "include")
+    llvm = os.environ.get("RXDK_LLVM") or os.path.join(ROOT, "build", "llvm")
+    if not os.path.isdir(os.path.join(llvm, "libcxx", "include")):
+        llvm = os.path.join(ROOT, "vendor", "llvm-project")
+    lx = os.path.join(llvm, "libcxx", "include")
+    la = os.path.join(llvm, "libcxxabi", "include")
     return ["-fexceptions", "-funwind-tables", "-frtti",
             "-D__Picolibc__", "-D_GNU_SOURCE",
             "-I" + lx, "-I" + la, "-I" + cfg,

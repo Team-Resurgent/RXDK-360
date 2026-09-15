@@ -27,5 +27,5 @@ A patch is produced from a change made in the submodule working tree with
 `git format-patch` for a commit). Keep them small and one concern each.
 
 The MS-PPC clang patches are **not** here: they are commits on the
-`xbox360-msppc` branch of the `vendor/llvm-project` fork, because they are large
+`teamresurgent` branch of the `vendor/llvm-project` fork, because they are large
 and integral to the compiler. Only the runtime-library patches are build-time.
