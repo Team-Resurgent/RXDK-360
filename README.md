@@ -1,5 +1,22 @@
 # RXDK-360
 
+<p align="center"><b>Xbox 360 development in Visual Studio 2022 / 2026 — Clang/LLVM toolchain, project templates, build, deploy, and native debugging</b></p>
+
+<p align="center">
+  <a href="https://github.com/Team-Resurgent/RXDK-360/blob/main/vs20xx/extension/Rxdk360.Vsix/LICENSE.txt"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="License: GPL v3"></a>
+  <a href="https://github.com/Team-Resurgent/RXDK-360/actions/workflows/release.yml"><img src="https://github.com/Team-Resurgent/RXDK-360/actions/workflows/release.yml/badge.svg" alt="Build"></a>
+  <a href="https://discord.gg/VcdSfajQGK"><img src="https://img.shields.io/badge/chat-on%20discord-7289da.svg?logo=discord" alt="Discord"></a>
+</p>
+
+<p align="center">
+  <a href="https://ko-fi.com/J3J7L5UMN"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="ko-fi"></a>
+  <a href="https://www.patreon.com/teamresurgent"><img src="https://img.shields.io/badge/Patreon-F96854?style=for-the-badge&logo=patreon&logoColor=white" alt="Patreon"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Team-Resurgent/RXDK-360/releases/latest"><img src="https://img.shields.io/badge/download-latest-brightgreen.svg?style=for-the-badge&logo=github" alt="Download"></a>
+</p>
+
 An attempt at a cross-platform, modern-language toolchain for the Xbox 360 that reuses
 the shipped XDK libraries rather than reimplementing them.
 
