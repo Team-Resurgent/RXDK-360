@@ -9,6 +9,7 @@
 
 using System;
 using System.Collections;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using Microsoft.Build.Framework;
@@ -158,6 +159,240 @@ namespace Rxdk.Xbox360.Build.Tasks
                 hashtable.Add(fullPath2.ToLower(), null);
             }
             return stringBuilder.ToString();
+        }
+    }
+
+    /// <summary>
+    /// Official VS 2010 Xbox 360 debugger (X360EmulationManagerV100) on Emulate DVD:
+    /// write a Game Disc layout (.xgd) from Deployment Files, then xbEmulate /Media
+    /// /Emulate start. Without the DVD EMU USB sidecar that fails; the message is
+    /// the stock VS dialog text (observed from that DLL).
+    /// </summary>
+    public class EmulateDvd : Task
+    {
+        public string[] DeploymentFiles { get; set; }
+        public string LayoutFile { get; set; }
+        public string DvdEmulationType { get; set; }
+        public string TargetConsole { get; set; }
+        public string DefaultConsole { get; set; }
+        public string OutputXgd { get; set; }
+        public string StagingDir { get; set; }
+        public ITaskItem ProjectDir { get; set; }
+        public ITaskItem ImagePath { get; set; }
+        [Required]
+        public ITaskItem XDKInstallDir { get; set; }
+        public ITaskItem XDKBinDir { get; set; }
+
+        public override bool Execute()
+        {
+            string console = FirstNonEmpty(TargetConsole, DefaultConsole);
+            string bin = BinDir();
+            string xbEmulate = Path.Combine(bin, "xbEmulate.exe");
+            if (!File.Exists(xbEmulate))
+            {
+                Log.LogError("xbEmulate.exe not found at {0}. Install RXDK-360 / the Xbox 360 XDK bin\\win32 tools.", xbEmulate);
+                return false;
+            }
+
+            string xgd;
+            try
+            {
+                xgd = ResolveLayout(console);
+            }
+            catch (Exception ex)
+            {
+                Log.LogError("Could not build the layout for this project: {0}", ex.Message);
+                return false;
+            }
+
+            Log.LogMessage(MessageImportance.High, "Console Deployment/Generating Layout for Optical Disc Emulation...");
+            Log.LogMessage(MessageImportance.High, "  {0}", xgd);
+
+            string timing = TimingMode(DvdEmulationType);
+            if (!DvdEmulation.TryStart(xbEmulate, xgd, timing, console, out string error, out string log))
+            {
+                if (!string.IsNullOrEmpty(log))
+                    Log.LogMessage(MessageImportance.Low, log);
+                Log.LogError(error);
+                return false;
+            }
+            return true;
+        }
+
+        private string ResolveLayout(string console)
+        {
+            string layout = LayoutFile ?? "";
+            if (layout.StartsWith("<", StringComparison.Ordinal))
+                layout = "";
+            if (layout.IndexOf("Use Deployment Files", StringComparison.OrdinalIgnoreCase) >= 0)
+                layout = "";
+            if (!string.IsNullOrEmpty(layout) && File.Exists(layout))
+                return Path.GetFullPath(layout);
+
+            string projectDir = ProjectDir != null ? ProjectDir.ItemSpec : Environment.CurrentDirectory;
+            string image = ImagePath != null ? ImagePath.ItemSpec : "";
+            string stage = StagingDir;
+            if (string.IsNullOrEmpty(stage))
+                stage = Path.Combine(projectDir, "obj", "dvdlayout");
+            string xgd = OutputXgd;
+            if (string.IsNullOrEmpty(xgd))
+                xgd = Path.Combine(projectDir, Path.GetFileNameWithoutExtension(image) + ".xgd");
+            Directory.CreateDirectory(Path.GetDirectoryName(xgd) ?? projectDir);
+            return DvdEmulation.WriteGeneratedLayout(stage, xgd, DeploymentFiles, projectDir, image);
+        }
+
+        private string BinDir()
+        {
+            if (XDKBinDir != null && !string.IsNullOrEmpty(XDKBinDir.ItemSpec))
+                return XDKBinDir.ItemSpec;
+            return Path.Combine(XDKInstallDir.ItemSpec, "bin\\win32");
+        }
+
+        internal static string TimingMode(string type)
+        {
+            if (string.Equals(type, "TypicalSeekTimes", StringComparison.OrdinalIgnoreCase))
+                return "typical";
+            if (string.Equals(type, "AccurateSeekTimes", StringComparison.OrdinalIgnoreCase))
+                return "accurate";
+            return "none";
+        }
+
+        private static string FirstNonEmpty(params string[] values)
+        {
+            foreach (var v in values)
+                if (!string.IsNullOrWhiteSpace(v))
+                    return v.Trim();
+            return "";
+        }
+    }
+
+    /// <summary>XGD write + xbEmulate start, shared shape with the VS F5 launcher.</summary>
+    internal static class DvdEmulation
+    {
+        public static string SessionFailedMessage(string console)
+        {
+            string who = string.IsNullOrWhiteSpace(console) ? "the default console" : console.Trim();
+            return "Failed to create emulation session for '" + who + "'.\r\n" +
+                   "Ensure that this computer is connected via USB to the port labeled 'DVD EMU' on the console.";
+        }
+
+        public static string WriteGeneratedLayout(string stagingDir, string xgdPath, string[] deploymentFiles, string projectDir, string imagePath)
+        {
+            if (Directory.Exists(stagingDir))
+                Directory.Delete(stagingDir, true);
+            Directory.CreateDirectory(stagingDir);
+
+            if (!string.IsNullOrEmpty(imagePath) && File.Exists(imagePath))
+            {
+                string name = Path.GetFileName(imagePath);
+                File.Copy(imagePath, Path.Combine(stagingDir, "default.xex"), true);
+                if (!name.Equals("default.xex", StringComparison.OrdinalIgnoreCase))
+                    File.Copy(imagePath, Path.Combine(stagingDir, name), true);
+            }
+
+            if (deploymentFiles != null)
+            {
+                foreach (string spec in deploymentFiles)
+                    StageDeploymentSpec(spec, projectDir, stagingDir, imagePath);
+            }
+
+            if (Directory.GetFileSystemEntries(stagingDir).Length == 0)
+                throw new InvalidOperationException("No files to put on the emulated disc (ImagePath / Deployment Files).");
+
+            string source = stagingDir.TrimEnd('\\') + "\\";
+            var sb = new StringBuilder();
+            sb.AppendLine("<LAYOUT MAJORVERSION=\"2\" MINORVERSION=\"2\">");
+            sb.AppendLine("    <AVATARASSETPACK INCLUDE=\"NO\"/>");
+            sb.AppendLine("    <DISC NAME=\"\" LayoutType=\"XGD2\">");
+            sb.Append("        <ADD NAME=\"\" SOURCE=\"");
+            sb.Append(EscapeXml(source));
+            sb.AppendLine("\" DEST=\"\\\" FILESPEC=\"*.*\" RECURSE=\"YES\" LAYER=\"ANY\" ALIGN=\"1\"/>");
+            sb.AppendLine("    </DISC>");
+            sb.AppendLine("</LAYOUT>");
+            File.WriteAllText(xgdPath, sb.ToString(), new UTF8Encoding(false));
+            return xgdPath;
+        }
+
+        public static bool TryStart(string xbEmulate, string xgd, string timingMode, string console, out string error, out string log)
+        {
+            error = "";
+            var psi = new ProcessStartInfo
+            {
+                FileName = xbEmulate,
+                Arguments = "/nologo /Media \"" + xgd + "\" /TimingMode " + timingMode + " /Emulate start",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            if (!string.IsNullOrEmpty(console) && !LooksLikeIp(console))
+                psi.Arguments = "/nologo /Console \"" + console + "\" /Media \"" + xgd +
+                    "\" /TimingMode " + timingMode + " /Emulate start";
+
+            var output = new StringBuilder();
+            using (var p = Process.Start(psi))
+            {
+                if (p == null)
+                {
+                    error = SessionFailedMessage(console);
+                    log = "";
+                    return false;
+                }
+                output.AppendLine(p.StandardOutput.ReadToEnd());
+                output.AppendLine(p.StandardError.ReadToEnd());
+                p.WaitForExit();
+                log = output.ToString();
+                if (p.ExitCode == 0 && log.IndexOf("ERROR:", StringComparison.OrdinalIgnoreCase) < 0)
+                    return true;
+            }
+            error = SessionFailedMessage(console);
+            return false;
+        }
+
+        private static void StageDeploymentSpec(string spec, string projectDir, string stagingDir, string imagePath)
+        {
+            if (string.IsNullOrWhiteSpace(spec))
+                return;
+            string src;
+            if (spec.Contains("="))
+            {
+                string[] parts = spec.Split(new[] { '=' }, 2);
+                src = parts[1].Trim();
+            }
+            else src = spec.Trim();
+            src = Path.GetFullPath(Path.Combine(projectDir ?? "", src));
+            if (!string.IsNullOrEmpty(imagePath) &&
+                string.Equals(Path.GetFullPath(imagePath), src, StringComparison.OrdinalIgnoreCase))
+                return;
+            if (!File.Exists(src) && !Directory.Exists(src))
+                return;
+            if (Directory.Exists(src))
+            {
+                foreach (var file in Directory.GetFiles(src, "*", SearchOption.AllDirectories))
+                {
+                    string rel = file.Substring(src.TrimEnd('\\').Length).TrimStart('\\');
+                    string dest = Path.Combine(stagingDir, rel);
+                    Directory.CreateDirectory(Path.GetDirectoryName(dest) ?? stagingDir);
+                    File.Copy(file, dest, true);
+                }
+                return;
+            }
+            File.Copy(src, Path.Combine(stagingDir, Path.GetFileName(src)), true);
+        }
+
+        private static bool LooksLikeIp(string s)
+        {
+            int dots = 0;
+            foreach (char c in s)
+                if (c == '.') dots++;
+                else if (c != ':' && !char.IsDigit(c)) return false;
+            return dots == 3;
+        }
+
+        private static string EscapeXml(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            return s.Replace("&", "&amp;").Replace("\"", "&quot;").Replace("<", "&lt;").Replace(">", "&gt;");
         }
     }
 

@@ -14,8 +14,9 @@ using Task = System.Threading.Tasks.Task;
 namespace Rxdk360.Package.Commands
 {
     /// <summary>
-    /// First crack at Debug.Start / StartWithoutDebugging. Only Copy to Hard Drive
-    /// Xbox 360 projects are handled; Xenia and Emulate DVD fall through to VS.
+    /// First crack at Debug.Start / StartWithoutDebugging. Copy to Hard Drive
+    /// launches DAP; Emulate DVD writes a .xgd and starts xbEmulate. Xenia falls
+    /// through to the Local Windows Debugger.
     ///
     /// Do not query SolutionBuild / ActiveConfiguration from Exec — VS is still
     /// inside Debug.Start and that raises FindActiveProjectCfgName E_UNEXPECTED.
@@ -200,13 +201,19 @@ namespace Rxdk360.Package.Commands
                     return;
                 }
 
+                if (HardwareDebugLauncher.IsEmulateDvdF5(info))
+                {
+                    await HardwareDebugLauncher.LaunchEmulateDvdAsync(_package, info);
+                    return;
+                }
+
                 if (HardwareDebugLauncher.IsHardwareF5(info))
                 {
                     await HardwareDebugLauncher.LaunchAsync(_package, noDebug, info);
                     return;
                 }
 
-                // Xbox 360 that is not Xenia / Emulate DVD: never re-issue Debug.Start.
+                // Xbox 360 that is not Xenia: never re-issue Debug.Start.
                 // Xbox360Debugger and an empty Local Windows Debugger both produce
                 // "Unable to start debugging. Check your debugger settings...".
                 if (info != null &&

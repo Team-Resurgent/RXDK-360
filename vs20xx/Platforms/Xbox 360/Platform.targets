@@ -27,6 +27,7 @@ Copyright (C) Microsoft Corporation. All rights reserved.
   <UsingTask TaskName="Xbox360Link"       AssemblyFile="$(MSBuildThisFileDirectory)..\..\Rxdk.Xbox360.Build.dll"/>
   <UsingTask TaskName="ImageXex"          AssemblyFile="$(MSBuildThisFileDirectory)..\..\Rxdk.Xbox360.Build.dll"/>
   <UsingTask TaskName="DeployToHardDrive" AssemblyFile="$(MSBuildThisFileDirectory)..\..\Rxdk.Xbox360.Build.dll"/>
+  <UsingTask TaskName="EmulateDvd"        AssemblyFile="$(MSBuildThisFileDirectory)..\..\Rxdk.Xbox360.Build.dll"/>
 
 
   <PropertyGroup>
@@ -588,7 +589,7 @@ Copyright (C) Microsoft Corporation. All rights reserved.
   <Target Name="Deploy"
           AfterTargets="ImageXex"
           Condition="'$(ConfigurationType)' != 'StaticLibrary' and '$(ConfigurationType)' != 'Makefile' and '$(_ClCompileAnalyzeOnly)' != 'true'"
-          DependsOnTargets="DeployToHardDrive">
+          DependsOnTargets="DeployToHardDrive;DeployEmulateDvd">
   </Target>
 
   <Target Name="DeployToHardDrive">
@@ -608,6 +609,25 @@ Copyright (C) Microsoft Corporation. All rights reserved.
 
   </Target>
 
+  <!-- Official XDK left Emulate DVD off the MSBuild Deploy target (VS 2010's
+       X360EmulationManager generated the .xgd at F5). Write the layout here so
+       Build produces a .xgd, then xbEmulate /Emulate start (USB sidecar). -->
+  <Target Name="DeployEmulateDvd">
+    <EmulateDvd
+        Condition="'%(Deploy.DeploymentType)' == 'EmulateDvd' and '%(Deploy.ExcludedFromBuild)' != 'true' and '$(ConfigurationType)' != 'StaticLibrary'"
+        DeploymentFiles       = "%(Deploy.DeploymentFiles)"
+        LayoutFile            = "%(Deploy.LayoutFile)"
+        DvdEmulationType      = "%(Deploy.DvdEmulationType)"
+        TargetConsole         = "%(Deploy.TargetConsole)"
+        DefaultConsole        = "$(DefaultConsole)"
+        OutputXgd             = "$(OutDir)$(TargetName).xgd"
+        StagingDir            = "$(IntDir)dvdlayout\"
+        ImagePath             = "$(ImagePath)"
+        ProjectDir            = "$(ProjectDir)"
+        XDKInstallDir         = "$(_RxdkToolRoot)"
+    />
+  </Target>
+
   <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\Microsoft.Makefile.Xbox 360.targets" Condition="'$(ConfigurationType)' == 'Makefile'"/>
 
   <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\PlatformToolsets\$(PlatformToolset)\Toolset.targets" />
@@ -618,6 +638,9 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
   <PropertyGroup Condition="'$(_RxdkDt)' == 'CopyToHardDrive'">
+    <DebuggerFlavor>RxdkXbox360Debugger</DebuggerFlavor>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(_RxdkDt)' == 'EmulateDvd'">
     <DebuggerFlavor>RxdkXbox360Debugger</DebuggerFlavor>
   </PropertyGroup>
 </Project>

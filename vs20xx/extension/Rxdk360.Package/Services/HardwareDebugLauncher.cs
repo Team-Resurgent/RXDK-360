@@ -51,6 +51,8 @@ namespace Rxdk360.Package.Services
             public string ImagePath;
             public string RemoteRoot;
             public string RemoteMachine;
+            public string DvdEmulationType;
+            public string LayoutFile;
         }
 
         public static async Task<bool> IsCopyToHardDriveStartupAsync(AsyncPackage package)
@@ -70,6 +72,11 @@ namespace Rxdk360.Package.Services
             info != null &&
             string.Equals(info.PlatformName, "Xbox 360", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(info.DeploymentType, Xenia, StringComparison.OrdinalIgnoreCase);
+
+        internal static bool IsEmulateDvdF5(StartupInfo info) =>
+            info != null &&
+            string.Equals(info.PlatformName, "Xbox 360", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(info.DeploymentType, EmulateDvd, StringComparison.OrdinalIgnoreCase);
 
         internal static bool IsHardwareF5(StartupInfo info)
         {
@@ -127,6 +134,11 @@ namespace Rxdk360.Package.Services
             }
             if (!IsHardwareF5(info))
             {
+                if (IsEmulateDvdF5(info))
+                {
+                    await LaunchEmulateDvdAsync(package, info);
+                    return;
+                }
                 await ShowMessageAsync(package,
                     "F5 for Copy to Hard Drive could not start. Set Deployment Type to Copy to Hard Drive, save the project, and try again.");
                 return;
@@ -200,6 +212,74 @@ namespace Rxdk360.Package.Services
                 await ShowAsync(package, "Failed to start debugging: " + ex.Message +
                     ". Is the Visual Studio Debug Adapter Host component installed?");
             }
+        }
+
+        public static async Task LaunchEmulateDvdAsync(AsyncPackage package, StartupInfo info)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            string xex = info.ImagePath;
+            if (string.IsNullOrEmpty(xex) || !File.Exists(xex))
+                xex = GuessXex(info);
+            if (string.IsNullOrEmpty(xex) || !File.Exists(xex))
+            {
+                if (!await BuildProjectAsync(package, info))
+                {
+                    await ShowAsync(package, "Build failed — see the Output / Error List.");
+                    return;
+                }
+                xex = info.ImagePath;
+                if (string.IsNullOrEmpty(xex) || !File.Exists(xex))
+                    xex = GuessXex(info);
+                if (string.IsNullOrEmpty(xex) || !File.Exists(xex))
+                {
+                    await ShowAsync(package, "No XEX at ImagePath. Build the Xbox 360 title, then F5.");
+                    return;
+                }
+            }
+
+            string xb = DvdEmulation.FindXbEmulate();
+            if (string.IsNullOrEmpty(xb))
+            {
+                await ShowAsync(package, "xbEmulate.exe not found. Install RXDK-360 (bin\\win32) or the Xbox 360 XDK.");
+                return;
+            }
+
+            string layout = info.LayoutFile;
+            if (!string.IsNullOrEmpty(layout) && layout.IndexOf("Use Deployment Files", StringComparison.OrdinalIgnoreCase) >= 0)
+                layout = null;
+            if (!string.IsNullOrEmpty(layout) && layout.StartsWith("<", StringComparison.Ordinal))
+                layout = null;
+
+            string xgd;
+            try
+            {
+                if (!string.IsNullOrEmpty(layout) && File.Exists(layout))
+                    xgd = Path.GetFullPath(layout);
+                else
+                {
+                    string outDir = Path.GetDirectoryName(xex) ?? info.ProjectDir;
+                    string intDir = Path.Combine(info.ProjectDir ?? outDir, info.ConfigName ?? "Debug", "dvdlayout");
+                    xgd = Path.Combine(outDir, Path.GetFileNameWithoutExtension(xex) + ".xgd");
+                    F5Log("F5 Emulate DVD layout " + xgd);
+                    DvdEmulation.WriteGeneratedLayout(intDir, xgd, xex);
+                }
+            }
+            catch (Exception ex)
+            {
+                await ShowAsync(package, "Could not build the layout for this project: " + ex.Message);
+                return;
+            }
+
+            string console = info.RemoteMachine ?? "";
+            string timing = DvdEmulation.TimingMode(info.DvdEmulationType);
+            F5Log("F5 xbEmulate " + xb + " media=" + xgd + " console=" + console);
+            if (!DvdEmulation.TryStart(xb, xgd, timing, console, out string error, out string log))
+            {
+                F5Log("F5 xbEmulate fail " + log.Replace("\r", " ").Replace("\n", " "));
+                await ShowErrorAsync(package, error);
+                return;
+            }
+            F5Log("F5 xbEmulate started");
         }
 
         private static async Task<bool> BuildProjectAsync(AsyncPackage package, StartupInfo info)
@@ -377,6 +457,13 @@ namespace Rxdk360.Package.Services
                 ?? ReadProp(bps, "ImagePath", fullConfig)
                 ?? ReadProp(bps, "ImageXexOutput", fullConfig));
 
+            string emuType = FirstNonEmpty(
+                VcEvaluate(proj, "$(DvdEmulationType)"),
+                VcRuleValue(proj, "Xbox360Deploy", "DvdEmulationType"));
+            string layout = FirstNonEmpty(
+                VcEvaluate(proj, "$(LayoutFile)"),
+                VcRuleValue(proj, "Xbox360Deploy", "LayoutFile"));
+
             F5Log("config=" + fullConfig + " deploy=" + (deploy ?? "") + " flavor=" + (flavor ?? ""));
 
             return new StartupInfo
@@ -399,6 +486,8 @@ namespace Rxdk360.Package.Services
                     VcEvaluate(proj, "$(DefaultConsole)"),
                     ReadProp(bps, "RemoteMachine", fullConfig),
                     ReadProp(bps, "DefaultConsole", fullConfig)),
+                DvdEmulationType = emuType,
+                LayoutFile = layout,
             };
         }
 
@@ -799,6 +888,13 @@ namespace Rxdk360.Package.Services
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             VsShellUtilities.ShowMessageBox(package, message, "RXDK-360",
                 OLEMSGICON.OLEMSGICON_INFO, OLEMSGBUTTON.OLEMSGBUTTON_OK, OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
+        }
+
+        private static async Task ShowErrorAsync(AsyncPackage package, string message)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            VsShellUtilities.ShowMessageBox(package, message, "Microsoft Visual Studio",
+                OLEMSGICON.OLEMSGICON_CRITICAL, OLEMSGBUTTON.OLEMSGBUTTON_OK, OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
         }
 
         private static string SimpleJson(Dictionary<string, object> map)
