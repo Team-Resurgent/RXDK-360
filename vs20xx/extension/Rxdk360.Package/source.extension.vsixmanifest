@@ -3,7 +3,7 @@
   <!-- Stub: this project does not produce a .vsix (CreateVsixContainer=false).
        Rxdk360.Vsix packs the generated pkgdef + assembly. -->
   <Metadata>
-    <Identity Id="Rxdk360.Package" Version="0.1.0" Language="en-US" Publisher="Team Resurgent" />
+    <Identity Id="Rxdk360.Package" Version="1.0.0" Language="en-US" Publisher="Team Resurgent" />
     <DisplayName>RXDK-360 Package</DisplayName>
     <Description>F5 interceptor for Copy to Hard Drive. Packed by Rxdk360.Vsix.</Description>
   </Metadata>

@@ -13,7 +13,7 @@
 #include "VsIntegration.iss"
 
 #define AppName    "RXDK-360"
-#define AppVersion "0.1.0"
+#define AppVersion "1.0.0"
 #define AppPublisher "Team Resurgent"
 
 [Setup]

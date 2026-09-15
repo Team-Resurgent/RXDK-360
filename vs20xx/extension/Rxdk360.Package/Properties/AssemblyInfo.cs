@@ -6,6 +6,6 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCompany("Team Resurgent")]
 [assembly: AssemblyProduct("RXDK-360")]
 [assembly: AssemblyCopyright("Copyright (C) Team Resurgent. GPL-3.0-or-later.")]
-[assembly: AssemblyVersion("0.1.0.0")]
-[assembly: AssemblyFileVersion("0.1.0.0")]
+[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyFileVersion("1.0.0.0")]
 [assembly: ComVisible(false)]

@@ -17,7 +17,7 @@ namespace Rxdk360.Package
     /// are not handled here.
     /// </summary>
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
-    [InstalledProductRegistration("RXDK-360", "Xbox 360 hardware debug (Copy to Hard Drive).", "0.1.0")]
+    [InstalledProductRegistration("RXDK-360", "Xbox 360 hardware debug (Copy to Hard Drive).", "1.0.0")]
     [ProvideAutoLoad(VSConstants.UICONTEXT.SolutionExistsAndFullyLoaded_string, PackageAutoLoadFlags.BackgroundLoad)]
     [ProvideBindingPath]
     [Guid(Rxdk360Guids.PackageString)]
