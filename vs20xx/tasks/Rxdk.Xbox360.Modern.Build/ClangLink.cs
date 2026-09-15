@@ -357,23 +357,11 @@ namespace Rxdk.Xbox360.Modern.Build
 
         /// <summary>
         /// Write the imagexex-style XML that applyxml consumes. Returns false on
-        /// a hard error (e.g. extra sections). Returns true and omits the file
-        /// when there is nothing to apply.
+        /// a hard error (missing Additional Sections file, etc.). Returns true
+        /// and omits the file when there is nothing to apply.
         /// </summary>
         private bool WriteImageXexXml(string path)
         {
-            if (AdditionalSections != null)
-            {
-                foreach (var s in AdditionalSections)
-                {
-                    if (!string.IsNullOrWhiteSpace(s))
-                    {
-                        Log.LogError("Additional Sections are not packed by the clang toolset (imagexex embeds them in the PE). Leave the field empty, or use the 2010-01 toolset.");
-                        return false;
-                    }
-                }
-            }
-
             var body = new StringBuilder();
             if (!string.IsNullOrEmpty(ConfigurationFile) && File.Exists(ConfigurationFile))
             {
@@ -409,6 +397,8 @@ namespace Rxdk.Xbox360.Modern.Build
             if (!string.IsNullOrWhiteSpace(WorkspaceSize))
                 Tag("  <workspace size=\"" + WorkspaceSize.Trim() + "\"/>");
             if (ExportByName) Tag("  <exportnames/>");
+            // Privilege 2 = No ODD Mapping. applyxml drops DVD/CD (and XGD2)
+            // so the XEX matches a pack imagexex accepts; /privilege:2 alone is IM1069.
             if (OpticalDiscDriveMapping) Tag("  <privilege id=\"2\"/>");
             if (Pal50Incompatible) Tag("  <privilege id=\"10\"/>");
             if (MultiDiscTitle)
@@ -428,12 +418,52 @@ namespace Rxdk.Xbox360.Modern.Build
             else if (string.Equals(KinectSupportLevel, "SupportsTracking", StringComparison.OrdinalIgnoreCase))
                 Tag("  <privilege id=\"39\"/>");
 
+            if (AdditionalSections != null)
+            {
+                foreach (var raw in AdditionalSections)
+                {
+                    if (string.IsNullOrWhiteSpace(raw))
+                        continue;
+                    string spec = raw.Trim();
+                    string secName;
+                    string file;
+                    int eq = spec.IndexOf('=');
+                    if (eq > 0)
+                    {
+                        secName = spec.Substring(0, eq).Trim();
+                        file = spec.Substring(eq + 1).Trim();
+                    }
+                    else
+                    {
+                        file = spec;
+                        secName = Path.GetFileNameWithoutExtension(file);
+                    }
+                    if (string.IsNullOrEmpty(secName) || string.IsNullOrEmpty(file))
+                    {
+                        Log.LogError("Additional Sections entry must be NAME=file (imagexex /section:), not '{0}'", spec);
+                        return false;
+                    }
+                    if (!File.Exists(file))
+                    {
+                        Log.LogError("Additional Section file not found: {0}", file);
+                        return false;
+                    }
+                    Tag("  <section name=\"" + XmlAttr(secName) + "\" file=\"" + XmlAttr(Path.GetFullPath(file)) + "\"/>");
+                }
+            }
+
             if (body.Length == 0) return true;
 
             Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
             File.WriteAllText(path, "<xex>\n" + body.ToString().TrimEnd() + "\n</xex>\n");
             Log.LogMessage(MessageImportance.Low, "  Image Conversion XML " + path);
             return true;
+        }
+
+        static string XmlAttr(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            return s.Replace("&", "&amp;").Replace("\"", "&quot;").Replace("<", "&lt;").Replace(">", "&gt;");
         }
 
         /// <summary>The layout the packer expects (see mktitle.write_layout).</summary>
