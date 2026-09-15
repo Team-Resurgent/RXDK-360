@@ -19,7 +19,8 @@ msbuild vs20xx\extension\Rxdk360.Vsix\Rxdk360.Vsix.csproj /restore /p:Configurat
 
 CI (`.github/workflows/release.yml`) downloads `xbox360-windows-x64.zip`,
 `XexTool-windows-x64.zip`, and `xdvdfs.exe`, then publishes a rolling `latest`
-with the VSIX and Setup.exe.
+with Setup.exe. The VSIX is built and packed into Setup; it is not a separate
+release asset.
 
 The XDK payload is **not** bundled (licensed Microsoft content); the installer
 acquires it at install time from the user's own XDK **setup EXE**.
