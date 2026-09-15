@@ -1,6 +1,6 @@
 # RXDK-360
 
-<p align="center"><b>Xbox 360 development in Visual Studio 2022 / 2026 — Clang/LLVM toolchain, project templates, build, deploy, and native debugging</b></p>
+<p align="center"><b>Xbox 360 development — currently Windows only, Visual Studio 2022 / 2026</b></p>
 
 <p align="center">
   <a href="https://github.com/Team-Resurgent/RXDK-360/blob/main/vs20xx/extension/Rxdk360.Vsix/LICENSE.txt"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="License: GPL v3"></a>
@@ -17,8 +17,10 @@
   <a href="https://github.com/Team-Resurgent/RXDK-360/releases/latest"><img src="https://img.shields.io/badge/download-latest-brightgreen.svg?style=for-the-badge&logo=github" alt="Download"></a>
 </p>
 
-An attempt at a cross-platform, modern-language toolchain for the Xbox 360 that reuses
-the shipped XDK libraries rather than reimplementing them.
+An attempt at a modern-language toolchain for the Xbox 360 that reuses the shipped
+XDK libraries rather than reimplementing them. **Currently only Windows with
+Visual Studio 2022 / 2026 is supported** (project templates, build, deploy, and
+native debugging).
 
 ## The idea
 
@@ -30,7 +32,8 @@ The hybrid approach: translate the XDK's `lib\xbox\*.lib` from PPC COFF to PPC32
 **once, offline**, then build everything with the patched **clang** (a
 `powerpc-unknown-xbox360` target that reproduces the platform's MS-PPC ABI) + `lld`
 on any host and pack the result into a XEX. That keeps the 2.7 GB of working Microsoft
-libraries and still gives a cross-platform build with a C23/C++23-capable compiler.
+libraries and still aims at a C23/C++23-capable compiler. Host support today is
+Windows + Visual Studio 2022 / 2026 only.
 (An earlier route used `zig cc` with the PPC EABI, but that ABI does not match the
 console compiler's — see below — so the patched clang is the real toolchain now.)
 
@@ -182,9 +185,10 @@ vendor/        picolibc (git submodule)
 
 ## Prerequisites
 
+- **Windows** and **Visual Studio 2022 or 2026**. Other hosts are not supported yet.
 - Xbox 360 XDK, full install (not `InstallType=Minimum` — that omits `include\`,
-  `lib\` and the compiler). Windows only, and needed only for the spikes that compare
-  against `cl.exe` and for the shipped `lib\xbox\*.lib` the toolchain reuses.
+  `lib\` and the compiler). Needed for the spikes that compare against `cl.exe`
+  and for the shipped `lib\xbox\*.lib` the toolchain reuses.
 - The patched clang + lld from `xbox360-windows-x64.zip` (`scripts/fetch-clang.ps1`).
 - zig 0.16.0 or newer — optional, only for the legacy PPC-EABI path (`mktitle.py
   --cc zig`) and the early ABI spikes.
