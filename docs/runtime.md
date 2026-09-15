@@ -7,13 +7,11 @@ ties titles to a decade-old CRT. This is the plan to give the 360 target a
 **modern, portable C23/C++23 runtime** instead, built from upstream sources the
 way RXDK-Libs does it.
 
-## Submodule layout (patches applied at build time)
+## Submodule layout
 
-Like RXDK-Libs, the upstream sources are **pristine git submodules**; our changes
-live as tracked patches under `patches/` and are applied at build time by
-`scripts/init-submodules.ps1` (idempotent -- a reverse-check skips a patch that is
-already applied). Nothing local is committed into the submodule trees, so bumping
-upstream is a re-pin plus a patch refresh.
+picolibc is a git submodule on the Team-Resurgent `xbox360` branch. Clang, lld,
+and the C++ runtime sources come from the llvm-project zip; XexTool comes from
+its own release zip. None of those trees are patched in this repo.
 
 | submodule | source | role |
 |---|---|---|

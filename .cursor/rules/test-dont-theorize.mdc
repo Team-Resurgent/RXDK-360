@@ -1,0 +1,15 @@
+---
+description: Prefer a real test over a theory; do not ship speculative debugger/F5 fixes
+alwaysApply: true
+---
+
+# Test first, do not theorize
+
+When a kit, Visual Studio, Neighborhood, xbdm, or an official XDK session can answer a question, **run or ask for that test**. Do not invent a root cause and patch around it.
+
+Wrong theories have already caused Continue/F5 “fixes” that can appear to work and later break in ways that are hard to unwind.
+
+- Observe the failing path (log, HRESULT, DAP request, VS command, kit state) before changing code.
+- If the user offers an official XDK or hardware comparison, take it instead of guessing.
+- Do not add skip-over, debounce, intercept, or reboot behavior to “maybe” fix a symptom.
+- One change should match one observed cause. Revert speculative edits that were not confirmed.

@@ -1,7 +1,8 @@
 #Requires -Version 5.1
-# Initialise the RXDK-360 submodules and apply our build-time patches.
+# Initialise the RXDK-360 submodules.
 #
-#   vendor/picolibc  - the C23 libc (full checkout)
+#   vendor/picolibc  - the C23 libc (full checkout; Xbox 360 changes live on
+#                      the Team-Resurgent/picolibc xbox360 branch)
 #
 # Clang, lld, libcxx, libcxxabi and libunwind come from the llvm-project
 # GitHub zip (scripts/fetch-clang.ps1 -> build/llvm), not a submodule.
@@ -18,28 +19,6 @@ $lp = @('-c', 'core.longpaths=true')
 Write-Host 'Initializing picolibc (full checkout)...'
 git @lp submodule update --init vendor/picolibc
 if ($LASTEXITCODE -ne 0) { throw "submodule update (picolibc) failed ($LASTEXITCODE)" }
-
-$treeMap = @{
-    'picolibc' = 'vendor/picolibc'
-}
-$patchRoot = Join-Path $RepoRoot 'patches'
-if (Test-Path $patchRoot) {
-    Get-ChildItem $patchRoot -Directory | ForEach-Object {
-        $tree = $treeMap[$_.Name]
-        if (-not $tree) { return }
-        Get-ChildItem $_.FullName -Filter '*.patch' | Sort-Object Name | ForEach-Object {
-            git -C $tree apply --reverse --check $_.FullName 2>$null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "  patch already applied: $($_.Name) -> $tree"
-            }
-            else {
-                git -C $tree apply $_.FullName
-                if ($LASTEXITCODE -ne 0) { throw "failed to apply patch $($_.Name) to $tree" }
-                Write-Host "  applied patch: $($_.Name) -> $tree"
-            }
-        }
-    }
-}
 
 Write-Host 'Submodule status:'
 git submodule status
