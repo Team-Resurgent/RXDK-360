@@ -137,9 +137,13 @@ ELF rather than the platform's rules.
 Clang/lld for `powerpc-unknown-xbox360` is the rolling
 [llvm-project `latest` release](https://github.com/Team-Resurgent/llvm-project/releases/latest)
 (`xbox360-windows-x64.zip` on this OS). Unpack it with `scripts/fetch-clang.ps1`.
+XexTool is the same pattern from
+[XexTool `latest`](https://github.com/Team-Resurgent/XexTool/releases/latest)
+(`scripts/fetch-xextool.ps1`).
 
 ```
-scripts/fetch-clang.ps1   download clang, lld, lib/clang, libcxx/libcxxabi/libunwind
+scripts/fetch-clang.ps1     download clang, lld, lib/clang, libcxx/libcxxabi/libunwind
+scripts/fetch-xextool.ps1   download XexTool-windows-x64.zip → build/xextool
 tools/build-llvm.bat      optional: rebuild clang from a local llvm-project clone
 tools/verify_abi.py       compile the probes with both cl.exe and the patched
                           clang and report agreement, rule by rule
@@ -156,7 +160,7 @@ spike/abi/     stack layout, mixed int/float, struct and varargs probes
 spike/abi2/    callee-side probes: structs, 64-bit args, varargs homing, red zone
 spike/vmx/     vector ABI and callee-saved vector register probes
 tools/         scanners, toolchain build, ABI verification
-vendor/        picolibc and xextool (git submodules)
+vendor/        picolibc (git submodule)
 ```
 
 ## Prerequisites

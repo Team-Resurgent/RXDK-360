@@ -19,9 +19,11 @@ upstream is a re-pin plus a patch refresh.
 |---|---|---|
 | `vendor/picolibc` | Team-Resurgent/picolibc, branch `xbox360` | the C23 libc subset (string/mem/stdio/math) |
 | llvm-project zip | Team-Resurgent/llvm-project `latest` (`scripts/fetch-clang.ps1` → `build/llvm`) | patched MS-PPC clang/lld **and** C++ runtime sources (`libcxx`, `libcxxabi`, `libunwind`) |
+| XexTool zip | Team-Resurgent/XexTool `latest` (`scripts/fetch-xextool.ps1` → `build/xextool`) | `XexTool.exe` for packing XEX |
 
 The compiler patches live as commits on the fork's `teamresurgent` branch. Unpack
 `xbox360-windows-x64.zip` into `build/llvm`; do not submodule llvm-project.
+Unpack `XexTool-windows-x64.zip` into `build/xextool`; do not submodule XexTool.
 
 ## Bring-up order
 

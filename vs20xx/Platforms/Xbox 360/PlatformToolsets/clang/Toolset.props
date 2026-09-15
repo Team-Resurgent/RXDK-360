@@ -47,6 +47,7 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild; a bad edit here breaks
     <RxdkLldPath     Condition="'$(RxdkLldPath)'     == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\bin\ld.lld.exe</RxdkLldPath>
     <RxdkLldPath     Condition="'$(RxdkLldPath)'     == ''">$(RxdkModernRoot)\build\llvm\bin\ld.lld.exe</RxdkLldPath>
     <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\bin\XexTool.exe</RxdkXexToolPath>
+    <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == '' and Exists('$(RxdkModernRoot)\build\xextool\XexTool.exe')">$(RxdkModernRoot)\build\xextool\XexTool.exe</RxdkXexToolPath>
     <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == ''">$(RxdkModernRoot)\vendor\xextool\build\Release\XexTool.exe</RxdkXexToolPath>
 
     <!-- library dirs: clean layout keeps every archive (our libc/libcpp, the coff2elf

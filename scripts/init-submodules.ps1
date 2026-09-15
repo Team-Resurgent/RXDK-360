@@ -5,6 +5,7 @@
 #
 # Clang, lld, libcxx, libcxxabi and libunwind come from the llvm-project
 # GitHub zip (scripts/fetch-clang.ps1 -> build/llvm), not a submodule.
+# XexTool comes from Team-Resurgent/XexTool latest (scripts/fetch-xextool.ps1).
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'

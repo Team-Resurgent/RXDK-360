@@ -17,9 +17,9 @@ msbuild vs20xx\extension\Rxdk360.Vsix\Rxdk360.Vsix.csproj /restore /p:Configurat
 "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" vs20xx\installer\RXDK-360.iss
 ```
 
-CI (`.github/workflows/release.yml`) downloads `xbox360-windows-x64.zip` and
-`xdvdfs.exe` from XDVDFS-TR, then publishes a rolling `latest` with the VSIX and
-Setup.exe.
+CI (`.github/workflows/release.yml`) downloads `xbox360-windows-x64.zip`,
+`XexTool-windows-x64.zip`, and `xdvdfs.exe`, then publishes a rolling `latest`
+with the VSIX and Setup.exe.
 
 The XDK payload is **not** bundled (licensed Microsoft content); the installer
 acquires it at install time from the user's own XDK **setup EXE**.

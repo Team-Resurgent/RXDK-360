@@ -85,12 +85,13 @@ Source: "..\README.md";   DestDir: "{app}\vsintegration"
 ; in at install time from the legacy tree by the unpacker's stagemodern step, so
 ; this tree never reaches into the stock XDK while building.
 ; CI fills build/llvm from Team-Resurgent/llvm-project xbox360-windows-x64.zip
-; (scripts/fetch-clang.ps1), xdvdfs from Team-Resurgent/XDVDFS-TR, XexTool from
-; this tree. coff/*.a are XDK translations (not redistributable); skip if absent.
+; (scripts/fetch-clang.ps1), XexTool from Team-Resurgent/XexTool latest
+; (scripts/fetch-xextool.ps1), xdvdfs from Team-Resurgent/XDVDFS-TR.
+; coff/*.a are XDK translations (not redistributable); skip if absent.
 ; bin\ - the tools the build drives
 Source: "..\..\build\llvm\bin\clang.exe";   DestDir: "{app}\modern\bin"; Components: modern
 Source: "..\..\build\llvm\bin\ld.lld.exe";  DestDir: "{app}\modern\bin"; Components: modern
-Source: "..\..\vendor\xextool\build\Release\XexTool.exe"; DestDir: "{app}\modern\bin"; Components: modern
+Source: "..\..\build\xextool\XexTool.exe"; DestDir: "{app}\modern\bin"; Components: modern
 Source: "..\..\build\tools\xdvdfs.exe";     DestDir: "{app}\bin"; Components: modern
 ; lib\ - clang's resource dir (found relative to bin\..\lib\clang) + all archives
 Source: "..\..\build\llvm\lib\clang\*";     DestDir: "{app}\modern\lib\clang"; Flags: recursesubdirs createallsubdirs; Components: modern

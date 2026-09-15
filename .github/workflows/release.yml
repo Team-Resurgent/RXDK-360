@@ -2,8 +2,8 @@
 #
 # Build the VSIX + Inno installer and publish a rolling "latest" GitHub Release.
 # Clang/lld come from Team-Resurgent/llvm-project xbox360-windows-x64.zip.
+# XexTool comes from Team-Resurgent/XexTool XexTool-windows-x64.zip.
 # xdvdfs comes from Team-Resurgent/XDVDFS-TR latest Windows zip.
-# XexTool, libc/libcpp, unpacker, and the VSIX are built here.
 
 name: Installer
 
@@ -33,17 +33,21 @@ jobs:
           fetch-depth: 1
           submodules: false
 
-      - name: Init picolibc + XexTool
+      - name: Init picolibc
         shell: pwsh
-        run: |
-          powershell -NoProfile -File scripts/init-submodules.ps1
-          git -c core.longpaths=true submodule update --init vendor/xextool
+        run: powershell -NoProfile -File scripts/init-submodules.ps1
 
       - name: Download Xbox 360 clang
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: powershell -NoProfile -File scripts/fetch-clang.ps1
+
+      - name: Download XexTool
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: powershell -NoProfile -File scripts/fetch-xextool.ps1
 
       - name: Download xdvdfs (XDVDFS-TR latest Windows)
         env:
@@ -66,15 +70,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Build XexTool
-        shell: pwsh
-        run: |
-          cmake -S vendor/xextool -B vendor/xextool/build -DCMAKE_BUILD_TYPE=Release
-          cmake --build vendor/xextool/build --config Release --parallel
-          if (-not (Test-Path "vendor/xextool/build/Release/XexTool.exe")) {
-            throw "XexTool.exe not at vendor/xextool/build/Release/XexTool.exe"
-          }
 
       - name: Build libc + libcpp
         shell: pwsh
