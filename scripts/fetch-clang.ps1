@@ -42,7 +42,7 @@ if ($inner -and (Test-Path (Join-Path $inner.FullName "bin\clang.exe"))) {
     throw "unzipped clang payload has no bin/clang.exe"
 }
 
-foreach ($p in @("bin\clang.exe", "bin\ld.lld.exe", "bin\llvm-ar.exe", "libcxx\include", "libcxxabi\include", "libunwind\src")) {
+foreach ($p in @("bin\clang.exe", "bin\ld.lld.exe", "bin\llvm-ar.exe", "libcxx\include", "libcxxabi\include", "libunwind\src", "libc\hdr\stdint_proxy.h")) {
     $full = Join-Path $dest $p
     if (-not (Test-Path $full)) { throw "clang zip missing $p" }
 }
