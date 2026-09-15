@@ -11,7 +11,8 @@ toolchain instead of the stock XDK cl.exe/link.exe/imagexex.
   Link      - discover kernel imports (ld.lld trial link) -> XexTool genstubs ->
               assemble stubs -> final link -> XexTool pack, straight to the .xex.
               (ImageXex is therefore a no-op for this toolset - packing already
-              happened in Link.)
+              happened in Link, including Image Conversion title id / privileges
+              via XexTool applyxml.)
   Lib       - not yet supported for the modern toolchain (no archiver shipped);
               use a stock-toolset (2010-01) StaticLibrary, or link sources directly.
 
@@ -111,6 +112,24 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
         CoffDir="$(RxdkCoffDir)"
         LibcDir="$(RxdkLibcDir)"
         BaseAddress="$(_ModernBase)"
+        TitleID="%(ImageXex.TitleID)"
+        LanKey="%(ImageXex.LanKey)"
+        HeapSize="%(ImageXex.HeapSize)"
+        WorkspaceSize="%(ImageXex.WorkspaceSize)"
+        ExportByName="%(ImageXex.ExportByName)"
+        OpticalDiscDriveMapping="%(ImageXex.OpticalDiscDriveMapping)"
+        Pal50Incompatible="%(ImageXex.Pal50Incompatible)"
+        MultiDiscTitle="%(ImageXex.MultiDiscTitle)"
+        PreferBigButtonInput="%(ImageXex.PreferBigButtonInput)"
+        CrossPlatformSystemLink="%(ImageXex.CrossPlatformSystemLink)"
+        AllowAvatarGetMetadata="%(ImageXex.AllowAvatarGetMetadata)"
+        AllowControllerSwapping="%(ImageXex.AllowControllerSwapping)"
+        RequireFullExperience="%(ImageXex.RequireFullExperience)"
+        GameVoiceRequiredUI="%(ImageXex.GameVoiceRequiredUI)"
+        KinectElevationControl="%(ImageXex.KinectElevationControl)"
+        KinectSupportLevel="%(ImageXex.KinectSupportLevel)"
+        ConfigurationFile="%(ImageXex.ConfigurationFile)"
+        AdditionalSections="%(ImageXex.AdditionalSections)"
         Libraries="$(RxdkModernLibs)"
         AdditionalDependencies="$(_ModernLinkDeps)"
         NoDefaultLibs="$(RxdkModernNoDefaultLibs)"

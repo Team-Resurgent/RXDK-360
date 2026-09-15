@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
@@ -55,6 +56,26 @@ namespace Rxdk.Xbox360.Modern.Build
 
         public string AdditionalOptions { get; set; }
         public bool KeepElf { get; set; }
+
+        // Xbox 360 Image Conversion page (same metadata as legacy imagexex).
+        public string TitleID { get; set; }
+        public string LanKey { get; set; }
+        public string HeapSize { get; set; }
+        public string WorkspaceSize { get; set; }
+        public bool ExportByName { get; set; }
+        public bool OpticalDiscDriveMapping { get; set; }
+        public bool Pal50Incompatible { get; set; }
+        public bool MultiDiscTitle { get; set; }
+        public bool PreferBigButtonInput { get; set; }
+        public bool CrossPlatformSystemLink { get; set; }
+        public bool AllowAvatarGetMetadata { get; set; }
+        public bool AllowControllerSwapping { get; set; }
+        public bool RequireFullExperience { get; set; }
+        public bool GameVoiceRequiredUI { get; set; }
+        public bool KinectElevationControl { get; set; }
+        public string KinectSupportLevel { get; set; }
+        public string ConfigurationFile { get; set; }
+        public string[] AdditionalSections { get; set; }
 
         private static readonly Regex UndefinedRe = new Regex(@"undefined symbol: (\S+)", RegexOptions.Compiled);
         private static readonly Regex UnresolvedRe = new Regex(@"unresolved \(not kernel imports\): (.+)", RegexOptions.Compiled);
@@ -140,6 +161,22 @@ namespace Rxdk.Xbox360.Modern.Build
                 Log.LogError("pack failed");
                 return false;
             }
+
+            string xml = Path.Combine(IntDir, Path.GetFileNameWithoutExtension(OutputFile) + ".xex.xml");
+            if (!WriteImageXexXml(xml))
+                return false;
+            if (File.Exists(xml))
+            {
+                var apply = Run(XexToolPath, new[] { "applyxml", packed, "--xml", xml, "-o", packed });
+                Log.LogMessage(MessageImportance.Normal, apply.StdOut);
+                if (apply.ExitCode != 0)
+                {
+                    LogDiagnostics(apply.Combined);
+                    Log.LogError("applyxml failed (Image Conversion settings)");
+                    return false;
+                }
+            }
+
             var sign = Run(XexToolPath, new[] { "-m", "d", "-o", OutputFile, packed });
             Log.LogMessage(MessageImportance.Normal, sign.StdOut);
             try { File.Delete(packed); } catch { }
@@ -316,6 +353,87 @@ namespace Rxdk.Xbox360.Modern.Build
             if (s.StartsWith("0x") || s.StartsWith("0X"))
                 return Convert.ToUInt32(s.Substring(2), 16);
             return Convert.ToUInt32(s, 10);
+        }
+
+        /// <summary>
+        /// Write the imagexex-style XML that applyxml consumes. Returns false on
+        /// a hard error (e.g. extra sections). Returns true and omits the file
+        /// when there is nothing to apply.
+        /// </summary>
+        private bool WriteImageXexXml(string path)
+        {
+            if (AdditionalSections != null)
+            {
+                foreach (var s in AdditionalSections)
+                {
+                    if (!string.IsNullOrWhiteSpace(s))
+                    {
+                        Log.LogError("Additional Sections are not packed by the clang toolset (imagexex embeds them in the PE). Leave the field empty, or use the 2010-01 toolset.");
+                        return false;
+                    }
+                }
+            }
+
+            var body = new StringBuilder();
+            if (!string.IsNullOrEmpty(ConfigurationFile) && File.Exists(ConfigurationFile))
+            {
+                // Pull child elements out of the user's imagexex config so one
+                // applyxml pass sees both the file and the property-page flags.
+                string raw = File.ReadAllText(ConfigurationFile);
+                int open = raw.IndexOf("<xex", StringComparison.OrdinalIgnoreCase);
+                int inner = open >= 0 ? raw.IndexOf('>', open) : -1;
+                int close = raw.LastIndexOf("</xex>", StringComparison.OrdinalIgnoreCase);
+                if (inner > 0 && close > inner)
+                    body.Append(raw.Substring(inner + 1, close - inner - 1).Trim());
+                else
+                    Log.LogWarning("Image Conversion Configuration File is not an imagexex <xex> XML; ignoring {0}", ConfigurationFile);
+            }
+            else if (!string.IsNullOrEmpty(ConfigurationFile))
+            {
+                Log.LogError("Image Conversion Configuration File not found: {0}", ConfigurationFile);
+                return false;
+            }
+
+            void Tag(string line)
+            {
+                if (body.Length > 0 && body[body.Length - 1] != '\n') body.AppendLine();
+                body.AppendLine(line);
+            }
+
+            if (!string.IsNullOrWhiteSpace(TitleID))
+                Tag("  <titleid id=\"" + TitleID.Trim() + "\"/>");
+            if (!string.IsNullOrWhiteSpace(LanKey))
+                Tag("  <lankey id=\"" + LanKey.Trim() + "\"/>");
+            if (!string.IsNullOrWhiteSpace(HeapSize))
+                Tag("  <xapiheap size=\"" + HeapSize.Trim() + "\"/>");
+            if (!string.IsNullOrWhiteSpace(WorkspaceSize))
+                Tag("  <workspace size=\"" + WorkspaceSize.Trim() + "\"/>");
+            if (ExportByName) Tag("  <exportnames/>");
+            if (OpticalDiscDriveMapping) Tag("  <privilege id=\"2\"/>");
+            if (Pal50Incompatible) Tag("  <privilege id=\"10\"/>");
+            if (MultiDiscTitle)
+            {
+                Tag("  <privilege id=\"15\"/>");
+                Tag("  <privilege id=\"16\"/>");
+            }
+            if (PreferBigButtonInput) Tag("  <privilege id=\"25\"/>");
+            if (CrossPlatformSystemLink) Tag("  <privilege id=\"14\"/>");
+            if (AllowAvatarGetMetadata) Tag("  <privilege id=\"29\"/>");
+            if (AllowControllerSwapping) Tag("  <privilege id=\"30\"/>");
+            if (RequireFullExperience) Tag("  <privilege id=\"34\"/>");
+            if (GameVoiceRequiredUI) Tag("  <privilege id=\"35\"/>");
+            if (KinectElevationControl) Tag("  <privilege id=\"37\"/>");
+            if (string.Equals(KinectSupportLevel, "RequiresTracking", StringComparison.OrdinalIgnoreCase))
+                Tag("  <privilege id=\"38\"/>");
+            else if (string.Equals(KinectSupportLevel, "SupportsTracking", StringComparison.OrdinalIgnoreCase))
+                Tag("  <privilege id=\"39\"/>");
+
+            if (body.Length == 0) return true;
+
+            Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
+            File.WriteAllText(path, "<xex>\n" + body.ToString().TrimEnd() + "\n</xex>\n");
+            Log.LogMessage(MessageImportance.Low, "  Image Conversion XML " + path);
+            return true;
         }
 
         /// <summary>The layout the packer expects (see mktitle.write_layout).</summary>
