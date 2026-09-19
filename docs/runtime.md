@@ -19,7 +19,7 @@ its own release zip. None of those trees are patched in this repo.
 | llvm-project zip | Team-Resurgent/llvm-project `latest` (`scripts/fetch-clang.ps1` → `build/llvm`) | patched MS-PPC clang/lld **and** C++ runtime sources (`libcxx`, `libcxxabi`, `libunwind`) |
 | XexTool zip | Team-Resurgent/XexTool `latest` (`scripts/fetch-xextool.ps1` → `build/xextool`) | `XexTool.exe` for packing XEX |
 
-The compiler patches live as commits on the fork's `teamresurgent` branch. Unpack
+The compiler patches live as commits on the fork's `xbox360` branch. Unpack
 `xbox360-windows-x64.zip` into `build/llvm`; do not submodule llvm-project.
 Unpack `XexTool-windows-x64.zip` into `build/xextool`; do not submodule XexTool.
 
@@ -172,7 +172,7 @@ Mirrored from RXDK-Libs (`runtime/xbox/`):
    `CallerSP` downward with the second slot at `-8` -- so a saved GPR (r30)
    landed on top of the return address and `blr` jumped to garbage. SVR4 escapes
    this because its LR offset is positive (in the caller's frame). Fixed on the
-   `teamresurgent` fork by reserving the LR doubleword before packing the CSR
+   `xbox360` fork branch by reserving the LR doubleword before packing the CSR
    areas; `arith`/`string` now save r30 at `0x50` (LR at `0x58`) and power off
    cleanly. The corpus dropped from ~2 min of hang-retries to ~3 s, and the ABI
    still matches `cl.exe` 4/4. (`.rodata` is also on its own READONLY page now,
@@ -209,6 +209,21 @@ Mirrored from RXDK-Libs (`runtime/xbox/`):
    `OutputDebugStringA` linked against `libc.a` + `xapilib.a` and confirms it runs
    and returns. Still to wire: `_blkmov` (a `memmove` alias) and the CRT init
    table below.
+
+4. **KNOWN UNFIXED -- runtime shader compile (`D3DXCompileShader`) hangs on HW.**
+   Calling `D3DXCompileShader` (any profile, even a trivial 10-line shader) never
+   returns on hardware: no error, no exception, XBDM dies, hard reboot required.
+   This is a real defect, not invalid input -- `fxc` compiles the same shaders
+   fine, and it is eliminated as stack exhaustion, COFF-translation fidelity, and
+   input sensitivity; the untested suspect is the runtime HLSL compiler's heap
+   use. It is **not fixed**, only avoided: the supported practice -- and what
+   shipping 360 titles do anyway -- is to **precompile shaders offline with `fxc`**
+   and load/assemble the microcode (see `tests/gfx/build_tri.py`), never compile
+   at runtime. `tools/test_no_runtime_shader_compile.py` guards the tree so the
+   unsafe entry points cannot creep back into title/test/sample source. If the
+   root cause is ever wanted, the 1 MB reserve heap (`SizeOfHeapReserve`, see
+   `runtime/xbox/crt_start.c`) is the remaining suspect -- but offline compile is
+   strictly better practice regardless.
 
 ## Other libraries hooking pre-main (the MS CRT init table)
 

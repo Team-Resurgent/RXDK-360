@@ -3,9 +3,11 @@
 
 The last stage of the toolchain: once code is compiled to ELF and linked at a
 XEX load address, this wraps the loadable image in the XEX2 container the 360
-loader (and xenia) expects. The first cut emits an uncompressed, unencrypted
-devkit XEX -- the form a debug kit will load without a signature -- and is
-verified by reading it back with XexTool.
+loader (and xenia) expects. It emits an uncompressed, unencrypted devkit XEX and,
+by default, debug-signs it (see tools/xex_debugsign.py): a real kit rejects an
+unsigned (zero-signature) image as retail with LDRX C000007B, and a wrong hash
+chain with C0000221, so signing is what makes the title actually load. Pass
+--no-sign to leave it unsigned (e.g. to inspect the raw layout with XexTool).
 
 XEX is big-endian throughout.
 
@@ -13,8 +15,12 @@ Usage:
     python tools/elf2xex.py <input.elf> -o <output.xex> [--base 0x82000000]
 """
 import argparse
+import os
 import struct
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import xex_debugsign  # noqa: E402  (sibling module; debug-signing the packed XEX)
 
 
 PAGE = 0x1000
@@ -436,8 +442,9 @@ def build_page_descriptors(base, sections, image_size, page_size):
 
 
 def build_security_info(image_size, load_address, sections):
-    """XexSecurityInfo + section table. Hashes are left zero (a dev kit with an
-    unsigned image does not check them; they can be filled in later)."""
+    """XexSecurityInfo + section table. Hashes and importTableCount are left zero
+    here; the debug-sign pass (xex_debugsign.debug_sign, on by default) fills the
+    section/import/header hashes and the RSA signature over the assembled XEX."""
     ZHASH = b"\0" * 20
     image_info = b""
     image_info += b"\0" * 256                          # signature
@@ -467,7 +474,7 @@ def build_security_info(image_size, load_address, sections):
     return out
 
 
-def pack(elf_path, out_path, base_override=None, imports=None):
+def pack(elf_path, out_path, base_override=None, imports=None, sign=True):
     blob = open(elf_path, "rb").read()
     load_base, sections, entry = read_elf_sections(blob)
     if base_override is not None and base_override != load_base:
@@ -560,10 +567,18 @@ def pack(elf_path, out_path, base_override=None, imports=None):
     out += b"\0" * (basefile_off - len(out))
     out += image
 
+    # Debug-sign: fill the section/import/header hashes and the RSA signature so
+    # a real kit loads the title (an unsigned image is treated as retail and
+    # rejected). Done on the assembled bytes because the header hash covers the
+    # descriptor hashes and import digests, which the signer fills first.
+    if sign:
+        out = bytearray(xex_debugsign.debug_sign(bytes(out)))
+
     with open(out_path, "wb") as f:
         f.write(out)
     print(f"wrote {out_path}: base 0x{load_base:08X} entry 0x{entry:08X} "
-          f"image {len(image)} bytes ({pages} pages), file {len(out)} bytes")
+          f"image {len(image)} bytes ({pages} pages), file {len(out)} bytes"
+          f"{'' if sign else ' (UNSIGNED)'}")
     names = {SECTIONINFO_CODE: "CODE", SECTIONINFO_DATA: "RWDATA",
              SECTIONINFO_READONLY: "RODATA"}
     print("  pages: " + ", ".join(f"{c}x{names[info]}" for c, info in descriptors))
@@ -584,6 +599,9 @@ def main():
                          "(variable then thunk per function) as ELF symbols")
     ap.add_argument("--import-manifest", default=None,
                     help="JSON from gen_import_stubs.py listing the import records")
+    ap.add_argument("--no-sign", dest="sign", action="store_false",
+                    help="leave the XEX unsigned (default: debug-sign it so a "
+                         "real kit will load it)")
     args = ap.parse_args()
     imports = []
     for spec in args.imports:
@@ -594,7 +612,7 @@ def main():
         m = json.load(open(args.import_manifest))
         for lib in m["libraries"]:
             imports.append((lib["module"], lib["records"]))
-    pack(args.elf, args.out, args.base, imports)
+    pack(args.elf, args.out, args.base, imports, sign=args.sign)
 
 
 if __name__ == "__main__":

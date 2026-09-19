@@ -243,7 +243,14 @@ def link(objects, libs, stubs, layout, out_elf, lld=DEFAULT_LLD, gc=True,
     # undefined_from() then parses fragments ("unsigned", "void") and
     # gen_import_stubs looks those up as symbols. Keep the raw mangled names so
     # the kernel-import discovery and the error text are both correct.
-    cmd = [lld, "-T", layout, "-e", "_start", "--error-limit=0", "--no-demangle"]
+    # --no-dependent-libraries: XDK headers (use_ansi.h et al) bake
+    # #pragma comment(lib, "libcpmt") into every object that includes them, which
+    # clang emits as a .deplibs record; ld.lld would otherwise follow it and fail
+    # to find MSVC's C++ static runtime, which the modern toolchain deliberately
+    # does not ship (issue #3). Every archive we need is named explicitly, so
+    # dropping the auto-pull loses nothing. Matches the VS path (ClangLink.cs).
+    cmd = [lld, "-T", layout, "-e", "_start", "--error-limit=0", "--no-demangle",
+           "--no-dependent-libraries"]
     if gc:
         cmd.append("--gc-sections")
     for f in ldflags:
@@ -317,6 +324,9 @@ def main():
                          "e.g. --ldflag=-Wl,--allow-multiple-definition")
     ap.add_argument("--keep-elf", action="store_true",
                     help="keep the intermediate .elf next to the output")
+    ap.add_argument("--no-sign", dest="sign", action="store_false",
+                    help="leave the packed XEX unsigned (default: debug-sign it "
+                         "so a real kit will load it -- see tools/xex_debugsign.py)")
     args = ap.parse_args()
 
     if args.cc == "clang" and not os.path.exists(args.clang):
@@ -404,6 +414,8 @@ def main():
     cmd = [sys.executable, os.path.join(HERE, "elf2xex.py"), elf, "-o", args.out]
     if manifest:
         cmd += ["--import-manifest", manifest]
+    if not args.sign:
+        cmd += ["--no-sign"]
     r = run(cmd)
     sys.stdout.write(r.stdout)
     if r.returncode != 0:

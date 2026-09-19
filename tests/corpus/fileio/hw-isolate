@@ -1,0 +1,4 @@
+Issue #4 repro: a regression here (fopen not returning) hard-hangs a real kit
+(XBDM dies, power-cycle required). The HW corpus runner (tools/run_corpus_hw.py)
+runs tests carrying this marker in an isolated pass AFTER the main sample, so a
+wedge costs only this test, not the whole run.
