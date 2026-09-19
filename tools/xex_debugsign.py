@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Debug-sign an Xbox 360 XEX2 in place -- the self-contained equivalent of
-`XexTool -m d`, so the CLI toolchain (elf2xex/mktitle) produces a XEX a real
-devkit will load.
+"""Debug-sign and debug-encrypt an Xbox 360 XEX2 in place -- the self-contained
+equivalent of `XexTool -e e -m d`, so the CLI toolchain (elf2xex/mktitle)
+produces a XEX a real devkit will load. Signing alone satisfies a softmod loader
+(RGLoader); a stock devkit also requires the basefile debug-encrypted (see
+debug_sign's encrypt flag). Byte-for-byte identical to XexTool's output.
 
 Why this exists
 ---------------
@@ -56,6 +58,19 @@ _D = 0x8F861F627680FFD4C83CCD4368A6AAAC7D13B00EF64300AFC49BC52C50A3D5D08DCF81120
 _E = 3
 _CQW = 32                                   # 2048-bit == 32 qwords
 _SALT = b"XBOX360XEX"                        # XEX_SALT_XEX (non-revocation)
+
+# ---- debug encryption ------------------------------------------------------
+# A genuine devkit (unlike RGLoader) rejects an unencrypted image; the basefile
+# must be AES-128-CBC encrypted (IV=0) with a per-file session key, and the
+# session key stored in imageInfo.imageKey as AES-ECB(sessionKey, debug KEK).
+# The debug KEK (XexData XEX_DEBUG_KEY, de-obfuscated) is all zeros. We reuse
+# XexTool's fixed debug session key so our output matches `XexTool -e e -m d`
+# byte for byte; any session key works since the loader recovers it from
+# imageKey. _DEBUG_IMAGE_KEY == AES-ECB(_SESSION_KEY, 0).
+_SESSION_KEY = bytes.fromhex("72c0fe97da437ac16d784fcc3fb4870e")
+_DEBUG_IMAGE_KEY = bytes.fromhex("2e66987f9ea2c4ffb64c53c936c3c481")
+_II_IMAGEKEY = 0x148                        # imageInfo.imageKey[16] offset
+_KEY_BASEFILE_FORMAT = 0x000003FF
 
 # XexSecurityInfo / XexHvImageInfo field offsets, relative to the imageInfo start
 # (which is securityInfoOffset + 8, after {headerSize, imageSize}).
@@ -160,13 +175,100 @@ def _rsa_debug_sign(region):
     return _int_to_qwne(pow(psig, _D, _N))
 
 
+# ---- AES-128-CBC (Windows CNG when available, else a pure-Python fallback) --
+
+def _aes_cbc_encrypt_bcrypt(data, key, iv):
+    import ctypes
+    b = ctypes.WinDLL("bcrypt.dll")
+
+    def chk(s):
+        if s & 0xFFFFFFFF:
+            raise OSError("BCrypt NTSTATUS 0x%08X" % (s & 0xFFFFFFFF))
+
+    h_alg = ctypes.c_void_p()
+    chk(b.BCryptOpenAlgorithmProvider(ctypes.byref(h_alg), ctypes.c_wchar_p("AES"), None, 0))
+    try:
+        mode = "ChainingModeCBC"
+        buf = ctypes.create_unicode_buffer(mode)
+        chk(b.BCryptSetProperty(h_alg, ctypes.c_wchar_p("ChainingMode"),
+                                ctypes.cast(buf, ctypes.POINTER(ctypes.c_ubyte)),
+                                (len(mode) + 1) * 2, 0))
+        h_key = ctypes.c_void_p()
+        kb = (ctypes.c_ubyte * len(key)).from_buffer_copy(key)
+        chk(b.BCryptGenerateSymmetricKey(h_alg, ctypes.byref(h_key), None, 0, kb, len(key), 0))
+        try:
+            inb = (ctypes.c_ubyte * len(data)).from_buffer_copy(data)
+            ivb = (ctypes.c_ubyte * 16).from_buffer_copy(iv)
+            outlen = ctypes.c_ulong(0)
+            chk(b.BCryptEncrypt(h_key, inb, len(data), None, ivb, 16, None, 0,
+                                ctypes.byref(outlen), 0))
+            outb = (ctypes.c_ubyte * outlen.value)()
+            ivb = (ctypes.c_ubyte * 16).from_buffer_copy(iv)   # BCryptEncrypt advanced it
+            chk(b.BCryptEncrypt(h_key, inb, len(data), None, ivb, 16, outb, outlen.value,
+                                ctypes.byref(outlen), 0))
+            return bytes(outb)
+        finally:
+            b.BCryptDestroyKey(h_key)
+    finally:
+        b.BCryptCloseAlgorithmProvider(h_alg, 0)
+
+
+def _aes_cbc_encrypt(data, key, iv=b"\0" * 16):
+    if len(data) % 16:
+        raise ValueError("basefile not a multiple of the AES block size")
+    try:
+        return _aes_cbc_encrypt_bcrypt(data, key, iv)
+    except (OSError, AttributeError, ImportError):
+        from _aes_fallback import aes128_cbc_encrypt   # pure-Python, off-Windows only
+        return aes128_cbc_encrypt(data, key, iv)
+
+
+def _aes_cbc_decrypt(data, key, iv=b"\0" * 16):
+    """AES-128-CBC decrypt (Windows CNG only; used by verify_signed)."""
+    import ctypes
+    b = ctypes.WinDLL("bcrypt.dll")
+
+    def chk(s):
+        if s & 0xFFFFFFFF:
+            raise OSError("BCrypt NTSTATUS 0x%08X" % (s & 0xFFFFFFFF))
+
+    h_alg = ctypes.c_void_p()
+    chk(b.BCryptOpenAlgorithmProvider(ctypes.byref(h_alg), ctypes.c_wchar_p("AES"), None, 0))
+    try:
+        mode = "ChainingModeCBC"
+        buf = ctypes.create_unicode_buffer(mode)
+        chk(b.BCryptSetProperty(h_alg, ctypes.c_wchar_p("ChainingMode"),
+                                ctypes.cast(buf, ctypes.POINTER(ctypes.c_ubyte)),
+                                (len(mode) + 1) * 2, 0))
+        h_key = ctypes.c_void_p()
+        kb = (ctypes.c_ubyte * len(key)).from_buffer_copy(key)
+        chk(b.BCryptGenerateSymmetricKey(h_alg, ctypes.byref(h_key), None, 0, kb, len(key), 0))
+        try:
+            inb = (ctypes.c_ubyte * len(data)).from_buffer_copy(data)
+            ivb = (ctypes.c_ubyte * 16).from_buffer_copy(iv)
+            outlen = ctypes.c_ulong(0)
+            chk(b.BCryptDecrypt(h_key, inb, len(data), None, ivb, 16, None, 0,
+                                ctypes.byref(outlen), 0))
+            outb = (ctypes.c_ubyte * outlen.value)()
+            ivb = (ctypes.c_ubyte * 16).from_buffer_copy(iv)
+            chk(b.BCryptDecrypt(h_key, inb, len(data), None, ivb, 16, outb, outlen.value,
+                                ctypes.byref(outlen), 0))
+            return bytes(outb)
+        finally:
+            b.BCryptDestroyKey(h_key)
+    finally:
+        b.BCryptCloseAlgorithmProvider(h_alg, 0)
+
+
 # ---- XEX2 hash chain --------------------------------------------------------
 
-def debug_sign(xex):
-    """Return `xex` (bytes) debug-signed: fills the section/import/header hashes
-    and the RSA signature, matching XexTool `-m d`. Requires an uncompressed,
-    unencrypted XEX whose stored basefile is the full image (what elf2xex emits).
-    """
+def debug_sign(xex, encrypt=True):
+    """Return `xex` (bytes) debug-signed (and, by default, debug-encrypted):
+    fills the section/import/header hashes and the RSA signature, matching
+    `XexTool -e e -m d` (or `-e u -m d` with encrypt=False). Requires an
+    uncompressed XEX whose stored basefile is the full plaintext image (what
+    elf2xex emits before this pass). Pass the same unsigned input each time --
+    do not re-run on an already-signed/encrypted XEX."""
     x = bytearray(xex)
     if x[:4] != b"XEX2":
         raise ValueError("not a XEX2 file")
@@ -204,6 +306,21 @@ def debug_sign(xex):
         h = hashlib.sha1(block + struct.pack(">I", tc) + h).digest()
     x[ii + _II_IMAGEHASH:ii + _II_IMAGEHASH + 20] = h
 
+    # 1b) debug-encrypt the basefile (a genuine devkit rejects an unencrypted
+    # image). Section hashes above are over the PLAINTEXT (the loader decrypts
+    # before checking them); everything below -- header hash covers encType,
+    # RotSumSha covers imageKey -- runs after this so the signature is over the
+    # encrypted form. encType lives in the BASEFILE_FORMAT optional block.
+    if encrypt:
+        enc = _aes_cbc_encrypt(basefile, _SESSION_KEY)
+        x[size_of_headers:size_of_headers + image_size] = enc
+        x[ii + _II_IMAGEKEY:ii + _II_IMAGEKEY + 16] = _DEBUG_IMAGE_KEY
+        for i in range(n_entries):
+            k, v = struct.unpack_from(">II", x, 0x18 + i * 8)
+            if k == _KEY_BASEFILE_FORMAT:
+                struct.pack_into(">H", x, v + 4, 1)    # RawBaseFileInfo.encType = 1
+                break
+
     # 2) import hashes (backward chain) -> lib digests + importHash + importCount
     imp_off = None
     for i in range(n_entries):
@@ -238,13 +355,22 @@ def debug_sign(xex):
     return bytes(x)
 
 
-def verify_signed(xex):
-    """Return [] if `xex` is validly debug-signed, else a list of problems.
+def _basefile_enc_type(x, n_entries):
+    """The BASEFILE_FORMAT block's encType (1 = debug-encrypted, 0 = plain)."""
+    for i in range(n_entries):
+        k, v = struct.unpack_from(">II", x, 0x18 + i * 8)
+        if k == _KEY_BASEFILE_FORMAT:
+            return struct.unpack_from(">H", x, v + 4)[0]
+    return 0
 
-    A correctly signed XEX is a fixed point of debug_sign (every hash and the
-    signature derive only from the basefile and the non-hash header bytes), so
-    re-signing must reproduce it exactly; the signature must also be non-zero
-    (a zero signature is the retail classification a kit rejects)."""
+
+def verify_signed(xex):
+    """Return [] if `xex` is validly debug-signed (and, if encType=1, debug-
+    encrypted), else a list of problems. A correctly produced XEX is a fixed
+    point of debug_sign once the basefile is put back to plaintext, so verify
+    decrypts (when encrypted), re-runs debug_sign with the matching encrypt
+    flag, and compares; the signature must also be non-zero (a zero signature is
+    the retail classification a kit rejects)."""
     x = bytes(xex)
     problems = []
     try:
@@ -252,16 +378,30 @@ def verify_signed(xex):
         ii = sec + 8
         if not any(x[ii:ii + 0x100]):
             problems.append("signature is zero (unsigned / retail-classified)")
-        resigned = debug_sign(x)
+        n_entries = struct.unpack_from(">I", x, 0x14)[0]
+        encrypted = _basefile_enc_type(x, n_entries) == 1
+        canon = bytearray(x)
+        if encrypted:
+            # recover the plaintext basefile so a fresh sign is comparable
+            soh = struct.unpack_from(">I", x, 0x08)[0]
+            image_size = struct.unpack_from(">i", x, sec + 4)[0]
+            canon[soh:soh + image_size] = _aes_cbc_decrypt(
+                bytes(x[soh:soh + image_size]), _SESSION_KEY)
+        resigned = debug_sign(bytes(canon), encrypt=encrypted)
     except Exception as e:                      # noqa: BLE001 - report, don't raise
-        return ["not a signable XEX2: %s" % e]
+        return problems + ["could not re-derive to verify: %s" % e] if problems \
+            else ["not a signable XEX2: %s" % e]
     if resigned != x:
         for name, off, ln in (("imageHash", ii + _II_IMAGEHASH, 20),
                               ("importHash", ii + _II_IMPORTHASH, 20),
                               ("headerHash", ii + _II_HEADERHASH, 20),
+                              ("imageKey", ii + _II_IMAGEKEY, 16),
                               ("signature", ii + _II_SIGNATURE, 0x100)):
             if x[off:off + ln] != resigned[off:off + ln]:
                 problems.append("%s does not match a fresh sign" % name)
+        if x[struct.unpack_from(">I", x, 0x08)[0]:] != \
+                resigned[struct.unpack_from(">I", x, 0x08)[0]:]:
+            problems.append("encrypted basefile does not match a fresh sign")
     return problems
 
 

@@ -3,11 +3,15 @@
 
 The last stage of the toolchain: once code is compiled to ELF and linked at a
 XEX load address, this wraps the loadable image in the XEX2 container the 360
-loader (and xenia) expects. It emits an uncompressed, unencrypted devkit XEX and,
-by default, debug-signs it (see tools/xex_debugsign.py): a real kit rejects an
-unsigned (zero-signature) image as retail with LDRX C000007B, and a wrong hash
-chain with C0000221, so signing is what makes the title actually load. Pass
---no-sign to leave it unsigned (e.g. to inspect the raw layout with XexTool).
+loader (and xenia) expects, and by default makes it loadable on a stock devkit.
+A genuine kit is strict where xenia is lenient, so a loadable devkit XEX needs
+all of: a debug signature (a zero signature is classified retail -> LDRX
+C000007B), a debug-encrypted basefile (an unencrypted image is also rejected),
+the CHECKSUM_TIMESTAMP optional header (absent -> C000007B), and the optional-
+header directory sorted by key (the loader binary-searches it). The first two
+come from tools/xex_debugsign.py; the last two are emitted here. Pass --no-sign
+for a raw unsigned/unencrypted image, or --no-encrypt to sign but not encrypt
+(loads in xenia, not on a stock devkit).
 
 XEX is big-endian throughout.
 
@@ -31,6 +35,7 @@ KEY_ENTRY_POINT = 0x00010100
 KEY_IMAGE_BASE_ADDRESS = 0x00010201
 KEY_IMPORT_LIBRARIES = 0x000103FF
 KEY_ORIGINAL_BASE_ADDRESS = 0x00010001
+KEY_CHECKSUM_TIMESTAMP = 0x00018002   # low byte 0x02 == 2 dwords (checksum, timestamp)
 KEY_STACK_SIZE = 0x00020200
 KEY_EXECUTION_INFO = 0x00040006     # low byte 0x06 == 6 dwords (the 0x18 struct)
 
@@ -474,7 +479,7 @@ def build_security_info(image_size, load_address, sections):
     return out
 
 
-def pack(elf_path, out_path, base_override=None, imports=None, sign=True):
+def pack(elf_path, out_path, base_override=None, imports=None, sign=True, encrypt=True):
     blob = open(elf_path, "rb").read()
     load_base, sections, entry = read_elf_sections(blob)
     if base_override is not None and base_override != load_base:
@@ -524,8 +529,12 @@ def pack(elf_path, out_path, base_override=None, imports=None, sign=True):
         (KEY_STACK_SIZE, DEFAULT_STACK_SIZE),
     ]
     # (key, data) blocks placed after the security info; the directory records
-    # the file offset of each.
+    # the file offset of each. CHECKSUM_TIMESTAMP (checksum, timestamp) is a
+    # header every real XEX carries; a stock devkit loader rejects an image
+    # without it (LDRX C000007B) even though xenia tolerates its absence. The
+    # values are not verified, so zero/zero is fine.
     offset_blocks = [(KEY_BASEFILE_FORMAT, basefile_format),
+                     (KEY_CHECKSUM_TIMESTAMP, struct.pack(">II", 0, 0)),
                      (KEY_EXECUTION_INFO, build_execution_info(DEFAULT_TITLE_ID))]
     if import_block is not None:
         offset_blocks.append((KEY_IMPORT_LIBRARIES, import_block))
@@ -543,11 +552,12 @@ def pack(elf_path, out_path, base_override=None, imports=None, sign=True):
         cur += len(data)
     basefile_off = (cur + PAGE - 1) & ~(PAGE - 1)
 
-    directory = b""
-    for key, val in inline:
-        directory += struct.pack(">II", key, val)
-    for key, _ in offset_blocks:
-        directory += struct.pack(">II", key, block_offsets[key])
+    # The optional-header directory must be sorted by key ascending: the console
+    # loader binary-searches it, so an unsorted table makes it miss headers and
+    # reject the image (xenia linear-scans and does not care).
+    entries = [(k, v) for k, v in inline] + \
+              [(k, block_offsets[k]) for k, _ in offset_blocks]
+    directory = b"".join(struct.pack(">II", k, v) for k, v in sorted(entries))
 
     image_header = struct.pack(">4sIiiiI", b"XEX2",
                                MODULEFLAG_TITLE_MODULE,
@@ -567,18 +577,19 @@ def pack(elf_path, out_path, base_override=None, imports=None, sign=True):
     out += b"\0" * (basefile_off - len(out))
     out += image
 
-    # Debug-sign: fill the section/import/header hashes and the RSA signature so
-    # a real kit loads the title (an unsigned image is treated as retail and
-    # rejected). Done on the assembled bytes because the header hash covers the
-    # descriptor hashes and import digests, which the signer fills first.
+    # Debug-sign (and by default debug-encrypt) so a real kit loads the title:
+    # an unsigned image is classified retail and rejected, and a genuine devkit
+    # additionally requires the basefile to be debug-encrypted. Done on the
+    # assembled bytes because the header hash covers the descriptor hashes and
+    # import digests, and the signature covers the encrypted image key.
     if sign:
-        out = bytearray(xex_debugsign.debug_sign(bytes(out)))
+        out = bytearray(xex_debugsign.debug_sign(bytes(out), encrypt=encrypt))
 
     with open(out_path, "wb") as f:
         f.write(out)
+    state = "signed+encrypted" if (sign and encrypt) else "signed" if sign else "UNSIGNED"
     print(f"wrote {out_path}: base 0x{load_base:08X} entry 0x{entry:08X} "
-          f"image {len(image)} bytes ({pages} pages), file {len(out)} bytes"
-          f"{'' if sign else ' (UNSIGNED)'}")
+          f"image {len(image)} bytes ({pages} pages), file {len(out)} bytes ({state})")
     names = {SECTIONINFO_CODE: "CODE", SECTIONINFO_DATA: "RWDATA",
              SECTIONINFO_READONLY: "RODATA"}
     print("  pages: " + ", ".join(f"{c}x{names[info]}" for c, info in descriptors))
@@ -600,8 +611,11 @@ def main():
     ap.add_argument("--import-manifest", default=None,
                     help="JSON from gen_import_stubs.py listing the import records")
     ap.add_argument("--no-sign", dest="sign", action="store_false",
-                    help="leave the XEX unsigned (default: debug-sign it so a "
-                         "real kit will load it)")
+                    help="leave the XEX unsigned and unencrypted (default: "
+                         "debug-sign and -encrypt it so a real kit will load it)")
+    ap.add_argument("--no-encrypt", dest="encrypt", action="store_false",
+                    help="debug-sign but do not encrypt (loads in xenia and on a "
+                         "kit set to accept unencrypted images, not a stock devkit)")
     args = ap.parse_args()
     imports = []
     for spec in args.imports:
@@ -612,7 +626,7 @@ def main():
         m = json.load(open(args.import_manifest))
         for lib in m["libraries"]:
             imports.append((lib["module"], lib["records"]))
-    pack(args.elf, args.out, args.base, imports, sign=args.sign)
+    pack(args.elf, args.out, args.base, imports, sign=args.sign, encrypt=args.encrypt)
 
 
 if __name__ == "__main__":

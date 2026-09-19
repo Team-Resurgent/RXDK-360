@@ -325,8 +325,12 @@ def main():
     ap.add_argument("--keep-elf", action="store_true",
                     help="keep the intermediate .elf next to the output")
     ap.add_argument("--no-sign", dest="sign", action="store_false",
-                    help="leave the packed XEX unsigned (default: debug-sign it "
-                         "so a real kit will load it -- see tools/xex_debugsign.py)")
+                    help="leave the packed XEX unsigned and unencrypted (default: "
+                         "debug-sign + -encrypt it so a real kit will load it -- "
+                         "see tools/xex_debugsign.py)")
+    ap.add_argument("--no-encrypt", dest="encrypt", action="store_false",
+                    help="debug-sign but do not encrypt (loads in xenia; a stock "
+                         "devkit needs the encrypted form)")
     args = ap.parse_args()
 
     if args.cc == "clang" and not os.path.exists(args.clang):
@@ -416,6 +420,8 @@ def main():
         cmd += ["--import-manifest", manifest]
     if not args.sign:
         cmd += ["--no-sign"]
+    elif not args.encrypt:
+        cmd += ["--no-encrypt"]
     r = run(cmd)
     sys.stdout.write(r.stdout)
     if r.returncode != 0:
