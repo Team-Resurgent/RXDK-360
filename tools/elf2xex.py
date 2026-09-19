@@ -36,7 +36,15 @@ KEY_IMAGE_BASE_ADDRESS = 0x00010201
 KEY_IMPORT_LIBRARIES = 0x000103FF
 KEY_ORIGINAL_BASE_ADDRESS = 0x00010001
 KEY_CHECKSUM_TIMESTAMP = 0x00018002   # low byte 0x02 == 2 dwords (checksum, timestamp)
+KEY_TLS_INFO = 0x00020104             # low byte 0x04 == 4 dwords (XEX_TLS_INFO)
 KEY_STACK_SIZE = 0x00020200
+
+# Thread-local-storage slots the loader gives each thread. A title with no
+# TLS_INFO header gets zero slots, so any KeTlsGetValue/KeTlsSetValue (which the
+# MS CRT and middleware like d3dx9's shader compiler use) indexes past the empty
+# array and the kernel traps -- a hard hang with no exception. Real titles carry
+# 64 (TLS_MINIMUM_AVAILABLE); we do the same. No static TLS data, just the slots.
+DEFAULT_TLS_SLOTS = 64
 KEY_EXECUTION_INFO = 0x00040006     # low byte 0x06 == 6 dwords (the 0x18 struct)
 
 DEFAULT_STACK_SIZE = 0x40000        # what a real XDK title carries
@@ -535,6 +543,8 @@ def pack(elf_path, out_path, base_override=None, imports=None, sign=True, encryp
     # values are not verified, so zero/zero is fine.
     offset_blocks = [(KEY_BASEFILE_FORMAT, basefile_format),
                      (KEY_CHECKSUM_TIMESTAMP, struct.pack(">II", 0, 0)),
+                     # XEX_TLS_INFO: slotCount, rawDataAddress, dataSize, rawDataSize
+                     (KEY_TLS_INFO, struct.pack(">IIII", DEFAULT_TLS_SLOTS, 0, 0, 0)),
                      (KEY_EXECUTION_INFO, build_execution_info(DEFAULT_TITLE_ID))]
     if import_block is not None:
         offset_blocks.append((KEY_IMPORT_LIBRARIES, import_block))
