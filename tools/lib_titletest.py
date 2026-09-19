@@ -41,6 +41,10 @@ FAULT_RE = re.compile(r"RXDK-FAULT")
 DEPS = {
     "xgraphics": ["d3d9"],     # D3D:: texture-layout helpers live in d3d9
     "xaudio2": ["xmcore"],     # XLFQueue* live in xmcore
+    # D3DXCompileShader pulls the runtime HLSL->microcode compiler: the
+    # XMicrocodeBuilder/XShaderPDBBuilder/XG* engine lives in xgraphics and the
+    # D3DDevice_SetShaderConstant* helpers in d3d9.
+    "d3dx9": ["xgraphics", "d3d9"],
 }
 
 # Tests whose link set is not "<name> + DEPS" -- e.g. a combined title touching
@@ -58,13 +62,25 @@ TESTS = {
     # ---- runnable: device-free compute -------------------------------------
     "d3dx9": (PRINT + r'''
 extern float* D3DXMatrixMultiply(float*o,const float*a,const float*b);
+/* HRESULT D3DXCompileShader(src,len,defines,include,entry,profile,flags,
+   ID3DXBuffer**shader, ID3DXBuffer**errors, ID3DXConstantTable**ct) */
+extern long D3DXCompileShader(const char*,unsigned,const void*,void*,const char*,
+                              const char*,unsigned long,void**,void**,void**);
 static float I[16]={1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+static const char SH[]="float4 VSMain(float4 p:POSITION):POSITION{return p;}\n";
 int main(void){
     DbgPrint("[LT] SECT d3dx9\n");
     float m[16], s[16];
     for(int i=0;i<16;i++) s[i]=I[i]*2.0f;
     D3DXMatrixMultiply(m,I,s);          /* I * (2I) = 2I */
     DbgPrint("[LT] %s m00=%d\n", (m[0]==2.0f&&m[5]==2.0f)?"PASS":"FAIL", (int)m[0]);
+    /* issue #5: the runtime HLSL compiler used to wedge the console (missing
+       TLS_INFO + a null heap). It must now compile a trivial shader to S_OK. */
+    void *code=0,*err=0,*ct=0;
+    long hr = D3DXCompileShader(SH, sizeof(SH)-1, 0,0, "VSMain","vs_3_0", 0,
+                                &code,&err,&ct);
+    DbgPrint("[LT] %s compile hr=%d code=%d\n",
+             (hr==0 && code!=0)?"PASS":"FAIL", (int)hr, code!=0);
     DbgPrint("[LT] DONE d3dx9\n"); return 0;
 }''', True),
 

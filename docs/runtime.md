@@ -210,20 +210,19 @@ Mirrored from RXDK-Libs (`runtime/xbox/`):
    and returns. Still to wire: `_blkmov` (a `memmove` alias) and the CRT init
    table below.
 
-4. **KNOWN UNFIXED -- runtime shader compile (`D3DXCompileShader`) hangs on HW.**
-   Calling `D3DXCompileShader` (any profile, even a trivial 10-line shader) never
-   returns on hardware: no error, no exception, XBDM dies, hard reboot required.
-   This is a real defect, not invalid input -- `fxc` compiles the same shaders
-   fine, and it is eliminated as stack exhaustion, COFF-translation fidelity, and
-   input sensitivity; the untested suspect is the runtime HLSL compiler's heap
-   use. It is **not fixed**, only avoided: the supported practice -- and what
-   shipping 360 titles do anyway -- is to **precompile shaders offline with `fxc`**
-   and load/assemble the microcode (see `tests/gfx/build_tri.py`), never compile
-   at runtime. `tools/test_no_runtime_shader_compile.py` guards the tree so the
-   unsafe entry points cannot creep back into title/test/sample source. If the
-   root cause is ever wanted, the 1 MB reserve heap (`SizeOfHeapReserve`, see
-   `runtime/xbox/crt_start.c`) is the remaining suspect -- but offline compile is
-   strictly better practice regardless.
+4. **FIXED -- runtime shader compile (`D3DXCompileShader`) hung on a missing TLS
+   header + an uninitialised heap.** Calling `D3DXCompileShader` used to never
+   return (no error, no exception, XBDM dead). Traced on hardware to two title-
+   environment gaps, neither in the compiler itself: (a) the XEX carried no
+   TLS_INFO header, so the loader gave the title zero TLS slots and the compiler's
+   first `KeTlsGetValue` hit a kernel bounds-check trap (fixed in `elf2xex.py`,
+   which now emits TLS_INFO with 64 slots); and (b) the title heap was never
+   created, so `malloc` returned NULL and the heavily-allocating compiler faulted
+   on it (the corpus startup shim now creates `XapiProcessHeap`, like `crt_start`).
+   With both, `D3DXCompileShader` compiles a trivial shader to `S_OK`. Offline
+   `fxc` is still the recommended path for shipping titles (it is faster and is
+   what real 360 titles do -- see `tests/gfx/build_tri.py`); runtime compile is
+   now merely *available*, not required.
 
 ## Other libraries hooking pre-main (the MS CRT init table)
 
