@@ -212,8 +212,15 @@ def compile_sources(sources, workdir, cc, clang, cflags):
             if not is_asm:
                 # titles get the modern standard the runtime targets (C23/C++23);
                 # picolibc itself is built separately at c17 (build_libc.py).
+                # -fshort-wchar: the Xbox 360 MSVC ABI uses a 2-byte wchar_t
+                # (UTF-16), and the runtime (build_libc.py) is built the same way.
+                # Clang defaults this target to a 4-byte wchar_t, which would make
+                # every wide string a title passes to the libc (wcstol, wcstod,
+                # char_traits<wchar_t>, ...) unreadable -- the 2-byte reader hits
+                # the high zero half of the first character and sees an empty
+                # string. Match the runtime so wide chars work.
                 std = "-std=c++23" if is_cpp else "-std=c23"
-                cmd[2:2] = ["-O2", std] + auto_clang_flags(is_cpp) + cflags
+                cmd[2:2] = ["-O2", std, "-fshort-wchar"] + auto_clang_flags(is_cpp) + cflags
         elif is_asm:                                   # zig: assembly, no C-only flags
             cmd = [zig(), "cc", "-target", TARGET, "-c", src, "-o", obj]
         else:
