@@ -165,10 +165,20 @@ namespace Rxdk.Xbox360.Modern.Build
             var f = new List<string>
             {
                 "-fms-extensions", "-fms-compatibility", "-fdeclspec",
+                // XObjBase.h gates DECLSPEC_UUID -> __declspec(uuid(x)) on
+                // _MSC_VER>=1100, so without _MSC_VER the COM interfaces get no GUID
+                // and __uuidof(IUnknown) fails. Define _MSC_VER globally would make
+                // the force-included libc++/picolibc take their MSVC paths and break;
+                // instead attach the uuid surgically by pre-defining DECLSPEC_UUID.
+                "-DDECLSPEC_UUID(x)=__declspec(uuid(x))",
                 // The stock secure CRT (stdio.h) declares vsprintf_s/vswprintf_s
                 // AFTER the inline templates that call them; MSVC's late template
                 // parsing resolves that, two-phase lookup does not. Match MSVC.
                 "-fdelayed-template-parsing",
+                // ATG's template loop-unroller pastes 'name##[CurrentIndex()]' to
+                // form 'arg0[...]'; MSVC is lenient about pastes that don't make a
+                // single token, standard clang errors. Match MSVC's leniency.
+                "-Wno-invalid-token-paste",
                 // #pragma comment(lib, "d3d9.lib") in XDK code emits a COFF auto-link
                 // directive ld.lld cannot resolve; the modern link names the ELF
                 // libraries explicitly instead, so drop the directive.
