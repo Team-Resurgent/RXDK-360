@@ -165,6 +165,10 @@ namespace Rxdk.Xbox360.Modern.Build
             var f = new List<string>
             {
                 "-fms-extensions", "-fms-compatibility", "-fdeclspec",
+                // The stock secure CRT (stdio.h) declares vsprintf_s/vswprintf_s
+                // AFTER the inline templates that call them; MSVC's late template
+                // parsing resolves that, two-phase lookup does not. Match MSVC.
+                "-fdelayed-template-parsing",
                 // #pragma comment(lib, "d3d9.lib") in XDK code emits a COFF auto-link
                 // directive ld.lld cannot resolve; the modern link names the ELF
                 // libraries explicitly instead, so drop the directive.
