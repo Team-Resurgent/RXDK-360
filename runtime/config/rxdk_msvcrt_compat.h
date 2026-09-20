@@ -17,6 +17,15 @@
 #ifndef _MAX_PATH
 #define _MAX_PATH 260
 #endif
+#ifndef _TRUNCATE
+#define _TRUNCATE ((size_t)-1)
+#endif
+/* SAL code-analysis fallthrough marker: the XDK places `__fallthrough` before a
+   `case` label with no trailing statement, where clang's real fallthrough
+   attribute is rejected. It carries no codegen meaning - make it a no-op. */
+#ifndef __fallthrough
+#define __fallthrough
+#endif
 
 #include <stddef.h>
 #include <stdlib.h>
@@ -63,6 +72,15 @@ static inline int _itoa_s(int val, char *buf, size_t size, int radix)
 
 #ifdef __cplusplus
 }
+/* MSVC array-size-deducing overloads (C++ only). */
+template <size_t N> inline int _wcslwr_s(wchar_t (&s)[N]) { return _wcslwr_s(s, N); }
+template <size_t N> inline int _itoa_s(int val, char (&buf)[N], int radix) { return _itoa_s(val, buf, N, radix); }
+/* _vsnprintf_s(buf, count, fmt, ap): buffer size deduced; count is usually
+   _TRUNCATE (truncate to fit). Forward to vsnprintf bounded by the array size. */
+template <size_t N> inline int _vsnprintf_s(char (&d)[N], size_t count, const char *fmt, va_list a)
+{ (void)count; return vsnprintf(d, N, fmt, a); }
+template <size_t N> inline int _vsnwprintf_s(wchar_t (&d)[N], size_t count, const wchar_t *fmt, va_list a)
+{ (void)count; return vswprintf(d, N, fmt, a); }
 #endif
 
 /* ---- stack/heap alloc helpers. _malloca/_freea are paired; use the heap to
