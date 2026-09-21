@@ -197,6 +197,9 @@ namespace Rxdk.Xbox360.Modern.Build
                 // form 'arg0[...]'; MSVC is lenient about pastes that don't make a
                 // single token, standard clang errors. Match MSVC's leniency.
                 "-Wno-invalid-token-paste",
+                // XDK/ATG code brace-initializes signed fields with 0xFFFFFFFF etc.;
+                // MSVC allows it, C++11 makes narrowing in braced-init an error.
+                "-Wno-narrowing",
                 // #pragma comment(lib, "d3d9.lib") in XDK code emits a COFF auto-link
                 // directive ld.lld cannot resolve; the modern link names the ELF
                 // libraries explicitly instead, so drop the directive.
