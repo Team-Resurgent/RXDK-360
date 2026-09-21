@@ -94,3 +94,110 @@ unsigned int _CountLeadingZeros64(long long val)
 {
     return val ? (unsigned int)__builtin_clzll((unsigned long long)val) : 64u;
 }
+
+/* Count leading zeros of a 32-bit value (returns 32 for zero). */
+unsigned int _CountLeadingZeros(long val)
+{
+    return val ? (unsigned int)__builtin_clz((unsigned int)val) : 32u;
+}
+
+/* ---- scalar PPC intrinsics (ppcintrinsics.h) ---------------------------- */
+
+/* Cache-block hints. On the console these prefetch/flush a cache line; there is
+ * nothing to do in a correctness-only model, so they are no-ops. */
+void __dcbt(int offset, const void* base) { (void)offset; (void)base; }
+void __dcbf(int offset, const void* base) { (void)offset; (void)base; }
+
+/* Move From Time Base: the 64-bit Xenon time base. Read hi/lo/hi with a retry so
+ * a low-word wrap between the two reads is not observed. */
+unsigned long long __mftb(void)
+{
+    unsigned int hi, lo, hi2;
+    do {
+        __asm__ volatile("mftbu %0" : "=r"(hi));
+        __asm__ volatile("mftb  %0" : "=r"(lo));
+        __asm__ volatile("mftbu %0" : "=r"(hi2));
+    } while (hi != hi2);
+    return ((unsigned long long)hi << 32) | lo;
+}
+
+/* Byte-reversed (little-endian) loads: read the big-endian bytes at base+offset
+ * and assemble them low-byte-first. */
+unsigned long __loadwordbytereverse(int offset, const void* base)
+{
+    const unsigned char* p = (const unsigned char*)base + offset;
+    return (unsigned long)p[0] | ((unsigned long)p[1] << 8)
+         | ((unsigned long)p[2] << 16) | ((unsigned long)p[3] << 24);
+}
+unsigned short __loadshortbytereverse(int offset, const void* base)
+{
+    const unsigned char* p = (const unsigned char*)base + offset;
+    return (unsigned short)(p[0] | (p[1] << 8));
+}
+void __storewordbytereverse(unsigned long v, int offset, void* base)
+{
+    unsigned char* p = (unsigned char*)base + offset;
+    p[0] = (unsigned char)v; p[1] = (unsigned char)(v >> 8);
+    p[2] = (unsigned char)(v >> 16); p[3] = (unsigned char)(v >> 24);
+}
+void __storeshortbytereverse(unsigned short v, int offset, void* base)
+{
+    unsigned char* p = (unsigned char*)base + offset;
+    p[0] = (unsigned char)v; p[1] = (unsigned char)(v >> 8);
+}
+
+/* Floating select: fComparand >= 0 ? fValGE : fLT (the fsel instruction). */
+double __fsel(double fComparand, double fValGE, double fLT)
+{
+    return fComparand >= 0.0 ? fValGE : fLT;
+}
+
+/* __emit issues a raw instruction word; the XDK uses it only for the memory
+ * barriers __sync/__lwsync/__eieio, so a full barrier is the safe model. */
+void __emit(unsigned int opcode) { (void)opcode; __sync_synchronize(); }
+
+/* ---- VMX floating-point vector ops (vectorintrinsics.h) ----------------- */
+
+__vector4 __vaddfp(__vector4 a, __vector4 b)
+{
+    __vector4 r;
+    for (unsigned i = 0; i < 4u; ++i) r.vector4_f32[i] = a.vector4_f32[i] + b.vector4_f32[i];
+    return r;
+}
+__vector4 __vsubfp(__vector4 a, __vector4 b)
+{
+    __vector4 r;
+    for (unsigned i = 0; i < 4u; ++i) r.vector4_f32[i] = a.vector4_f32[i] - b.vector4_f32[i];
+    return r;
+}
+__vector4 __vmaddfp(__vector4 a, __vector4 b, __vector4 c)   /* a*b + c */
+{
+    __vector4 r;
+    for (unsigned i = 0; i < 4u; ++i) r.vector4_f32[i] = a.vector4_f32[i] * b.vector4_f32[i] + c.vector4_f32[i];
+    return r;
+}
+__vector4 __vnmsubfp(__vector4 a, __vector4 b, __vector4 c)  /* c - a*b */
+{
+    __vector4 r;
+    for (unsigned i = 0; i < 4u; ++i) r.vector4_f32[i] = c.vector4_f32[i] - a.vector4_f32[i] * b.vector4_f32[i];
+    return r;
+}
+__vector4 __vmsum3fp(__vector4 a, __vector4 b)               /* 3-way dot, broadcast */
+{
+    float s = a.vector4_f32[0] * b.vector4_f32[0]
+            + a.vector4_f32[1] * b.vector4_f32[1]
+            + a.vector4_f32[2] * b.vector4_f32[2];
+    __vector4 r;
+    for (unsigned i = 0; i < 4u; ++i) r.vector4_f32[i] = s;
+    return r;
+}
+__vector4 __vmsum4fp(__vector4 a, __vector4 b)               /* 4-way dot, broadcast */
+{
+    float s = a.vector4_f32[0] * b.vector4_f32[0]
+            + a.vector4_f32[1] * b.vector4_f32[1]
+            + a.vector4_f32[2] * b.vector4_f32[2]
+            + a.vector4_f32[3] * b.vector4_f32[3];
+    __vector4 r;
+    for (unsigned i = 0; i < 4u; ++i) r.vector4_f32[i] = s;
+    return r;
+}
