@@ -311,3 +311,52 @@ int __cdecl snprintf(char *s, size_t n, const char *fmt, ...)
     va_end(ap);
     return i;
 }
+
+/*
+ * The Win32/xapilib wsprintf family (wsprintf.h). The stock XDK ships these
+ * compiled by MSVC, where va_list is a plain char* walking a contiguous stack
+ * argument area; clang models va_list as the 12-byte SysV PowerPC struct (gpr/
+ * fpr counters + reg-save/overflow pointers). So a clang-built title that runs
+ * va_start and hands the list to the MSVC-built wvsprintfW reads its arguments
+ * as garbage -- the two va_list representations are incompatible. Provide
+ * clang-built versions here: being in libc.a they satisfy the reference so the
+ * MSVC xapilib members are never pulled, and they receive the caller's clang
+ * va_list natively, then route through the same MS %S/%C translation + our CRT
+ * formatter. Win32 wsprintf bounds output at 1024 chars including the null.
+ */
+#define RXDK_WSPRINTF_MAX 1024
+
+int __cdecl wvsprintfA(char *buf, const char *fmt, va_list ap)
+{
+    return vsnprintf(buf, RXDK_WSPRINTF_MAX, fmt, ap); /* vsnprintf translates */
+}
+
+int __cdecl wvsprintfW(wchar_t *buf, const wchar_t *fmt, va_list ap)
+{
+    wchar_t stack[RXDK_MS_FORMAT_STACK];
+    wchar_t *heap;
+    const wchar_t *use = __rxdk_ms_wformat(fmt, stack, RXDK_MS_FORMAT_STACK, &heap);
+    int r = vswprintf(buf, RXDK_WSPRINTF_MAX, use, ap);
+    __rxdk_ms_format_free(heap);
+    return r;
+}
+
+int __cdecl wsprintfA(char *buf, const char *fmt, ...)
+{
+    va_list ap;
+    int r;
+    va_start(ap, fmt);
+    r = wvsprintfA(buf, fmt, ap);
+    va_end(ap);
+    return r;
+}
+
+int __cdecl wsprintfW(wchar_t *buf, const wchar_t *fmt, ...)
+{
+    va_list ap;
+    int r;
+    va_start(ap, fmt);
+    r = wvsprintfW(buf, fmt, ap);
+    va_end(ap);
+    return r;
+}

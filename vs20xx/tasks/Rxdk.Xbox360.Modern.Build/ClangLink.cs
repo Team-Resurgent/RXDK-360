@@ -286,26 +286,37 @@ namespace Rxdk.Xbox360.Modern.Build
             if (Libraries != null) foreach (var spec in Libraries) AddSpec(spec);
             if (AdditionalDependencies != null) foreach (var spec in AdditionalDependencies) AddSpec(spec);
 
-            // The modern CRT is implicit (like libcmt): title libs first, runtime after.
-            // libcpp.a is always included - libc.a references the C++ runtime and the
-            // two are linked as a group. Kept even when the project lists its libs, and
-            // de-duped below so an explicit xapilib.lib does not double-link.
+            // The modern C/C++ runtime (libc.a, libcpp.a) is implicit, like libcmt.
+            // It is placed FIRST so it is scanned ahead of the XDK import archives:
+            // both --start-group members can define the same CRT-level symbol (e.g.
+            // xapilib.a ships MSVC-built wsprintf/wvsprintf, which read a clang
+            // va_list as garbage), and within a group lld takes the definition from
+            // the first archive in command-line order. Runtime-first makes our
+            // clang-built CRT win those collisions; symbols only the XDK provides
+            // still resolve because the group is rescanned until stable. xapilib.a
+            // is appended (after title libs) so only its non-CRT members are pulled.
+            var pre = new List<string>();
             if (!NoDefaultLibs)
             {
                 if (!string.IsNullOrEmpty(LibcDir))
                 {
-                    user.Add(Path.Combine(LibcDir, "libcpp.a"));
-                    user.Add(Path.Combine(LibcDir, "libc.a"));
+                    pre.Add(Path.Combine(LibcDir, "libcpp.a"));
+                    pre.Add(Path.Combine(LibcDir, "libc.a"));
                 }
                 if (!string.IsNullOrEmpty(CoffDir))
                     user.Add(Path.Combine(CoffDir, "xapilib.a"));
             }
 
-            // De-dupe by normalised full path, keeping first occurrence. Link order
-            // within the archive set does not matter: LinkElf wraps them in
-            // --start-group/--end-group.
+            // De-dupe by normalised full path, keeping first occurrence (so the
+            // runtime copies in `pre` take precedence over any listed by the title).
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var result = new List<string>();
+            foreach (var l in pre)
+            {
+                string key;
+                try { key = Path.GetFullPath(l); } catch { key = l; }
+                if (seen.Add(key)) result.Add(l);
+            }
             foreach (var l in user)
             {
                 string key;
