@@ -132,6 +132,7 @@ XBOX_GLUE = [
     os.path.join(ROOT, "runtime", "xbox", "setjmp.S"),             # setjmp/longjmp (PPC callee-saved GPR/FPR/LR/CR/SP)
     os.path.join(ROOT, "runtime", "xbox", "ke_perf.S"),            # 64-bit-safe KeQueryPerformanceFrequency wrapper (single-r3 MS return -> pointer)
     os.path.join(ROOT, "runtime", "xbox", "vmx_intrinsics.c"),     # MS PPC/VMX intrinsics clang lacks (__lvlx/__vaddfp/__mftb/byte-reverse/...)
+    os.path.join(ROOT, "runtime", "xbox", "fxl_bridge.cpp"),       # Itanium->MSVC forwarder for FXL's non-extern-"C" routines (FXLSetShaders)
 ]
 
 # C++ runtime glue: no picolibc config force-include; freestanding, no EH/RTTI yet.
