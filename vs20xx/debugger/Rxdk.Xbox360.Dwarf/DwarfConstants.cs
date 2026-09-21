@@ -25,6 +25,7 @@ namespace Rxdk.Xbox360.Dwarf
         public const int lexical_block = 0x0b;
         public const int subrange_type = 0x21;
         public const int inheritance = 0x1c;
+        public const int inlined_subroutine = 0x1d;
     }
 
     internal static class DW_AT
@@ -47,6 +48,8 @@ namespace Rxdk.Xbox360.Dwarf
         public const int count = 0x37;
         public const int upper_bound = 0x2f;
         public const int specification = 0x47;
+        public const int call_file = 0x58;
+        public const int call_line = 0x59;
     }
 
     internal static class DW_ATE

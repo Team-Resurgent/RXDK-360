@@ -116,6 +116,21 @@ namespace Rxdk.Xbox360.Dwarf
                 CollectVariables(die, fn, files);
                 unit.Functions.Add(fn);
             }
+
+            // Inlined call sites: an inlined call leaves the caller's source line with no line-table
+            // row (the inlined body is tagged to the callee's file). Record DW_AT_call_file/line ->
+            // the inlined body's low_pc so a breakpoint on the caller line still binds.
+            foreach (var die in Flatten(root))
+            {
+                if (die.Tag != DW_TAG.inlined_subroutine || !die.Has(DW_AT.low_pc) || !die.Has(DW_AT.call_line))
+                    continue;
+                unit.InlineSites.Add(new InlineSite
+                {
+                    Address = die.U(DW_AT.low_pc),
+                    Line = (int)die.U(DW_AT.call_line),
+                    File = FileName(files, (int)die.U(DW_AT.call_file)),
+                });
+            }
             return unit;
         }
 
