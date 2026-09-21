@@ -35,3 +35,4 @@ build-log*.txt
 # Local llvm-project / XexTool clones (no longer submodules).
 /vendor/llvm-project/
 /vendor/xextool/
+.scratch_clang/

@@ -132,10 +132,19 @@ namespace Rxdk.Xbox360.DebugAdapter
             }
             if (Info == null) return null;
             ulong exe = TitleAddress.XexToExe(kitPc, xexBase != 0 ? xexBase : TitleAddress.DefaultBase);
+            var fnAt = Info.FunctionAt(exe);
+            // If this address is inside an inlined body, the line table tags it to the callee's own
+            // header. A breakpoint the user set on the call in their source should stop there, not
+            // dive into the header -- report the enclosing inline call site. The outermost
+            // (largest-span) site is the user-level call; nested inlines resolve up to it.
+            InlineSite? site = null;
+            foreach (var s in Info.InlineSites)
+                if (s.Contains(exe) && (site == null || s.Span > site.Span)) site = s;
+            if (site != null)
+                return new SourceLocation(site.File, site.Line, fnAt?.Name ?? "");
             var ln = Info.LineAt(exe);
             if (ln == null) return null;
-            var fn = Info.FunctionAt(exe);
-            return new SourceLocation(ln.File, ln.Line, fn?.Name ?? "");
+            return new SourceLocation(ln.File, ln.Line, fnAt?.Name ?? "");
         }
 
         public DwarfFunction? FunctionAt(ulong pc) => Info?.FunctionAt(pc);
