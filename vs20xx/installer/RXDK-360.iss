@@ -91,6 +91,7 @@ Source: "..\README.md";   DestDir: "{app}\vsintegration"
 ; bin\ - the tools the build drives
 Source: "..\..\build\llvm\bin\clang.exe";   DestDir: "{app}\modern\bin"; Components: modern
 Source: "..\..\build\llvm\bin\ld.lld.exe";  DestDir: "{app}\modern\bin"; Components: modern
+Source: "..\..\build\llvm\bin\llvm-ar.exe"; DestDir: "{app}\modern\bin"; Components: modern
 Source: "..\..\build\xextool\XexTool.exe"; DestDir: "{app}\modern\bin"; Components: modern
 Source: "..\..\build\tools\xdvdfs.exe";     DestDir: "{app}\bin"; Components: modern
 ; lib\ - clang's resource dir (found relative to bin\..\lib\clang) + all archives

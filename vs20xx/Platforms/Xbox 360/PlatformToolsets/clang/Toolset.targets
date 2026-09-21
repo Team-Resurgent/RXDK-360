@@ -146,10 +146,12 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
     <Message Text="ImageXex: skipped (the clang toolset packs the XEX during Link)." Importance="Low" />
   </Target>
 
-  <!-- ***** Lib ***** : combine the compiled objects into a single relocatable
-       object (ld.lld with -r) named .lib. We ship no llvm-ar, but a relocatable
-       link serves as a static library: the title's final link pulls it in whole
-       and section GC still drops anything unused. -->
+  <!-- ***** Lib ***** : archive the compiled objects into a System V .a (named
+       .lib) with llvm-ar. An archive is pulled member-by-member on demand, so a
+       title links only the objects it actually uses; a single merged relocatable
+       object (the old ld.lld -r) is pulled WHOLE and its per-TU static
+       initializers (.init_array) root every object, dragging the whole library -
+       and every XDK API it references - into a title that touches one class. -->
   <Target Name="Lib"
           Condition="'$(ConfigurationType)' == 'StaticLibrary'"
           DependsOnTargets="ClCompile">
@@ -163,7 +165,10 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
       <_ModernLibObjs>@(_ModernLibObj->'&quot;%(FullPath)&quot;', ' ')</_ModernLibObjs>
     </PropertyGroup>
     <MakeDir Directories="$(OutDir)" />
-    <Exec Command="&quot;$(RxdkLldPath)&quot; -r $(_ModernLibObjs) -o &quot;$(_ModernLibOut)&quot;" />
+    <!-- Delete first: llvm-ar 'rc' updates in place, so a stale archive would
+         keep members from sources that no longer exist. -->
+    <Delete Files="$(_ModernLibOut)" />
+    <Exec Command="&quot;$(RxdkArPath)&quot; rcs &quot;$(_ModernLibOut)&quot; $(_ModernLibObjs)" />
     <Message Importance="High" Text="$(MSBuildProjectFile) -&gt; $(_ModernLibOut)" />
   </Target>
 

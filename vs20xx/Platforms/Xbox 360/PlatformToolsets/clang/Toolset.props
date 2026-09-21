@@ -46,6 +46,8 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild; a bad edit here breaks
     <RxdkClangPath   Condition="'$(RxdkClangPath)'   == ''">$(RxdkModernRoot)\build\llvm\bin\clang.exe</RxdkClangPath>
     <RxdkLldPath     Condition="'$(RxdkLldPath)'     == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\bin\ld.lld.exe</RxdkLldPath>
     <RxdkLldPath     Condition="'$(RxdkLldPath)'     == ''">$(RxdkModernRoot)\build\llvm\bin\ld.lld.exe</RxdkLldPath>
+    <RxdkArPath      Condition="'$(RxdkArPath)'      == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\bin\llvm-ar.exe</RxdkArPath>
+    <RxdkArPath      Condition="'$(RxdkArPath)'      == ''">$(RxdkModernRoot)\build\llvm\bin\llvm-ar.exe</RxdkArPath>
     <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\bin\XexTool.exe</RxdkXexToolPath>
     <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == '' and Exists('$(RxdkModernRoot)\build\xextool\XexTool.exe')">$(RxdkModernRoot)\build\xextool\XexTool.exe</RxdkXexToolPath>
     <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == ''">$(RxdkModernRoot)\vendor\xextool\build\Release\XexTool.exe</RxdkXexToolPath>
