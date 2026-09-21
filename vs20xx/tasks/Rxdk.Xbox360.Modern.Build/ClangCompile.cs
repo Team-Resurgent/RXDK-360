@@ -148,12 +148,21 @@ namespace Rxdk.Xbox360.Modern.Build
             // title hands to the runtime or an XDK lib is misread (wide printf,
             // OutputDebugStringW, wcslen, ... silently see a truncated/empty
             // string). Applies to both the modern and XDK-headers compiles.
+            // -ffunction-sections/-fdata-sections put every function and datum in
+            // its own section so the link's --gc-sections can drop what the title
+            // does not use. Load-bearing for the ATG Common static library: it is
+            // linked as one relocatable object (the toolset ships no llvm-ar), so
+            // without per-function sections the whole framework - and every XDK
+            // API it references (XHttp/XSession/XUI/NUI/XAPO/FXL/...) - is pulled
+            // in even by a sample that only uses ATG::Console.
             if (!isCpp)
-                return new[] { "-fshort-wchar", "-D__Picolibc__", "-D_GNU_SOURCE", "-I" + cfg, "-I" + pico,
+                return new[] { "-fshort-wchar", "-ffunction-sections", "-fdata-sections",
+                               "-D__Picolibc__", "-D_GNU_SOURCE", "-I" + cfg, "-I" + pico,
                                "-include", "picolibc.h" };
             string lx = Or(LibcxxIncludeDir, Path.Combine(RxdkRoot ?? "", "vendor", "llvm-project", "libcxx", "include"));
             string la = Or(LibcxxabiIncludeDir, Path.Combine(RxdkRoot ?? "", "vendor", "llvm-project", "libcxxabi", "include"));
-            return new[] { "-fshort-wchar", "-fexceptions", "-funwind-tables", "-frtti",
+            return new[] { "-fshort-wchar", "-ffunction-sections", "-fdata-sections",
+                           "-fexceptions", "-funwind-tables", "-frtti",
                            "-D__Picolibc__", "-D_GNU_SOURCE",
                            "-I" + lx, "-I" + la, "-I" + cfg,
                            "-include", "__config_site", "-include", "rxdk_libcpp_prereq.h",
