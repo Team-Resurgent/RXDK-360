@@ -211,7 +211,14 @@ namespace Rxdk.Xbox360.Modern.Build
                                           "--no-demangle", "--gc-sections",
                                           // Ignore #pragma comment(lib, "x.lib") directives from XDK
                                           // headers - the modern link names its ELF libraries explicitly.
-                                          "--no-dependent-libraries" };
+                                          "--no-dependent-libraries",
+                                          // Our modern CRT (libc.a, scanned first) shadows the XDK's
+                                          // MSVC CRT, but XDK import archives bundle CRT-level symbols
+                                          // (ceilf, wsprintf, ...) into members pulled for other code,
+                                          // so the same symbol can be defined in both. Take the first
+                                          // definition (our runtime) instead of erroring; symbols only
+                                          // the XDK provides are unaffected.
+                                          "--allow-multiple-definition" };
             args.AddRange(ldflags);
             args.AddRange(objs);
             if (stubs != null) args.Add(stubs);
