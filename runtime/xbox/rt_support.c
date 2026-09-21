@@ -86,6 +86,41 @@ double __floatundidf(unsigned long long a) {
     return half * 2.0 + (double)(int)(a & 1u);
 }
 
+/* ---- 64-bit integer <-> float, float/double -> 64-bit integer ------------ */
+
+/*
+ * The single-precision int->float libcalls (__floatdisf/__floatundisf) and the
+ * float/double -> 64-bit int libcalls (__fix*di) are lowered the same way on
+ * this 32-bit PPC target. fctidz (Float Convert To Integer Doubleword, round
+ * toward Zero) gives the exact truncation C requires for float->i64; the
+ * int->float direction reuses fcfid (see cvt_i64_to_f64) and rounds to single
+ * afterwards -- a value that needs more than 24 significant bits is inherently
+ * lossy, and the double->single re-rounding is at most 1 ULP off the perfectly
+ * rounded result, which no title depends on.
+ */
+static inline long long cvt_f64_to_i64(double f) {
+    __asm__("fctidz %0, %1" : "=f"(f) : "f"(f));
+    union { double d; long long i; } u;
+    u.d = f;                        /* raw 8-byte store from the FPR (stfd) */
+    return u.i;
+}
+
+long long __fixdfdi(double a) { return cvt_f64_to_i64(a); }
+long long __fixsfdi(float a)  { return cvt_f64_to_i64((double)a); }
+
+unsigned long long __fixunsdfdi(double a) {
+    if (a < 1.0) return 0ULL;
+    if (a < 9223372036854775808.0)  /* < 2^63: the signed path is exact */
+        return (unsigned long long)cvt_f64_to_i64(a);
+    /* a - 2^63 lands in the signed range; add the top bit back. */
+    return 0x8000000000000000ULL +
+           (unsigned long long)cvt_f64_to_i64(a - 9223372036854775808.0);
+}
+unsigned long long __fixunssfdi(float a) { return __fixunsdfdi((double)a); }
+
+float __floatdisf(long long a)            { return (float)cvt_i64_to_f64(a); }
+float __floatundisf(unsigned long long a) { return (float)__floatundidf(a); }
+
 /* ---- allocator: the process heap (RtlAllocateHeap over XapiProcessHeap) --- */
 
 /*

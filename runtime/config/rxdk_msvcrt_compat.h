@@ -22,10 +22,13 @@
 #endif
 /* SAL code-analysis fallthrough marker: the XDK places `__fallthrough` before a
    `case` label with no trailing statement, where clang's real fallthrough
-   attribute is rejected. It carries no codegen meaning - make it a no-op. */
-#ifndef __fallthrough
+   attribute is rejected. It carries no codegen meaning - make it a no-op.
+   picolibc's <sys/cdefs.h> (force-included first, via picolibc.h) defines this
+   as the real [[fallthrough]] attribute for its own build; this header is
+   force-included after it, so override that definition to the empty marker the
+   XDK's usage needs. */
+#undef __fallthrough
 #define __fallthrough
-#endif
 
 #include <stddef.h>
 #include <stdlib.h>
