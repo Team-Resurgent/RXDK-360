@@ -141,12 +141,19 @@ namespace Rxdk.Xbox360.Modern.Build
         {
             string cfg = Or(ConfigDir, Path.Combine(RxdkRoot ?? "", "runtime", "config"));
             string pico = Or(PicolibcIncludeDir, Path.Combine(RxdkRoot ?? "", "vendor", "picolibc", "libc", "include"));
+            // Xbox 360 WCHAR is 16-bit UTF-16 (the MSVC/XDK ABI). picolibc, libc++
+            // and the stock XDK import libraries are all built with a 2-byte
+            // wchar_t, so title code MUST match: without -fshort-wchar clang
+            // defaults to a 4-byte wchar_t, and every L"..." / wchar_t value a
+            // title hands to the runtime or an XDK lib is misread (wide printf,
+            // OutputDebugStringW, wcslen, ... silently see a truncated/empty
+            // string). Applies to both the modern and XDK-headers compiles.
             if (!isCpp)
-                return new[] { "-D__Picolibc__", "-D_GNU_SOURCE", "-I" + cfg, "-I" + pico,
+                return new[] { "-fshort-wchar", "-D__Picolibc__", "-D_GNU_SOURCE", "-I" + cfg, "-I" + pico,
                                "-include", "picolibc.h" };
             string lx = Or(LibcxxIncludeDir, Path.Combine(RxdkRoot ?? "", "vendor", "llvm-project", "libcxx", "include"));
             string la = Or(LibcxxabiIncludeDir, Path.Combine(RxdkRoot ?? "", "vendor", "llvm-project", "libcxxabi", "include"));
-            return new[] { "-fexceptions", "-funwind-tables", "-frtti",
+            return new[] { "-fshort-wchar", "-fexceptions", "-funwind-tables", "-frtti",
                            "-D__Picolibc__", "-D_GNU_SOURCE",
                            "-I" + lx, "-I" + la, "-I" + cfg,
                            "-include", "__config_site", "-include", "rxdk_libcpp_prereq.h",
