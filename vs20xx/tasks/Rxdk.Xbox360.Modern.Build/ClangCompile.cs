@@ -99,7 +99,7 @@ namespace Rxdk.Xbox360.Modern.Build
                     var pre = new List<string> { Optimization, "-std=" + (isCpp ? LanguageStandardCpp : LanguageStandardC) };
                     if (DebugInformation) pre.Add("-gdwarf-4");
                     if (Lto) pre.Add("-flto");
-                    pre.AddRange(XdkHeaders ? XdkHeaderFlags() : AutoClangFlags(isCpp));
+                    pre.AddRange(XdkHeaders ? XdkHeaderFlags(isCpp) : AutoClangFlags(isCpp));
                     if (AdditionalIncludeDirectories != null)
                         foreach (var inc in AdditionalIncludeDirectories)
                             if (!string.IsNullOrWhiteSpace(inc)) pre.Add("-I" + inc.Trim());
@@ -160,11 +160,29 @@ namespace Rxdk.Xbox360.Modern.Build
         // Win32/Xbox gates and MSVC extensions, and put xnamath/xboxmath in scalar
         // mode so d3dx9math.h / xgraphics.h compile without VMX128 intrinsics. The
         // XDK include\xbox dirs are added last.
-        private IEnumerable<string> XdkHeaderFlags()
+        private IEnumerable<string> XdkHeaderFlags(bool isCpp)
         {
-            var f = new List<string>
+            // Always-modern: build the stock XDK headers ON TOP of the modern
+            // picolibc + libc++ runtime (one config, no separate mode). Start with
+            // the modern base (libc++/picolibc includes + force-includes), then add
+            // the MS-compat recipe + the reconciliations that let the XDK headers
+            // sit on that runtime (see runtime/config/rxdk_*_compat + vadefs.h and
+            // the picolibc ctype.h/cdefs.h gates).
+            var f = new List<string>(AutoClangFlags(isCpp));
+            f.AddRange(new[]
             {
                 "-fms-extensions", "-fms-compatibility", "-fdeclspec",
+                // The XDK headers are written for cl.exe v16.00; ms-compat-version
+                // 1920 keeps char16_t a keyword (libc++ needs it) while enabling the
+                // MSVC lookup the XDK/ATG templates rely on.
+                "-fms-compatibility-version=1920",
+                // Reconcile the standard types/functions to the modern runtime so
+                // the XDK CRT headers don't redefine picolibc's (size_t/intptr_t),
+                // give picolibc's stdio its __gnuc_va_list, keep char16_t native,
+                // and expose picolibc's Annex K secure-CRT (__STDC_WANT_LIB_EXT1__).
+                "-D_INTPTR_T_DEFINED", "-D_UINTPTR_T_DEFINED",
+                "-D__gnuc_va_list=__builtin_va_list", "-D_HAS_CHAR16_T_LANGUAGE_SUPPORT=1",
+                "-D__STDC_WANT_LIB_EXT1__=1",
                 // XObjBase.h gates DECLSPEC_UUID -> __declspec(uuid(x)) on
                 // _MSC_VER>=1100, so without _MSC_VER the COM interfaces get no GUID
                 // and __uuidof(IUnknown) fails. Define _MSC_VER globally would make
@@ -185,7 +203,18 @@ namespace Rxdk.Xbox360.Modern.Build
                 "-fno-autolink",
                 "-D_WIN32=1", "-D_M_PPCBE=1", "-D_M_PPC=1", "-D_XBOX=1", "-D_XBOX_VER=200",
                 "-D__export=", "-D_SIZE_T_DEFINED", "-D_XM_NO_INTRINSICS_",
-            };
+            });
+            // Reconciliation force-includes, AFTER the modern runtime's picolibc.h:
+            //  - stdint.h so picolibc's intptr_t/uintptr_t are in scope (we suppress
+            //    the XDK's above), __stddef_max_align_t.h because the XDK stddef.h
+            //    lacks max_align_t (libc++ <memory_resource> needs it), and the two
+            //    RXDK compat headers (MS CRT extensions + secure-CRT overloads). These
+            //    resolve on the config include dir (added by AutoClangFlags).
+            f.AddRange(new[]
+            {
+                "-include", "stdint.h", "-include", "__stddef_max_align_t.h",
+                "-include", "rxdk_msvcrt_compat.h", "-include", "rxdk_secure_overloads.h",
+            });
             // Add the XDK headers as SYSTEM includes (-isystem) so clang suppresses
             // the many warnings from the stock MS headers themselves (ignored
             // __stdcall, case-mismatched #includes, #endif tokens, ...) while still
