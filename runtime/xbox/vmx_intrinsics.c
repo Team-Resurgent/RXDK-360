@@ -146,6 +146,39 @@ void __storedoublewordbytereverse(unsigned long long v, int offset, void* base)
     unsigned char* p = (unsigned char*)base + offset;
     for (int i = 0; i < 8; ++i) p[i] = (unsigned char)(v >> (8 * i));
 }
+
+/* Volatile variants (vectorintrinsics.h / ppcintrinsics.h declare these extern,
+   unlike the __forceinline non-volatile __lvx/__stvx). The `volatile` conveys
+   "do not reorder or elide" -- the memory transfer itself is identical, so the
+   byte-reverse load/store bodies are reused, and __stvx_volatile does a straight
+   16-byte vector store. Marking the access through a volatile pointer keeps the
+   compiler from hoisting or dropping it (write-combined framebuffer writes rely
+   on this; FastUntile). */
+unsigned long long __loadvolatiledoublewordbytereverse(int offset, const void* base)
+{
+    const volatile unsigned char* p = (const volatile unsigned char*)base + offset;
+    unsigned long long v = 0;
+    for (int i = 0; i < 8; ++i) v |= (unsigned long long)p[i] << (8 * i);
+    return v;
+}
+void __storevolatiledoublewordbytereverse(unsigned long long v, int offset, void* base)
+{
+    volatile unsigned char* p = (volatile unsigned char*)base + offset;
+    for (int i = 0; i < 8; ++i) p[i] = (unsigned char)(v >> (8 * i));
+}
+
+__vector4 __lvx_volatile(const volatile void* base, int offset)
+{
+    __vector4 r;
+    const volatile unsigned char* p = (const volatile unsigned char*)base + offset;
+    for (int i = 0; i < 16; ++i) ((unsigned char*)&r)[i] = p[i];
+    return r;
+}
+void __stvx_volatile(__vector4 vSrc, volatile void* base, int offset)
+{
+    volatile unsigned char* p = (volatile unsigned char*)base + offset;
+    for (int i = 0; i < 16; ++i) p[i] = ((const unsigned char*)&vSrc)[i];
+}
 void __storewordbytereverse(unsigned long v, int offset, void* base)
 {
     unsigned char* p = (unsigned char*)base + offset;

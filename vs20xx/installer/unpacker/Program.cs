@@ -48,6 +48,7 @@ namespace Rxdk.Xdk.Unpacker
                 string dstInc = Path.Combine(modernRoot, "include", "xbox");
                 CopyDir(srcInc, dstInc, undo);
                 Report.Line("staged XDK headers -> {0}", dstInc);
+                PatchModernHeaders(dstInc);
             }
             string srcLib = Path.Combine(xdkRoot, "lib");
             if (Directory.Exists(srcLib))
@@ -68,6 +69,35 @@ namespace Rxdk.Xdk.Unpacker
             string undoLog = Path.GetFullPath(Path.Combine(modernRoot, "..", UndoLog));
             if (undo.Count > 0 && File.Exists(undoLog))
                 File.AppendAllLines(undoLog, undo);
+        }
+
+        // Small, idempotent fixups to stock XDK headers that only clang (not the
+        // XDK's cl.exe) rejects. Each is a prepend/replace guarded by a marker so
+        // re-running stagemodern is a no-op. Kept here (not as patch files) so the
+        // set is visible and travels with the unpacker.
+        private const string HdrMarker = "/* RXDK360-patched */";
+
+        private static void PatchModernHeaders(string xboxInc)
+        {
+            // XStudioApi.h declares fields of enum _NUI_IMAGE_TYPE but #includes
+            // nothing, relying on the TU having pulled the NUI headers first. clang
+            // rejects a field of a forward-declared enum (MSVC treats it as int), so
+            // make the header self-sufficient by pulling nuiapi.h (the umbrella that
+            // defines NUIAPI and then includes NuiImageCamera.h, which #errors if
+            // included on its own). nuiapi.h has its own include guard, so a TU that
+            // already included it is unaffected.
+            PrependInclude(Path.Combine(xboxInc, "XStudioApi.h"), "nuiapi.h");
+        }
+
+        private static void PrependInclude(string header, string include)
+        {
+            if (!File.Exists(header))
+                return;
+            string txt = File.ReadAllText(header);
+            if (txt.StartsWith(HdrMarker, StringComparison.Ordinal))
+                return;                                   // already patched
+            File.WriteAllText(header,
+                HdrMarker + "\r\n#include \"" + include + "\"\r\n" + txt);
         }
 
         private static void CopyDir(string src, string dst, List<string> undo)

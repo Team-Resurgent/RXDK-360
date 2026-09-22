@@ -205,6 +205,16 @@ namespace Rxdk.Xbox360.Modern.Build
                 // the force-included libc++/picolibc take their MSVC paths and break;
                 // instead attach the uuid surgically by pre-defining DECLSPEC_UUID.
                 "-DDECLSPEC_UUID(x)=__declspec(uuid(x))",
+                // ppcintrinsics.h (and a few others) gate whole intrinsic families
+                // -- e.g. the doubleword byte-reverse loads/stores FastUntile uses --
+                // behind `#if _MSC_FULL_VER >= 14002303` (VS2005 SP1). clang defines
+                // no _MSC_FULL_VER for this non-MSVC triple, so those decls vanish and
+                // the intrinsic is "undeclared". Define it to the authentic XDK cl
+                // build (14.00.50727, the build-11886 compiler these headers ship for),
+                // which clears every XDK gate (all <= 14006016). Safe unlike a global
+                // _MSC_VER: nothing in libc++/picolibc/config tests _MSC_FULL_VER, so
+                // the modern runtime headers are unaffected.
+                "-D_MSC_FULL_VER=140050727",
                 // The stock secure CRT (stdio.h) declares vsprintf_s/vswprintf_s
                 // AFTER the inline templates that call them; MSVC's late template
                 // parsing resolves that, two-phase lookup does not. Match MSVC.
