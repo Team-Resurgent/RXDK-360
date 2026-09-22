@@ -98,3 +98,20 @@ extern "C" long qnet_CreateUsingXAudio2(_QNET_SESSIONTYPE, IQNetCallbacks*, HWND
     __asm__("?QNetCreateUsingXAudio2@@YAJW4_QNET_SESSIONTYPE@@PAVIQNetCallbacks@@PAUHWND__@@PAUIXAudio2@@PAPAVIQNet@@@Z");
 long QNetCreateUsingXAudio2(_QNET_SESSIONTYPE t, IQNetCallbacks* c, HWND__* h, IXAudio2* a, IQNet** q)
 { return qnet_CreateUsingXAudio2(t, c, h, a, q); }
+
+/* ---- NUI (nuiapi.a) ----------------------------------------------------- */
+/* __vector4/_XMMATRIX need real layouts: NuiTransformMatrixLevel takes a
+   __vector4 by value and returns a 64-byte _XMMATRIX (sret). */
+struct __attribute__((aligned(16))) __vector4 { unsigned u[4]; };
+struct _XMMATRIX { __vector4 r[4]; };
+struct _NUI_SKELETON_FRAME;
+struct _NUI_TRANSFORM_SMOOTH_PARAMETERS;
+
+extern "C" long nui_TransformSmooth(_NUI_SKELETON_FRAME*, const _NUI_TRANSFORM_SMOOTH_PARAMETERS*)
+    __asm__("?NuiTransformSmooth@@YAJPAU_NUI_SKELETON_FRAME@@PBU_NUI_TRANSFORM_SMOOTH_PARAMETERS@@@Z");
+long NuiTransformSmooth(_NUI_SKELETON_FRAME* f, const _NUI_TRANSFORM_SMOOTH_PARAMETERS* p)
+{ return nui_TransformSmooth(f, p); }
+
+extern "C" _XMMATRIX nui_TransformMatrixLevel(__vector4)
+    __asm__("?NuiTransformMatrixLevel@@YA?AU_XMMATRIX@@U__vector4@@@Z");
+_XMMATRIX NuiTransformMatrixLevel(__vector4 v) { return nui_TransformMatrixLevel(v); }

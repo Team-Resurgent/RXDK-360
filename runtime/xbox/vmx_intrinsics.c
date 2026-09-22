@@ -213,3 +213,60 @@ __vector4 __vmsum4fp(__vector4 a, __vector4 b)               /* 4-way dot, broad
     for (unsigned i = 0; i < 4u; ++i) r.vector4_f32[i] = s;
     return r;
 }
+__vector4 __vmulfp(__vector4 a, __vector4 b)
+{ __vector4 r; for (unsigned i=0;i<4u;++i) r.vector4_f32[i]=a.vector4_f32[i]*b.vector4_f32[i]; return r; }
+__vector4 __vmaxfp(__vector4 a, __vector4 b)
+{ __vector4 r; for (unsigned i=0;i<4u;++i) r.vector4_f32[i]=a.vector4_f32[i]>b.vector4_f32[i]?a.vector4_f32[i]:b.vector4_f32[i]; return r; }
+__vector4 __vminfp(__vector4 a, __vector4 b)
+{ __vector4 r; for (unsigned i=0;i<4u;++i) r.vector4_f32[i]=a.vector4_f32[i]<b.vector4_f32[i]?a.vector4_f32[i]:b.vector4_f32[i]; return r; }
+__vector4 __vand(__vector4 a, __vector4 b)
+{ __vector4 r; for (unsigned i=0;i<4u;++i) r.vector4_u32[i]=a.vector4_u32[i]&b.vector4_u32[i]; return r; }
+__vector4 __vxor(__vector4 a, __vector4 b)
+{ __vector4 r; for (unsigned i=0;i<4u;++i) r.vector4_u32[i]=a.vector4_u32[i]^b.vector4_u32[i]; return r; }
+__vector4 __vrefp(__vector4 b)                              /* reciprocal estimate */
+{ __vector4 r; for (unsigned i=0;i<4u;++i) r.vector4_f32[i]=1.0f/b.vector4_f32[i]; return r; }
+__vector4 __vrsqrtefp(__vector4 b)                          /* reciprocal sqrt estimate */
+{ __vector4 r; for (unsigned i=0;i<4u;++i) r.vector4_f32[i]=1.0f/__builtin_sqrtf(b.vector4_f32[i]); return r; }
+
+/* Splat immediate signed word: every word = the (already sign-extended) SIM. */
+__vector4 __vspltisw(int sim)
+{ __vector4 r; for (unsigned i=0;i<4u;++i) r.vector4_u32[i]=(unsigned)sim; return r; }
+/* Splat word: every word = VRB[uim & 3]. */
+__vector4 __vspltw(__vector4 b, unsigned uim)
+{ __vector4 r; unsigned s=b.vector4_u32[uim&3u]; for (unsigned i=0;i<4u;++i) r.vector4_u32[i]=s; return r; }
+
+/* Convert from signed fixed-point: (float)(int)word / 2^shift. */
+__vector4 __vcfsx(__vector4 b, unsigned short shift)
+{ __vector4 r; float d=(float)(1u<<shift); for (unsigned i=0;i<4u;++i) r.vector4_f32[i]=(float)(int)b.vector4_u32[i]/d; return r; }
+/* Convert to signed fixed-point, saturating: (int)(float * 2^shift). */
+__vector4 __vctsxs(__vector4 b, unsigned shift)
+{
+    __vector4 r; float m=(float)(1u<<shift);
+    for (unsigned i=0;i<4u;++i) {
+        double v = (double)b.vector4_f32[i]*m;
+        if (v >  2147483647.0) v =  2147483647.0;
+        if (v < -2147483648.0) v = -2147483648.0;
+        r.vector4_u32[i] = (unsigned)(int)v;
+    }
+    return r;
+}
+
+/* Byte permute: result byte i = {VRA:VRB}[control_byte_i & 0x1F] (big-endian). */
+__vector4 __vperm(__vector4 a, __vector4 b, __vector4 c)
+{
+    const unsigned char* ab=(const unsigned char*)&a; const unsigned char* bb=(const unsigned char*)&b;
+    const unsigned char* cb=(const unsigned char*)&c; __vector4 r; unsigned char* o=(unsigned char*)&r;
+    for (unsigned i=0;i<16u;++i) { unsigned idx=cb[i]&0x1Fu; o[i]=idx<16u?ab[idx]:bb[idx-16u]; }
+    return r;
+}
+/* Word permute immediate: 2 bits per output word (word 0 in bits [7:6]). */
+__vector4 __vpermwi(__vector4 a, unsigned imm)
+{ __vector4 r; for (unsigned i=0;i<4u;++i) r.vector4_u32[i]=a.vector4_u32[(imm>>(6u-2u*i))&3u]; return r; }
+/* Rotate VRB left by SHW words, insert into VRT where WMASK (4-bit, 0x8=word0) is set. */
+__vector4 __vrlimi(__vector4 t, __vector4 b, unsigned wmask, unsigned shw)
+{
+    __vector4 r;
+    for (unsigned i=0;i<4u;++i)
+        r.vector4_u32[i] = (wmask & (0x8u>>i)) ? b.vector4_u32[(i+shw)&3u] : t.vector4_u32[i];
+    return r;
+}

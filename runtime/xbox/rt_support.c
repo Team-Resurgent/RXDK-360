@@ -229,6 +229,12 @@ void *aligned_alloc(size_t alignment, size_t size) {
     return (void *)user;
 }
 
+/* SVR4/BSD memalign: same (alignment, size) contract as aligned_alloc, which
+   already tags over-aligned blocks so free() reclaims them. */
+void *memalign(size_t alignment, size_t size) {
+    return aligned_alloc(alignment, size);
+}
+
 /* picolibc's assert() (no-message form) lands here on failure. */
 void __assert_no_args(void) {
     abort();
