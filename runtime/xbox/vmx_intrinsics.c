@@ -313,3 +313,74 @@ __vector4 __vrlimi(__vector4 t, __vector4 b, unsigned wmask, unsigned shw)
 void _WriteBarrier(void)     { __asm__ __volatile__("" ::: "memory"); }
 void _ReadBarrier(void)      { __asm__ __volatile__("" ::: "memory"); }
 void _ReadWriteBarrier(void) { __asm__ __volatile__("" ::: "memory"); }
+
+/* ---- integer VMX: averages, shifts, compares, merges ---------------------
+ * Byte-exact, big-endian element order (byte 0 = most significant). Declared in
+ * vectorintrinsics.h; the modern clang lowers the MS spellings to these calls.
+ * FastBlockCompress (BC1/DXT anchor selection) uses the byte forms; the halfword
+ * and word siblings are provided for a complete integer set. */
+
+/* Average, unsigned, rounding: (a+b+1)>>1 per element. */
+__vector4 __vavgub(__vector4 a, __vector4 b)
+{
+    __vector4 r; const unsigned char* pa=(const unsigned char*)&a; const unsigned char* pb=(const unsigned char*)&b;
+    unsigned char* o=(unsigned char*)&r;
+    for (unsigned i=0;i<16u;++i) o[i]=(unsigned char)(((unsigned)pa[i]+(unsigned)pb[i]+1u)>>1);
+    return r;
+}
+__vector4 __vavguh(__vector4 a, __vector4 b)
+{
+    __vector4 r; const unsigned short* pa=(const unsigned short*)&a; const unsigned short* pb=(const unsigned short*)&b;
+    unsigned short* o=(unsigned short*)&r;
+    for (unsigned i=0;i<8u;++i) o[i]=(unsigned short)(((unsigned)pa[i]+(unsigned)pb[i]+1u)>>1);
+    return r;
+}
+__vector4 __vavguw(__vector4 a, __vector4 b)
+{
+    __vector4 r;
+    for (unsigned i=0;i<4u;++i)
+        r.vector4_u32[i]=(unsigned int)(((unsigned long long)a.vector4_u32[i]+b.vector4_u32[i]+1ull)>>1);
+    return r;
+}
+
+/* Shift Left Double by Octet Immediate: 16 bytes of a:b starting at byte `shb`. */
+__vector4 __vsldoi(__vector4 a, __vector4 b, unsigned shb)
+{
+    unsigned char cat[32]; const unsigned char* pa=(const unsigned char*)&a; const unsigned char* pb=(const unsigned char*)&b;
+    for (unsigned i=0;i<16u;++i){ cat[i]=pa[i]; cat[16u+i]=pb[i]; }
+    __vector4 r; unsigned char* o=(unsigned char*)&r; shb&=0x1Fu;
+    for (unsigned i=0;i<16u;++i) o[i]=cat[shb+i<32u?shb+i:31u];
+    return r;
+}
+
+/* Compare Greater Than, signed/unsigned byte: 0xFF where a>b else 0x00. */
+__vector4 __vcmpgtsb(__vector4 a, __vector4 b)
+{
+    __vector4 r; const signed char* pa=(const signed char*)&a; const signed char* pb=(const signed char*)&b;
+    unsigned char* o=(unsigned char*)&r;
+    for (unsigned i=0;i<16u;++i) o[i]=pa[i]>pb[i]?0xFFu:0x00u;
+    return r;
+}
+__vector4 __vcmpgtub(__vector4 a, __vector4 b)
+{
+    __vector4 r; const unsigned char* pa=(const unsigned char*)&a; const unsigned char* pb=(const unsigned char*)&b;
+    unsigned char* o=(unsigned char*)&r;
+    for (unsigned i=0;i<16u;++i) o[i]=pa[i]>pb[i]?0xFFu:0x00u;
+    return r;
+}
+
+/* Merge low/high bytes: interleave the low (bytes 8..15) or high (0..7) halves. */
+__vector4 __vmrglb(__vector4 a, __vector4 b)
+{
+    __vector4 r; const unsigned char* pa=(const unsigned char*)&a; const unsigned char* pb=(const unsigned char*)&b;
+    unsigned char* o=(unsigned char*)&r;
+    for (unsigned i=0;i<8u;++i){ o[2u*i]=pa[8u+i]; o[2u*i+1u]=pb[8u+i]; }
+    return r;
+}
+__vector4 __vmrghb(__vector4 a, __vector4 b)
+{
+    __vector4 r; const unsigned char* pa=(const unsigned char*)&a; const unsigned char* pb=(const unsigned char*)&b;
+    unsigned char* o=(unsigned char*)&r;
+    for (unsigned i=0;i<8u;++i){ o[2u*i]=pa[i]; o[2u*i+1u]=pb[i]; }
+    return r;
+}

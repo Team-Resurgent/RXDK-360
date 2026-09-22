@@ -308,7 +308,29 @@ def strong_noncomdat_globals(obj):
     return out
 
 
-def coff_to_elf(obj, warn=print, noncomdat_strong=frozenset()):
+def _keep_code_signature_strong(signame, external_strong):
+    """A CODE COMDAT signature is kept STRONG only when weakening it would break
+    resolution, NOT by default. Two cases need strong:
+
+      * The name has a real strong out-of-line definition in ANOTHER kept archive
+        (external_strong, e.g. picolibc's `powf` in libc.a). Keeping the XDK
+        COMDAT copy strong lets --allow-multiple-definition pick the runtime's
+        without discarding the XDK group that the archive's own code references.
+      * A vtable deleting-destructor thunk (`??_E`/`??_G`): a COMDAT group that may
+        be referenced only from another object, which a weak signature could let
+        --gc-sections drop.
+
+    Every other code signature (a pure header-inline like FXL's fxl.inl family --
+    FXLEffect_GetParameterHandle et al.) is weakened, so when a title emits its own
+    linkonce_odr copy the COMDAT dedup keeps the title's group and resolution
+    follows it, instead of resolving to the strong copy in the discarded XDK group
+    ("relocation refers to a symbol in a discarded section")."""
+    return (signame in external_strong
+            or signame.startswith("??_E") or signame.startswith("??_G"))
+
+
+def coff_to_elf(obj, warn=print, noncomdat_strong=frozenset(),
+                external_strong=frozenset()):
     """Translate one parsed CoffObject to PPC32 big-endian ELF32 bytes.
 
     Each kept COFF section becomes its own ELF section in the same order, so a
@@ -574,7 +596,8 @@ def coff_to_elf(obj, warn=print, noncomdat_strong=frozenset()):
     elf_flags = {coff_to_elfshndx[ci]: s.flags for ci, _, s in kept}
     signatures = {g["sig"] for r_elf, g in groups.items()
                   if g["signame"] not in noncomdat_strong
-                  and (elf_flags.get(r_elf, 0) & IMAGE_SCN_MEM_EXECUTE)}
+                  and (elf_flags.get(r_elf, 0) & IMAGE_SCN_MEM_EXECUTE)
+                  and _keep_code_signature_strong(g["signame"], external_strong)}
     comdat_kept = {coff_to_elfshndx[ci] for ci, _, s in kept
                    if s.flags & IMAGE_SCN_LNK_COMDAT}
     for k, (noff, val, sz, info, other, shndx) in enumerate(elf_syms):
@@ -966,7 +989,37 @@ def parse_short_import(data):
     return sym, dll, ordhint, name_type, import_type
 
 
-def cmd_archive(path, out_a, out_manifest):
+def runtime_defined_symbols(path):
+    """Defined external symbol names of a (GNU/llvm-ar) archive, read straight
+    from its armap symbol-index member -- no need to parse the ELF objects. Used
+    to build the external-strong set: names the runtime (libc.a/libcpp.a) owns
+    strong, so an XDK archive's COMDAT copy of the same name must stay strong
+    (see _keep_code_signature_strong)."""
+    try:
+        blob = open(path, "rb").read()
+    except OSError:
+        return set()
+    if blob[:8] != ARCHIVE_MAGIC:
+        return set()
+    pos = 8
+    while pos + 60 <= len(blob):
+        header = blob[pos:pos + 60]
+        name = header[0:16].decode("ascii", "replace").rstrip()
+        size = int(header[48:58].decode("ascii").strip())
+        data = blob[pos + 60:pos + 60 + size]
+        pos = pos + 60 + size + (size & 1)
+        if name == "/":                         # GNU armap: BE count, offsets, names
+            if len(data) < 4:
+                return set()
+            n = struct.unpack(">I", data[:4])[0]
+            names = data[4 + 4 * n:]
+            return {s.decode("latin1") for s in names.split(b"\0") if s}
+        if name and name != "//":               # first real member, no armap
+            break
+    return set()
+
+
+def cmd_archive(path, out_a, out_manifest, runtime_libs=()):
     import json
     blob = open(path, "rb").read()
     members = []
@@ -974,6 +1027,9 @@ def cmd_archive(path, out_a, out_manifest):
     seen = {}                           # unique member names
     # First pass: every COFF object, plus the union of names each defines strong
     # out-of-line (non-COMDAT) -- COMDAT copies of those must yield to them.
+    external_strong = set()             # names the runtime archives own strong
+    for rl in runtime_libs:
+        external_strong |= runtime_defined_symbols(rl)
     coff_members = []                   # (member, longnames, obj)
     noncomdat_strong = set()
     for member, longnames in read_archive(blob):
@@ -992,7 +1048,8 @@ def cmd_archive(path, out_a, out_manifest):
     # with an out-of-line strong definition seen anywhere in the archive.
     for member, longnames, obj in coff_members:
         elf = coff_to_elf(obj, warn=lambda m: None,
-                          noncomdat_strong=noncomdat_strong)
+                          noncomdat_strong=noncomdat_strong,
+                          external_strong=external_strong)
         base = member_name(member.name, longnames).replace("\\", "/").split("/")[-1]
         base = base[:-4] if base.endswith(".obj") else base
         n = seen.get(base, 0)
@@ -1026,6 +1083,9 @@ def main():
     a.add_argument("lib")
     a.add_argument("-o", "--out", default="out.a")
     a.add_argument("-m", "--manifest", default=None)
+    a.add_argument("--runtime", action="append", default=[],
+                   help="a runtime archive (libc.a/libcpp.a) whose defined symbols "
+                        "form the external-strong set; repeatable")
     args = ap.parse_args()
 
     if args.cmd == "dump":
@@ -1038,7 +1098,7 @@ def main():
         cmd_translate_all(args.lib)
     elif args.cmd == "archive":
         manifest = args.manifest or (args.out.rsplit(".", 1)[0] + ".imports.json")
-        cmd_archive(args.lib, args.out, manifest)
+        cmd_archive(args.lib, args.out, manifest, runtime_libs=args.runtime)
 
 
 if __name__ == "__main__":

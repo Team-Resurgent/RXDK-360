@@ -57,7 +57,16 @@ def sh(cmd, **kw):
 
 
 def convert(lib_path, out_a):
-    r = sh([sys.executable, COFF2ELF, "archive", lib_path, "-o", out_a])
+    # Pass the runtime archives so coff2elf's external-strong set is correct: an
+    # XDK COMDAT signature whose name the runtime owns strong (libc/libcpp) stays
+    # strong, while pure header-inlines (FXL's fxl.inl family, XG* tiling helpers)
+    # weaken -- so a title's own linkonce copy wins the COMDAT dedup instead of
+    # resolution binding to the discarded XDK group (the "discarded section" dangle).
+    runtime = []
+    for rl in RUNTIME:
+        if os.path.exists(rl):
+            runtime += ["--runtime", rl]
+    r = sh([sys.executable, COFF2ELF, "archive", lib_path, "-o", out_a] + runtime)
     return r.returncode == 0
 
 
