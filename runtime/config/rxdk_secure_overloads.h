@@ -79,5 +79,11 @@ template <size_t N> inline int swprintf_s(wchar_t (&d)[N], const wchar_t *fmt, .
 template <size_t N> inline int vsprintf_s(char (&d)[N], const char *fmt, va_list a) { return vsnprintf(d, N, fmt, a); }
 template <size_t N> inline int vswprintf_s(wchar_t (&d)[N], const wchar_t *fmt, va_list a) { return vswprintf(d, N, fmt, a); }
 
+/* explicit-size forms: swprintf_s(buf, count, fmt, ...) as many samples call it */
+static inline int sprintf_s(char *d, size_t n, const char *fmt, ...)
+{ va_list a; va_start(a, fmt); int r = vsnprintf(d, n, fmt, a); va_end(a); return r; }
+static inline int swprintf_s(wchar_t *d, size_t n, const wchar_t *fmt, ...)
+{ va_list a; va_start(a, fmt); int r = vswprintf(d, n, fmt, a); va_end(a); return r; }
+
 #endif /* __cplusplus && __STDC_WANT_LIB_EXT1__ */
 #endif /* RXDK_SECURE_OVERLOADS_H */

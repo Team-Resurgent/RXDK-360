@@ -39,7 +39,6 @@
 #include <wchar.h>
 #include <wctype.h>
 #include <alloca.h>
-#include <stdio.h>     /* fopen_s */
 #include <stdlib.h>    /* mbstowcs_s */
 #include <malloc.h>    /* memalign (_aligned_malloc) */
 #include <time.h>      /* localtime_s */
@@ -62,8 +61,10 @@ static inline int strnicmp(const char *a, const char *b, size_t n) { return strn
 static inline char *_strdup(const char *s) { return strdup(s); }
 static inline void *_aligned_malloc(size_t size, size_t align) { return memalign(align, size); }
 static inline void  _aligned_free(void *p) { free(p); }
-static inline int   fopen_s(FILE **f, const char *name, const char *mode)
-{ return (*f = fopen(name, mode)) ? 0 : (errno ? errno : 22 /*EINVAL*/); }
+/* fopen_s: a macro (not an inline) so it does not force <stdio.h> into this
+   force-included header - FILE/fopen resolve at the call site, where the title
+   has already chosen its <stdio.h>. */
+#define fopen_s(pf, name, mode) ((*(pf) = fopen((name), (mode))) ? 0 : (errno ? errno : 22))
 static inline int   mbstowcs_s(size_t *conv, wchar_t *dst, size_t dstsz, const char *src, size_t count)
 { size_t n = mbstowcs(dst, src, count == (size_t)-1 ? dstsz : count);
   if (n == (size_t)-1) return 42 /*EILSEQ*/;
@@ -91,6 +92,13 @@ static inline int localtime_s(struct tm *result, const time_t *t)
 static inline int       _wtoi(const wchar_t *s)   { return (int)wcstol(s, (wchar_t **)0, 10); }
 static inline long long _wtoi64(const wchar_t *s) { return wcstoll(s, (wchar_t **)0, 10); }
 static inline double    _wtof(const wchar_t *s)   { return wcstod(s, (wchar_t **)0); }
+
+/* ---- locale-aware numeric conversions (_locale_t ignored: C locale) ---- */
+static inline double        _strtod_l(const char *s, char **e, void *loc)              { (void)loc; return strtod(s, e); }
+static inline double        _wcstod_l(const wchar_t *s, wchar_t **e, void *loc)         { (void)loc; return wcstod(s, e); }
+static inline long          _strtol_l(const char *s, char **e, int b, void *loc)        { (void)loc; return strtol(s, e, b); }
+static inline unsigned long _strtoul_l(const char *s, char **e, int b, void *loc)       { (void)loc; return strtoul(s, e, b); }
+static inline double        _atof_l(const char *s, void *loc)                           { (void)loc; return strtod(s, (char **)0); }
 
 /* ---- format-length queries ---- */
 static inline int _vscprintf(const char *fmt, va_list a) { return vsnprintf((char *)0, 0, fmt, a); }
