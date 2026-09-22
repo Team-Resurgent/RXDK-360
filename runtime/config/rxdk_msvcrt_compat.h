@@ -105,6 +105,14 @@ static inline int _vscprintf(const char *fmt, va_list a) { return vsnprintf((cha
 static inline int _vscwprintf(const wchar_t *fmt, va_list a)
 { wchar_t tmp[4096]; return vswprintf(tmp, sizeof(tmp) / sizeof(tmp[0]), fmt, a); }
 
+/* xnamath.h defines the VMX128 multiply-add-complement macro __vmaddcfp only
+   under _XM_VMX128_INTRINSICS_, but we compile the XDK headers with
+   _XM_NO_INTRINSICS_ (scalar math path) while still providing __vmaddfp in the
+   runtime. Alias it here so VMX128 title code (FastBlockCompress) still builds. */
+#ifndef __vmaddcfp
+#define __vmaddcfp(VRA, VRC, VRB) __vmaddfp(VRA, VRC, VRB)
+#endif
+
 /* ---- MSVC min/max macros (normally from stdlib.h) ---- */
 #ifndef __max
 #define __max(a,b) (((a) > (b)) ? (a) : (b))
