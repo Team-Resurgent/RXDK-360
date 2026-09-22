@@ -113,21 +113,21 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <!-- Host tools (imagexex, xbcp) live at {app}\bin\win32, not XdkPath\bin\win32. -->
     <_RxdkToolRoot Condition="'$(_RxdkToolRoot)' == '' and '$(RxdkInstallDir)' != ''">$(RxdkInstallDir)</_RxdkToolRoot>
     <_RxdkToolRoot Condition="'$(_RxdkToolRoot)' == ''">$(XDKInstallDir)</_RxdkToolRoot>
-    <_RxdkDt Condition="'$(_RxdkDt)' == ''">$(DeploymentType)</_RxdkDt>
-    <_RxdkDt Condition="'$(_RxdkDt)' == ''">@(Deploy->'%(DeploymentType)')</_RxdkDt>
-    <_RxdkDtSemi Condition="'$(_RxdkDt)' != ''">$(_RxdkDt.IndexOf(';'))</_RxdkDtSemi>
-    <_RxdkDt Condition="'$(_RxdkDtSemi)' != '' and $(_RxdkDtSemi) &gt;= 0">$(_RxdkDt.Substring(0, $(_RxdkDtSemi)))</_RxdkDt>
+    <_RxdkDeployType Condition="'$(_RxdkDeployType)' == ''">$(DeploymentType)</_RxdkDeployType>
+    <_RxdkDeployType Condition="'$(_RxdkDeployType)' == ''">@(Deploy->'%(DeploymentType)')</_RxdkDeployType>
+    <_RxdkDeployTypeSemi Condition="'$(_RxdkDeployType)' != ''">$(_RxdkDeployType.IndexOf(';'))</_RxdkDeployTypeSemi>
+    <_RxdkDeployType Condition="'$(_RxdkDeployTypeSemi)' != '' and $(_RxdkDeployTypeSemi) &gt;= 0">$(_RxdkDeployType.Substring(0, $(_RxdkDeployTypeSemi)))</_RxdkDeployType>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(_RxdkDt)' != ''">
+  <ItemGroup Condition="'$(_RxdkDeployType)' != ''">
     <Deploy Update="@(Deploy)">
-      <DeploymentType>$(_RxdkDt)</DeploymentType>
+      <DeploymentType>$(_RxdkDeployType)</DeploymentType>
     </Deploy>
   </ItemGroup>
 
   <!-- Xenia: switch the debugger dropdown to Local Windows Debugger and point
        it at the emulator. Copy to Hard Drive forces Xbox 360 Debugger. -->
-  <PropertyGroup Condition="'$(_RxdkDt)' == 'Xenia' and '$(RxdkXeniaPath)' != '' and '$(ConfigurationType)' != 'Makefile' and '$(ConfigurationType)' != 'StaticLibrary'">
+  <PropertyGroup Condition="'$(_RxdkDeployType)' == 'Xenia' and '$(RxdkXeniaPath)' != '' and '$(ConfigurationType)' != 'Makefile' and '$(ConfigurationType)' != 'StaticLibrary'">
     <_RxdkXeniaHeadless Condition="'$(RxdkXeniaHeadless)' == 'true'"> --headless=true</_RxdkXeniaHeadless>
     <_RxdkXeniaImage Condition="'$(RxdkXeniaUseIso)' == 'true'">$(RxdkXeniaIsoPath)</_RxdkXeniaImage>
     <_RxdkXeniaImage Condition="'$(_RxdkXeniaImage)' == ''">$(ImagePath)</_RxdkXeniaImage>
@@ -634,13 +634,13 @@ Copyright (C) Microsoft Corporation. All rights reserved.
   <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter\*.targets" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter')" />
 
   <!-- After toolset imports so DebuggerFlavor actually updates the dropdown. -->
-  <PropertyGroup Condition="'$(_RxdkDt)' == 'Xenia' and '$(RxdkXeniaPath)' != ''">
+  <PropertyGroup Condition="'$(_RxdkDeployType)' == 'Xenia' and '$(RxdkXeniaPath)' != ''">
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(_RxdkDt)' == 'CopyToHardDrive'">
+  <PropertyGroup Condition="'$(_RxdkDeployType)' == 'CopyToHardDrive'">
     <DebuggerFlavor>RxdkXbox360Debugger</DebuggerFlavor>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(_RxdkDt)' == 'EmulateDvd'">
+  <PropertyGroup Condition="'$(_RxdkDeployType)' == 'EmulateDvd'">
     <DebuggerFlavor>RxdkXbox360Debugger</DebuggerFlavor>
   </PropertyGroup>
 </Project>
