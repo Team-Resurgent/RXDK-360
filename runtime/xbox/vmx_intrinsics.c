@@ -384,3 +384,61 @@ __vector4 __vmrghb(__vector4 a, __vector4 b)
     for (unsigned i=0;i<8u;++i){ o[2u*i]=pa[i]; o[2u*i+1u]=pb[i]; }
     return r;
 }
+
+/* ---- VMX float compares (all-ones per element where the relation holds) --- */
+static inline unsigned _f_gt(float a, float b){ return a >  b ? 0xFFFFFFFFu : 0u; }
+static inline unsigned _f_ge(float a, float b){ return a >= b ? 0xFFFFFFFFu : 0u; }
+static inline unsigned _f_eq(float a, float b){ return a == b ? 0xFFFFFFFFu : 0u; }
+__vector4 __vcmpgtfp(__vector4 a, __vector4 b)
+{ __vector4 r; for(unsigned i=0;i<4u;++i) r.vector4_u32[i]=_f_gt(a.vector4_f32[i],b.vector4_f32[i]); return r; }
+__vector4 __vcmpgefp(__vector4 a, __vector4 b)
+{ __vector4 r; for(unsigned i=0;i<4u;++i) r.vector4_u32[i]=_f_ge(a.vector4_f32[i],b.vector4_f32[i]); return r; }
+__vector4 __vcmpeqfp(__vector4 a, __vector4 b)
+{ __vector4 r; for(unsigned i=0;i<4u;++i) r.vector4_u32[i]=_f_eq(a.vector4_f32[i],b.vector4_f32[i]); return r; }
+/* Bounds compare: bit31 = a > b (out above), bit30 = a < -b (out below); 0 => in bounds. */
+__vector4 __vcmpbfp(__vector4 a, __vector4 b)
+{
+    __vector4 r;
+    for(unsigned i=0;i<4u;++i){
+        unsigned v=0; float x=a.vector4_f32[i], lim=b.vector4_f32[i];
+        if(!(x<=lim)) v|=0x80000000u;
+        if(!(x>=-lim)) v|=0x40000000u;
+        r.vector4_u32[i]=v;
+    }
+    return r;
+}
+
+/* ---- VMX saturating integer add/sub --------------------------------------- */
+static inline int _clampi(long long v,long long lo,long long hi){ return (int)(v<lo?lo:v>hi?hi:v); }
+__vector4 __vaddshs(__vector4 a, __vector4 b)  /* signed 16-bit saturate */
+{ __vector4 r; const short*pa=(const short*)&a,*pb=(const short*)&b; short*o=(short*)&r;
+  for(unsigned i=0;i<8u;++i) o[i]=(short)_clampi((long long)pa[i]+pb[i],-32768,32767); return r; }
+__vector4 __vsubshs(__vector4 a, __vector4 b)
+{ __vector4 r; const short*pa=(const short*)&a,*pb=(const short*)&b; short*o=(short*)&r;
+  for(unsigned i=0;i<8u;++i) o[i]=(short)_clampi((long long)pa[i]-pb[i],-32768,32767); return r; }
+__vector4 __vaddsws(__vector4 a, __vector4 b)  /* signed 32-bit saturate */
+{ __vector4 r; const int*pa=(const int*)&a,*pb=(const int*)&b; int*o=(int*)&r;
+  for(unsigned i=0;i<4u;++i) o[i]=_clampi((long long)pa[i]+pb[i],-2147483648LL,2147483647LL); return r; }
+__vector4 __vsubsws(__vector4 a, __vector4 b)
+{ __vector4 r; const int*pa=(const int*)&a,*pb=(const int*)&b; int*o=(int*)&r;
+  for(unsigned i=0;i<4u;++i) o[i]=_clampi((long long)pa[i]-pb[i],-2147483648LL,2147483647LL); return r; }
+__vector4 __vaddubs(__vector4 a, __vector4 b)  /* unsigned 8-bit saturate */
+{ __vector4 r; const unsigned char*pa=(const unsigned char*)&a,*pb=(const unsigned char*)&b; unsigned char*o=(unsigned char*)&r;
+  for(unsigned i=0;i<16u;++i){ unsigned s=(unsigned)pa[i]+pb[i]; o[i]=(unsigned char)(s>255u?255u:s);} return r; }
+__vector4 __vadduhs(__vector4 a, __vector4 b)  /* unsigned 16-bit saturate */
+{ __vector4 r; const unsigned short*pa=(const unsigned short*)&a,*pb=(const unsigned short*)&b; unsigned short*o=(unsigned short*)&r;
+  for(unsigned i=0;i<8u;++i){ unsigned s=(unsigned)pa[i]+pb[i]; o[i]=(unsigned short)(s>65535u?65535u:s);} return r; }
+
+/* ---- VMX splat immediate (byte/halfword; word form is defined above) ------
+ * SIM arrives already sign-extended to int (matching __vspltisw); splat its
+ * low element-width bits across every element. */
+__vector4 __vspltisb(int sim)
+{ __vector4 r; unsigned char v=(unsigned char)sim; unsigned char*o=(unsigned char*)&r;
+  for(unsigned i=0;i<16u;++i) o[i]=v; return r; }
+__vector4 __vspltish(int sim)
+{ __vector4 r; short v=(short)sim; short*o=(short*)&r;
+  for(unsigned i=0;i<8u;++i) o[i]=v; return r; }
+
+/* ---- scalar float select (fsel single) ----------------------------------- */
+/* __fsel/__fself: comparand >= 0.0 (including -0.0) selects valGE, else valLT. */
+float __fself(float c, float ge, float lt) { return c >= 0.0f ? ge : lt; }

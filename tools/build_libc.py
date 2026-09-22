@@ -97,6 +97,12 @@ LIBM_EXCLUDE = set([
     "sf_exp.c", "sf_exp2.c", "sf_log.c", "sf_log2.c", "sf_pow.c",
     "s_gamma.c", "sf_gamma.c",
 ])
+# Float cores that only exist as sf_*.c: keep libm/math's copy (the authoritative
+# one) even though the basename is in LIBM_EXCLUDE, so the symbol exists at all.
+# exp2f (sf_exp2.c) is referenced by several graphics samples; without this it is
+# an unresolved external (the bare-basename exclude dropped BOTH the common and
+# the math copy).
+LIBM_EXCLUDE_MATH_KEEP = set(["sf_exp2.c"])
 
 # Extra (non-picolibc) glue. The .c files compile with the picolibc flags; the
 # .cpp C++ runtime compiles with the C++ flag set below.
@@ -204,6 +210,15 @@ def sources():
     for sub in LIBM_SUBDIRS:
         for f in sorted(glob.glob(os.path.join(PICO, sub, "*.c"))):
             b = os.path.basename(f)
+            # LIBM_EXCLUDE drops the libm/common duplicates of cores whose
+            # authoritative implementation lives in libm/math. Excluding by bare
+            # basename also dropped libm/math's own copy, so a float core that
+            # ONLY exists as sf_*.c (exp2f -> sf_exp2.c) vanished entirely. Keep
+            # the libm/math copy of those; only the libm/common duplicate is a
+            # real clash to drop.
+            if b in LIBM_EXCLUDE_MATH_KEEP and sub.endswith("math"):
+                out.append(f)
+                continue
             if b in LIBM_EXCLUDE or b.startswith("sl_"):
                 continue
             out.append(f)

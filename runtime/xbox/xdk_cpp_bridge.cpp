@@ -115,3 +115,68 @@ long NuiTransformSmooth(_NUI_SKELETON_FRAME* f, const _NUI_TRANSFORM_SMOOTH_PARA
 extern "C" _XMMATRIX nui_TransformMatrixLevel(__vector4)
     __asm__("?NuiTransformMatrixLevel@@YA?AU_XMMATRIX@@U__vector4@@@Z");
 _XMMATRIX NuiTransformMatrixLevel(__vector4 v) { return nui_TransformMatrixLevel(v); }
+
+/* ---- D3DXps (d3d9.a) ----------------------------------------------------- */
+/* The Xbox Predicated Structure API is C++ (namespace-free free functions on
+   class D3DXps / struct D3DXpsThread); clang references the Itanium names,
+   d3d9.a exports the MSVC ?D3DXps_*@@ names. Forward the complete public set
+   (Instancing / XPSCube / AdvancedXPS). Opaque tags: only the type NAME feeds
+   the Itanium mangling, so class-vs-struct is irrelevant. */
+struct D3DXps;
+struct D3DXpsThread;
+enum _D3DPRIMITIVETYPE  { _D3DPRIMITIVETYPE_pad = 0 };
+enum _D3DFORMAT         { _D3DFORMAT_pad = 0 };
+
+extern "C" void  xps_Initialize(D3DXps*, D3DXpsThread*)
+    __asm__("?D3DXps_Initialize@@YAXPAVD3DXps@@PAUD3DXpsThread@@@Z");
+void D3DXps_Initialize(D3DXps* p, D3DXpsThread* t) { xps_Initialize(p, t); }
+
+extern "C" void  xps_Uninitialize(D3DXps*)
+    __asm__("?D3DXps_Uninitialize@@YAXPAVD3DXps@@@Z");
+void D3DXps_Uninitialize(D3DXps* p) { xps_Uninitialize(p); }
+
+extern "C" void* xps_Allocate(D3DXps*, unsigned long, unsigned long)
+    __asm__("?D3DXps_Allocate@@YAPAXPAVD3DXps@@KK@Z");
+void* D3DXps_Allocate(D3DXps* p, unsigned long a, unsigned long b) { return xps_Allocate(p, a, b); }
+
+extern "C" void  xps_DrawVertices(D3DXps*, _D3DPRIMITIVETYPE, unsigned long, const void*)
+    __asm__("?D3DXps_DrawVertices@@YAXPAVD3DXps@@W4_D3DPRIMITIVETYPE@@KPBX@Z");
+void D3DXps_DrawVertices(D3DXps* p, _D3DPRIMITIVETYPE t, unsigned long n, const void* v)
+{ xps_DrawVertices(p, t, n, v); }
+
+extern "C" void  xps_DrawIndexedVertices(D3DXps*, _D3DPRIMITIVETYPE, unsigned long, const void*, _D3DFORMAT, const void*)
+    __asm__("?D3DXps_DrawIndexedVertices@@YAXPAVD3DXps@@W4_D3DPRIMITIVETYPE@@KPBXW4_D3DFORMAT@@2@Z");
+void D3DXps_DrawIndexedVertices(D3DXps* p, _D3DPRIMITIVETYPE t, unsigned long n, const void* v, _D3DFORMAT f, const void* idx)
+{ xps_DrawIndexedVertices(p, t, n, v, f, idx); }
+
+extern "C" void  xps_KickOff(D3DXps*)
+    __asm__("?D3DXps_KickOff@@YAXPAVD3DXps@@@Z");
+void D3DXps_KickOff(D3DXps* p) { xps_KickOff(p); }
+
+extern "C" int   xps_KickOffAndGet(D3DXps*, unsigned long*)
+    __asm__("?D3DXps_KickOffAndGet@@YAHPAVD3DXps@@PAK@Z");
+int D3DXps_KickOffAndGet(D3DXps* p, unsigned long* out) { return xps_KickOffAndGet(p, out); }
+
+extern "C" int   xps_Get(D3DXps*, const void**, unsigned long*)
+    __asm__("?D3DXps_Get@@YAHPAVD3DXps@@PAPBXPAK@Z");
+int D3DXps_Get(D3DXps* p, const void** pp, unsigned long* out) { return xps_Get(p, pp, out); }
+
+/* ---- XWMADecode (xwmadecode.a) ------------------------------------------ */
+/* XAUDIO2 namespace free functions; xwmadecode.a exports ?...@XAUDIO2@@. */
+struct tWAVEFORMATEX;
+struct XWMADECODE;
+struct XWMADECODE_INPUT_BUFFER_INFO;
+namespace XAUDIO2 {
+    extern "C" unsigned long xwma_GetRequiredBufferSize(const ::tWAVEFORMATEX*)
+        __asm__("?XWMADecodeGetRequiredBufferSize@XAUDIO2@@YAKPBUtWAVEFORMATEX@@@Z");
+    unsigned long XWMADecodeGetRequiredBufferSize(const ::tWAVEFORMATEX* f)
+    { return xwma_GetRequiredBufferSize(f); }
+
+    extern "C" void xwma_ProcessData(::XWMADECODE*)
+        __asm__("?XWMADecodeProcessData@XAUDIO2@@YAJPAUXWMADECODE@1@@Z");
+    long XWMADecodeProcessData(::XWMADECODE* d) { xwma_ProcessData(d); return 0; }
+
+    extern "C" void xwma_Destroy(::XWMADECODE*)
+        __asm__("?XWMADecodeDestroy@XAUDIO2@@YAXPAUXWMADECODE@1@@Z");
+    void XWMADecodeDestroy(::XWMADECODE* d) { xwma_Destroy(d); }
+}
