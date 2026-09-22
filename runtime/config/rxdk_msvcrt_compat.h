@@ -124,6 +124,20 @@ static inline int _itoa_s(int val, char *buf, size_t size, int radix)
 static inline int _itow_s(int val, wchar_t *buf, size_t size, int radix)
 { if (radix == 16) return swprintf(buf, size, L"%x", (unsigned)val) < 0 ? 22 : 0;
   return swprintf(buf, size, L"%d", val) < 0 ? 22 : 0; }
+static inline int _ltow_s(long val, wchar_t *buf, size_t size, int radix)
+{ if (radix == 16) return swprintf(buf, size, L"%lx", (unsigned long)val) < 0 ? 22 : 0;
+  return swprintf(buf, size, L"%ld", val) < 0 ? 22 : 0; }
+static inline int _ultow_s(unsigned long val, wchar_t *buf, size_t size, int radix)
+{ return swprintf(buf, size, radix == 16 ? L"%lx" : L"%lu", val) < 0 ? 22 : 0; }
+static inline int _i64tow_s(long long val, wchar_t *buf, size_t size, int radix)
+{ if (radix == 16) return swprintf(buf, size, L"%llx", (unsigned long long)val) < 0 ? 22 : 0;
+  return swprintf(buf, size, L"%lld", val) < 0 ? 22 : 0; }
+static inline int _ui64tow_s(unsigned long long val, wchar_t *buf, size_t size, int radix)
+{ return swprintf(buf, size, radix == 16 ? L"%llx" : L"%llu", val) < 0 ? 22 : 0; }
+/* _strcmpi is the old spelling of _stricmp. */
+#ifndef _strcmpi
+#define _strcmpi _stricmp
+#endif
 
 #ifdef __cplusplus
 }
