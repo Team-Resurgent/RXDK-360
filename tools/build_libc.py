@@ -37,6 +37,7 @@ TRIPLE = "powerpc-unknown-xbox360"
 # self-recursion; -include picolibc.h force-includes the config.
 FLAGS = [
     "--target=" + TRIPLE, "-std=c17", "-O2", "-ffreestanding",
+    "-ffunction-sections", "-fdata-sections",
     # Xbox 360 WCHAR is 16-bit UTF-16 (MSVC ABI). Our libc's wide-char routines
     # (wcslen, wcscpy_s, wmem*, ...) MUST use a 2-byte wchar_t so they agree with
     # the XDK libraries that call them -- otherwise wcslen miscounts a UTF-16
@@ -133,11 +134,13 @@ XBOX_GLUE = [
     os.path.join(ROOT, "runtime", "xbox", "ke_perf.S"),            # 64-bit-safe KeQueryPerformanceFrequency wrapper (single-r3 MS return -> pointer)
     os.path.join(ROOT, "runtime", "xbox", "vmx_intrinsics.c"),     # MS PPC/VMX intrinsics clang lacks (__lvlx/__vaddfp/__mftb/byte-reverse/...)
     os.path.join(ROOT, "runtime", "xbox", "fxl_bridge.cpp"),       # Itanium->MSVC forwarder for FXL's non-extern-"C" routines (FXLSetShaders)
+    os.path.join(ROOT, "runtime", "xbox", "xdk_cpp_bridge.cpp"),   # Itanium->MSVC forwarders for XDK C++ APIs (XJSON/ASF/XAV/QNet)
 ]
 
 # C++ runtime glue: no picolibc config force-include; freestanding, no EH/RTTI yet.
 CPP_FLAGS = [
     "--target=" + TRIPLE, "-std=c++23", "-O2", "-ffreestanding",
+    "-ffunction-sections", "-fdata-sections",
     "-fshort-wchar",   # 2-byte wchar_t to match the platform WCHAR (see FLAGS)
     "-fno-exceptions", "-fno-rtti", "-fno-stack-protector",
     "-fno-sanitize=all", "-fno-builtin", "-Wno-everything",
