@@ -516,7 +516,9 @@ namespace Rxdk.Xbox360.Dwarf
         {
             if (name.Length > 1 && (name[1] == ':' || name[0] == '/' || name[0] == '\\')) return name; // absolute
             string dir = dirIdx >= 0 && dirIdx < dirs.Count ? dirs[dirIdx] : "";
-            return dir.Length == 0 ? name : dir.TrimEnd('/', '\\') + "\\" + name;
+            // Join with '/', the DWARF/POSIX separator: it resolves on Windows AND Linux, whereas a
+            // hardcoded '\\' becomes a literal filename char on Linux and breaks source lookup.
+            return dir.Length == 0 ? name : dir.TrimEnd('/', '\\') + "/" + name;
         }
 
         private static string FileName(List<string> files, int index) =>
