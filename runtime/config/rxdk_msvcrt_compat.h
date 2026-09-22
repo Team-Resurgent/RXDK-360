@@ -113,6 +113,23 @@ static inline int _vscwprintf(const wchar_t *fmt, va_list a)
 #define __vmaddcfp(VRA, VRC, VRB) __vmaddfp(VRA, VRC, VRB)
 #endif
 
+/* clang implements no structured exception handling on this PPC target. The only
+   __try/__except in the sample corpus is the debugger "set thread name" helper
+   (it RaiseException(0x406D1388)s an info struct the debugger reads, wrapped in
+   __try/__except to swallow it when no debugger is attached). That is cosmetic,
+   so degrade it safely: SKIP the __try body (the RaiseException, which without a
+   handler would propagate) and run the __except body. The __except expression --
+   GetExceptionCode()/EXCEPTION_* -- is discarded, so those need not be defined. */
+#ifndef __try
+#define __try        if (0)
+#define __except(e)  else
+#define __finally
+#define __leave
+#endif
+#ifndef __noop
+#define __noop ((void)0)
+#endif
+
 /* ---- MSVC min/max macros (normally from stdlib.h) ---- */
 #ifndef __max
 #define __max(a,b) (((a) > (b)) ? (a) : (b))
