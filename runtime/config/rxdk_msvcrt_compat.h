@@ -39,6 +39,11 @@
 #include <wchar.h>
 #include <wctype.h>
 #include <alloca.h>
+#include <stdio.h>     /* fopen_s */
+#include <stdlib.h>    /* mbstowcs_s */
+#include <malloc.h>    /* memalign (_aligned_malloc) */
+#include <time.h>      /* localtime_s */
+#include <errno.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -49,6 +54,38 @@ static inline int _stricmp(const char *a, const char *b) { return strcasecmp(a, 
 static inline int _strnicmp(const char *a, const char *b, size_t n) { return strncasecmp(a, b, n); }
 static inline int _wcsicmp(const wchar_t *a, const wchar_t *b) { return wcscasecmp(a, b); }
 static inline int _wcsnicmp(const wchar_t *a, const wchar_t *b, size_t n) { return wcsncasecmp(a, b, n); }
+/* Non-underscore POSIX-name spellings some XDK samples use directly. */
+static inline int stricmp(const char *a, const char *b) { return strcasecmp(a, b); }
+static inline int strnicmp(const char *a, const char *b, size_t n) { return strncasecmp(a, b, n); }
+
+/* ---- misc MSVC CRT extras ---- */
+static inline char *_strdup(const char *s) { return strdup(s); }
+static inline void *_aligned_malloc(size_t size, size_t align) { return memalign(align, size); }
+static inline void  _aligned_free(void *p) { free(p); }
+static inline int   fopen_s(FILE **f, const char *name, const char *mode)
+{ return (*f = fopen(name, mode)) ? 0 : (errno ? errno : 22 /*EINVAL*/); }
+static inline int   mbstowcs_s(size_t *conv, wchar_t *dst, size_t dstsz, const char *src, size_t count)
+{ size_t n = mbstowcs(dst, src, count == (size_t)-1 ? dstsz : count);
+  if (n == (size_t)-1) return 42 /*EILSEQ*/;
+  if (dst && n < dstsz) dst[n] = 0;
+  if (conv) *conv = n + 1; return 0; }
+static inline int localtime_s(struct tm *result, const time_t *t)
+{ return localtime_r(t, result) ? 0 : 22 /*EINVAL*/; }
+
+/* ---- MSVC <ctype.h> classification bit masks (some samples use the raw
+        _SPACE/_DIGIT/... bits with _isctype/_pctype). ---- */
+#ifndef _UPPER
+#define _UPPER     0x1
+#define _LOWER     0x2
+#define _DIGIT     0x4
+#define _SPACE     0x8
+#define _PUNCT     0x10
+#define _CONTROL   0x20
+#define _BLANK     0x40
+#define _HEX       0x80
+#define _LEADBYTE  0x8000
+#define _ALPHA     (0x0100 | _UPPER | _LOWER)
+#endif
 
 /* ---- wide numeric conversions ---- */
 static inline int       _wtoi(const wchar_t *s)   { return (int)wcstol(s, (wchar_t **)0, 10); }
