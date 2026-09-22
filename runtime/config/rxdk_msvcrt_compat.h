@@ -145,6 +145,10 @@ static inline int _ui64tow_s(unsigned long long val, wchar_t *buf, size_t size, 
 template <size_t N> inline int _wcslwr_s(wchar_t (&s)[N]) { return _wcslwr_s(s, N); }
 template <size_t N> inline int _itoa_s(int val, char (&buf)[N], int radix) { return _itoa_s(val, buf, N, radix); }
 template <size_t N> inline int _itow_s(int val, wchar_t (&buf)[N], int radix) { return _itow_s(val, buf, N, radix); }
+template <size_t N> inline int _ltow_s(long val, wchar_t (&buf)[N], int radix) { return _ltow_s(val, buf, N, radix); }
+template <size_t N> inline int _ultow_s(unsigned long val, wchar_t (&buf)[N], int radix) { return _ultow_s(val, buf, N, radix); }
+template <size_t N> inline int _i64tow_s(long long val, wchar_t (&buf)[N], int radix) { return _i64tow_s(val, buf, N, radix); }
+template <size_t N> inline int _ui64tow_s(unsigned long long val, wchar_t (&buf)[N], int radix) { return _ui64tow_s(val, buf, N, radix); }
 /* _vsnprintf_s(buf, count, fmt, ap): buffer size deduced; count is usually
    _TRUNCATE (truncate to fit). Forward to vsnprintf bounded by the array size. */
 template <size_t N> inline int _vsnprintf_s(char (&d)[N], size_t count, const char *fmt, va_list a)
