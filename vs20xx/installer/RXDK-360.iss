@@ -96,7 +96,10 @@ Source: "..\..\build\xextool\XexTool.exe"; DestDir: "{app}\modern\bin"; Componen
 Source: "..\..\build\tools\xdvdfs.exe";     DestDir: "{app}\bin"; Components: modern
 ; lib\ - clang's resource dir (found relative to bin\..\lib\clang) + all archives
 Source: "..\..\build\llvm\lib\clang\*";     DestDir: "{app}\modern\lib\clang"; Flags: recursesubdirs createallsubdirs; Components: modern
-Source: "..\..\build\libc\*.a";             DestDir: "{app}\modern\lib"; Components: modern
+; kernel_import.a is NOT shipped: the unpacker's stagemodern step builds it at
+; install time from the user's own XDK import libs (their ordinals), so it always
+; matches the installed XDK rather than whichever one the release was built on.
+Source: "..\..\build\libc\*.a";             DestDir: "{app}\modern\lib"; Excludes: "kernel_import.a"; Components: modern
 Source: "..\..\build\coff\*.a";             DestDir: "{app}\modern\lib"; Flags: skipifsourcedoesntexist; Components: modern
 ; include\ - the modern C/C++23 runtime headers (xbox\ is staged in at install time)
 Source: "..\..\runtime\config\*";           DestDir: "{app}\modern\include\config"; Flags: recursesubdirs createallsubdirs; Components: modern

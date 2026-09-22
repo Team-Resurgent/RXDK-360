@@ -64,6 +64,26 @@ namespace Rxdk.Xdk.Unpacker
                     n++;
                 }
                 Report.Line("staged {0} XDK import libs -> {1}", n, dstLib);
+
+                // Build the global kernel import library from the just-staged libs,
+                // so every title links one kernel_import.a (like an SDK's xboxkrnl.lib)
+                // instead of discovering imports per-title. clang + llvm-ar ship in
+                // the modern tree; the console ordinals come from these XDK libs.
+                string clang = Path.Combine(modernRoot, "bin", "clang.exe");
+                string ar = Path.Combine(modernRoot, "bin", "llvm-ar.exe");
+                string kimp = Path.Combine(dstLib, "kernel_import.a");
+                if (File.Exists(clang) && File.Exists(ar))
+                {
+                    try
+                    {
+                        int ni = KernelImportLib.Generate(dstLib, clang, ar, "powerpc-unknown-xbox360", kimp);
+                        undo.Add("file|" + kimp);
+                        Report.Line("built kernel_import.a ({0} imports) -> {1}", ni, kimp);
+                    }
+                    catch (Exception ex) { Report.Line("WARNING: kernel_import.a not built: {0}", ex.Message); }
+                }
+                else
+                    Report.Line("WARNING: clang/llvm-ar missing under {0}\\bin; kernel_import.a not built", modernRoot);
             }
             // {app}\rxdk360-uninstall.log sits next to modern\, not under legacy\.
             string undoLog = Path.GetFullPath(Path.Combine(modernRoot, "..", UndoLog));
@@ -167,6 +187,16 @@ namespace Rxdk.Xdk.Unpacker
                 {
                     if (args.Length < 3) return Usage();
                     StageModern(args[1], args[2]);
+                    return 0;
+                }
+
+                // Test/CI helper: build kernel_import.a directly from a lib dir.
+                //   genkernellib <libDir> <clang.exe> <llvm-ar.exe> <out.a>
+                if (args.Length >= 1 && args[0].Equals("genkernellib", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (args.Length < 5) return Usage();
+                    int ni = KernelImportLib.Generate(args[1], args[2], args[3], "powerpc-unknown-xbox360", args[4]);
+                    Report.Line("kernel_import.a: {0} imports -> {1}", ni, args[4]);
                     return 0;
                 }
 
