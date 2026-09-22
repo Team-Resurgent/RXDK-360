@@ -105,9 +105,21 @@ static inline int _vscprintf(const char *fmt, va_list a) { return vsnprintf((cha
 static inline int _vscwprintf(const wchar_t *fmt, va_list a)
 { wchar_t tmp[4096]; return vswprintf(tmp, sizeof(tmp) / sizeof(tmp[0]), fmt, a); }
 
+/* ---- MSVC min/max macros (normally from stdlib.h) ---- */
+#ifndef __max
+#define __max(a,b) (((a) > (b)) ? (a) : (b))
+#endif
+#ifndef __min
+#define __min(a,b) (((a) < (b)) ? (a) : (b))
+#endif
+
 /* ---- bounded printf (MS spelling) ---- */
 static inline int _vsnprintf_s(char *d, size_t dstsize, size_t count, const char *fmt, va_list a)
 { (void)count; return vsnprintf(d, dstsize, fmt, a); }
+/* 4-arg pointer form: _vsnprintf_s(buf, count/_TRUNCATE, fmt, ap) where the size
+   is not separately given -- bound by `count` unless it is _TRUNCATE ((size_t)-1). */
+static inline int _vsnprintf_s(char *d, size_t count, const char *fmt, va_list a)
+{ return vsnprintf(d, count == (size_t)-1 ? 0x7fffffff : count, fmt, a); }
 static inline int _snprintf_s(char *d, size_t dstsize, size_t count, const char *fmt, ...)
 { va_list a; int r; va_start(a, fmt); (void)count; r = vsnprintf(d, dstsize, fmt, a); va_end(a); return r; }
 static inline int _snwprintf_s(wchar_t *d, size_t dstsize, size_t count, const wchar_t *fmt, ...)
