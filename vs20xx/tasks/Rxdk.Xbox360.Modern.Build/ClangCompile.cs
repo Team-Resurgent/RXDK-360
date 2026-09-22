@@ -226,6 +226,12 @@ namespace Rxdk.Xbox360.Modern.Build
                 // XDK/ATG code brace-initializes signed fields with 0xFFFFFFFF etc.;
                 // MSVC allows it, C++11 makes narrowing in braced-init an error.
                 "-Wno-narrowing",
+                // XDK/ATG code assigns string literals to non-const CHAR*/WCHAR*
+                // (ATG HELP_CALLOUT tables, AddRowElement(L"..."), ...). MSVC keeps
+                // literals non-const (/Zc:strictStrings-); C++11 makes the implicit
+                // const->non-const a hard error. -fwritable-strings gives literals a
+                // non-const type, matching MSVC, so those assignments compile.
+                "-fwritable-strings",
                 // #pragma comment(lib, "d3d9.lib") in XDK code emits a COFF auto-link
                 // directive ld.lld cannot resolve; the modern link names the ELF
                 // libraries explicitly instead, so drop the directive.
