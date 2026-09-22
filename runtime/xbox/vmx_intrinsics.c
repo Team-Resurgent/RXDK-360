@@ -544,3 +544,105 @@ __vector4 __vupkd3d(__vector4 b, unsigned dt)
     }
     return r;
 }
+
+/* ======================================================================== *
+ * Complete VMX integer families (byte/halfword/word, signed/unsigned).     *
+ * Big-endian element order (element 0 = most significant). Scalar, spec-    *
+ * faithful. Declared in vectorintrinsics.h.                                 *
+ * ======================================================================== */
+
+#define VB(v)  ((unsigned char*)&(v))
+#define VBc(v) ((const unsigned char*)&(v))
+#define VH(v)  ((unsigned short*)&(v))
+#define VHc(v) ((const unsigned short*)&(v))
+#define VSHc(v)((const short*)&(v))
+#define VSWc(v)((const int*)&(v))
+static int _clmp(long long v,long long lo,long long hi){return (int)(v<lo?lo:v>hi?hi:v);}
+
+/* ---- logical ---- */
+__vector4 __vandc(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i)r.vector4_u32[i]=a.vector4_u32[i]&~b.vector4_u32[i];return r;}
+__vector4 __vnor (__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i)r.vector4_u32[i]=~(a.vector4_u32[i]|b.vector4_u32[i]);return r;}
+
+/* ---- add/sub modulo (wraparound) ---- */
+__vector4 __vaddubm(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<16;++i)VB(r)[i]=(unsigned char)(VBc(a)[i]+VBc(b)[i]);return r;}
+__vector4 __vadduhm(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<8;++i)VH(r)[i]=(unsigned short)(VHc(a)[i]+VHc(b)[i]);return r;}
+__vector4 __vadduwm(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i)r.vector4_u32[i]=a.vector4_u32[i]+b.vector4_u32[i];return r;}
+__vector4 __vsububm(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<16;++i)VB(r)[i]=(unsigned char)(VBc(a)[i]-VBc(b)[i]);return r;}
+__vector4 __vsubuhm(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<8;++i)VH(r)[i]=(unsigned short)(VHc(a)[i]-VHc(b)[i]);return r;}
+__vector4 __vsubuwm(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i)r.vector4_u32[i]=a.vector4_u32[i]-b.vector4_u32[i];return r;}
+
+/* ---- add/sub saturate (the ones not already defined) ---- */
+__vector4 __vaddsbs(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<16;++i)((signed char*)VB(r))[i]=(signed char)_clmp((long long)((const signed char*)VBc(a))[i]+((const signed char*)VBc(b))[i],-128,127);return r;}
+__vector4 __vadduws(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i){unsigned long long s=(unsigned long long)a.vector4_u32[i]+b.vector4_u32[i];r.vector4_u32[i]=(unsigned)(s>0xFFFFFFFFull?0xFFFFFFFFull:s);}return r;}
+__vector4 __vsubsbs(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<16;++i)((signed char*)VB(r))[i]=(signed char)_clmp((long long)((const signed char*)VBc(a))[i]-((const signed char*)VBc(b))[i],-128,127);return r;}
+__vector4 __vsububs(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<16;++i){int d=(int)VBc(a)[i]-VBc(b)[i];VB(r)[i]=(unsigned char)(d<0?0:d);}return r;}
+__vector4 __vsubuhs(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<8;++i){int d=(int)VHc(a)[i]-VHc(b)[i];VH(r)[i]=(unsigned short)(d<0?0:d);}return r;}
+__vector4 __vsubuws(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i){long long d=(long long)a.vector4_u32[i]-b.vector4_u32[i];r.vector4_u32[i]=(unsigned)(d<0?0:d);}return r;}
+
+/* ---- max/min ---- */
+#define MINMAXB(nm,ty,cmp) __vector4 nm(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<16;++i){ty x=((const ty*)VBc(a))[i],y=((const ty*)VBc(b))[i];((ty*)VB(r))[i]=cmp;}return r;}
+#define MINMAXH(nm,ty,cmp) __vector4 nm(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<8;++i){ty x=((const ty*)VHc(a))[i],y=((const ty*)VHc(b))[i];((ty*)VH(r))[i]=cmp;}return r;}
+#define MINMAXW(nm,ty,cmp) __vector4 nm(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i){ty x=((const ty*)&a)[i],y=((const ty*)&b)[i];((ty*)&r)[i]=cmp;}return r;}
+MINMAXB(__vmaxub,unsigned char,x>y?x:y) MINMAXB(__vmaxsb,signed char,x>y?x:y) MINMAXB(__vminub,unsigned char,x<y?x:y) MINMAXB(__vminsb,signed char,x<y?x:y)
+MINMAXH(__vmaxuh,unsigned short,x>y?x:y) MINMAXH(__vmaxsh,short,x>y?x:y) MINMAXH(__vminuh,unsigned short,x<y?x:y) MINMAXH(__vminsh,short,x<y?x:y)
+MINMAXW(__vmaxuw,unsigned int,x>y?x:y) MINMAXW(__vmaxsw,int,x>y?x:y) MINMAXW(__vminuw,unsigned int,x<y?x:y) MINMAXW(__vminsw,int,x<y?x:y)
+
+/* ---- compare (all-ones where true) ---- */
+#define CMPB(nm,ty,op) __vector4 nm(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<16;++i)VB(r)[i]=(((const ty*)VBc(a))[i] op ((const ty*)VBc(b))[i])?0xFFu:0;return r;}
+#define CMPH(nm,ty,op) __vector4 nm(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<8;++i)VH(r)[i]=(((const ty*)VHc(a))[i] op ((const ty*)VHc(b))[i])?0xFFFFu:0;return r;}
+#define CMPW(nm,ty,op) __vector4 nm(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i)r.vector4_u32[i]=(((const ty*)&a)[i] op ((const ty*)&b)[i])?0xFFFFFFFFu:0;return r;}
+CMPB(__vcmpequb,unsigned char,==) CMPH(__vcmpequh,unsigned short,==) CMPW(__vcmpequw,unsigned int,==)
+CMPH(__vcmpgtsh,short,>) CMPH(__vcmpgtuh,unsigned short,>) CMPW(__vcmpgtsw,int,>) CMPW(__vcmpgtuw,unsigned int,>)
+
+/* ---- merge (halfword/word; byte forms already defined) ---- */
+__vector4 __vmrghh(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i){VH(r)[2*i]=VHc(a)[i];VH(r)[2*i+1]=VHc(b)[i];}return r;}
+__vector4 __vmrglh(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i){VH(r)[2*i]=VHc(a)[4+i];VH(r)[2*i+1]=VHc(b)[4+i];}return r;}
+__vector4 __vmrghw(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<2;++i){r.vector4_u32[2*i]=a.vector4_u32[i];r.vector4_u32[2*i+1]=b.vector4_u32[i];}return r;}
+__vector4 __vmrglw(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<2;++i){r.vector4_u32[2*i]=a.vector4_u32[2+i];r.vector4_u32[2*i+1]=b.vector4_u32[2+i];}return r;}
+
+/* ---- pack (a -> high half of result, b -> low half) ---- */
+__vector4 __vpkuhum(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<8;++i)VB(r)[i]=(unsigned char)VHc(a)[i];for(unsigned i=0;i<8;++i)VB(r)[8+i]=(unsigned char)VHc(b)[i];return r;}
+__vector4 __vpkuwum(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i)VH(r)[i]=(unsigned short)a.vector4_u32[i];for(unsigned i=0;i<4;++i)VH(r)[4+i]=(unsigned short)b.vector4_u32[i];return r;}
+__vector4 __vpkuhus(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<8;++i)VB(r)[i]=(unsigned char)(VHc(a)[i]>255?255:VHc(a)[i]);for(unsigned i=0;i<8;++i)VB(r)[8+i]=(unsigned char)(VHc(b)[i]>255?255:VHc(b)[i]);return r;}
+__vector4 __vpkuwus(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i)VH(r)[i]=(unsigned short)(a.vector4_u32[i]>65535?65535:a.vector4_u32[i]);for(unsigned i=0;i<4;++i)VH(r)[4+i]=(unsigned short)(b.vector4_u32[i]>65535?65535:b.vector4_u32[i]);return r;}
+__vector4 __vpkshus(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<8;++i)VB(r)[i]=(unsigned char)_clmp(VSHc(a)[i],0,255);for(unsigned i=0;i<8;++i)VB(r)[8+i]=(unsigned char)_clmp(VSHc(b)[i],0,255);return r;}
+__vector4 __vpkshss(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<8;++i)((signed char*)VB(r))[i]=(signed char)_clmp(VSHc(a)[i],-128,127);for(unsigned i=0;i<8;++i)((signed char*)VB(r))[8+i]=(signed char)_clmp(VSHc(b)[i],-128,127);return r;}
+__vector4 __vpkswus(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i)VH(r)[i]=(unsigned short)_clmp(VSWc(a)[i],0,65535);for(unsigned i=0;i<4;++i)VH(r)[4+i]=(unsigned short)_clmp(VSWc(b)[i],0,65535);return r;}
+__vector4 __vpkswss(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i)((short*)VH(r))[i]=(short)_clmp(VSWc(a)[i],-32768,32767);for(unsigned i=0;i<4;++i)((short*)VH(r))[4+i]=(short)_clmp(VSWc(b)[i],-32768,32767);return r;}
+
+/* ---- unpack signed (high = elements 0..n/2, low = the rest) ---- */
+__vector4 __vupkhsb(__vector4 b){__vector4 r;for(unsigned i=0;i<8;++i)((short*)VH(r))[i]=(short)((const signed char*)VBc(b))[i];return r;}
+__vector4 __vupklsb(__vector4 b){__vector4 r;for(unsigned i=0;i<8;++i)((short*)VH(r))[i]=(short)((const signed char*)VBc(b))[8+i];return r;}
+__vector4 __vupkhsh(__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i)((int*)&r)[i]=(int)VSHc(b)[i];return r;}
+__vector4 __vupklsh(__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i)((int*)&r)[i]=(int)VSHc(b)[4+i];return r;}
+
+/* ---- per-element shifts (count = low bits of the matching element in VRB) ---- */
+__vector4 __vslb(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<16;++i)VB(r)[i]=(unsigned char)(VBc(a)[i]<<(VBc(b)[i]&7));return r;}
+__vector4 __vslh(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<8;++i)VH(r)[i]=(unsigned short)(VHc(a)[i]<<(VHc(b)[i]&15));return r;}
+__vector4 __vslw(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i)r.vector4_u32[i]=a.vector4_u32[i]<<(b.vector4_u32[i]&31);return r;}
+__vector4 __vsrb(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<16;++i)VB(r)[i]=(unsigned char)(VBc(a)[i]>>(VBc(b)[i]&7));return r;}
+__vector4 __vsrh(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<8;++i)VH(r)[i]=(unsigned short)(VHc(a)[i]>>(VHc(b)[i]&15));return r;}
+__vector4 __vsrw(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i)r.vector4_u32[i]=a.vector4_u32[i]>>(b.vector4_u32[i]&31);return r;}
+__vector4 __vsrab(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<16;++i)((signed char*)VB(r))[i]=(signed char)(((const signed char*)VBc(a))[i]>>(VBc(b)[i]&7));return r;}
+__vector4 __vsrah(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<8;++i)((short*)VH(r))[i]=(short)(VSHc(a)[i]>>(VHc(b)[i]&15));return r;}
+__vector4 __vsraw(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i)((int*)&r)[i]=VSWc(a)[i]>>(b.vector4_u32[i]&31);return r;}
+
+/* ---- rotate left per element ---- */
+__vector4 __vrlb(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<16;++i){unsigned s=VBc(b)[i]&7,v=VBc(a)[i];VB(r)[i]=(unsigned char)((v<<s)|(v>>((8-s)&7)));}return r;}
+__vector4 __vrlh(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<8;++i){unsigned s=VHc(b)[i]&15,v=VHc(a)[i];VH(r)[i]=(unsigned short)((v<<s)|(v>>((16-s)&15)));}return r;}
+__vector4 __vrlw(__vector4 a,__vector4 b){__vector4 r;for(unsigned i=0;i<4;++i){unsigned s=b.vector4_u32[i]&31,v=a.vector4_u32[i];r.vector4_u32[i]=s?((v<<s)|(v>>(32-s))):v;}return r;}
+
+/* ---- whole-vector bit shift (count = low 3 bits of the last byte of VRB) ---- */
+__vector4 __vsl(__vector4 a,__vector4 b){__vector4 r;unsigned s=VBc(b)[15]&7;const unsigned char*p=VBc(a);unsigned char*o=VB(r);for(unsigned i=0;i<16;++i){unsigned hi=p[i]<<s;unsigned lo=(i+1<16)?(p[i+1]>>(8-s)):0;o[i]=(unsigned char)(s?(hi|lo):p[i]);}return r;}
+__vector4 __vsr(__vector4 a,__vector4 b){__vector4 r;unsigned s=VBc(b)[15]&7;const unsigned char*p=VBc(a);unsigned char*o=VB(r);for(int i=15;i>=0;--i){unsigned lo=p[i]>>s;unsigned hi=(i>0)?(p[i-1]<<(8-s)):0;o[i]=(unsigned char)(s?(lo|hi):p[i]);}return r;}
+
+/* ---- splat byte ---- */
+__vector4 __vspltb(__vector4 b,unsigned uim){__vector4 r;unsigned char v=VBc(b)[uim&15];for(unsigned i=0;i<16;++i)VB(r)[i]=v;return r;}
+
+/* ---- convert unsigned <-> float with a power-of-two scale ---- */
+__vector4 __vcfux(__vector4 b,unsigned shift){__vector4 r;float d=(float)(1u<<(shift&31));for(unsigned i=0;i<4;++i)r.vector4_f32[i]=(float)b.vector4_u32[i]/d;return r;}
+__vector4 __vctuxs(__vector4 b,unsigned shift){__vector4 r;float m=(float)(1u<<(shift&31));for(unsigned i=0;i<4;++i){double v=(double)b.vector4_f32[i]*m;r.vector4_u32[i]=(unsigned)(v<0?0:v>4294967295.0?4294967295.0:v);}return r;}
+
+/* ---- store vector element byte/halfword (word form already defined) ---- */
+void __stvebx(__vector4 v,void* base,int off){uintptr_t ea=(uintptr_t)base+(uintptr_t)off;*(unsigned char*)ea=VBc(v)[ea&15];}
+void __stvehx(__vector4 v,void* base,int off){uintptr_t ea=(uintptr_t)base+(uintptr_t)off;*(unsigned short*)(ea&~(uintptr_t)1)=VHc(v)[(ea>>1)&7];}
