@@ -646,3 +646,10 @@ __vector4 __vctuxs(__vector4 b,unsigned shift){__vector4 r;float m=(float)(1u<<(
 /* ---- store vector element byte/halfword (word form already defined) ---- */
 void __stvebx(__vector4 v,void* base,int off){uintptr_t ea=(uintptr_t)base+(uintptr_t)off;*(unsigned char*)ea=VBc(v)[ea&15];}
 void __stvehx(__vector4 v,void* base,int off){uintptr_t ea=(uintptr_t)base+(uintptr_t)off;*(unsigned short*)(ea&~(uintptr_t)1)=VHc(v)[(ea>>1)&7];}
+
+/* ---- VMX float round-to-integer family (result stays float) --------------- */
+#include <math.h>
+__vector4 __vrfin(__vector4 a){ __vector4 r; for(unsigned i=0;i<4;++i) r.vector4_f32[i]=rintf(a.vector4_f32[i]); return r; }   /* nearest */
+__vector4 __vrfim(__vector4 a){ __vector4 r; for(unsigned i=0;i<4;++i) r.vector4_f32[i]=floorf(a.vector4_f32[i]); return r; }  /* minus  */
+__vector4 __vrfip(__vector4 a){ __vector4 r; for(unsigned i=0;i<4;++i) r.vector4_f32[i]=ceilf(a.vector4_f32[i]); return r; }   /* plus   */
+__vector4 __vrfiz(__vector4 a){ __vector4 r; for(unsigned i=0;i<4;++i) r.vector4_f32[i]=truncf(a.vector4_f32[i]); return r; }  /* zero   */
