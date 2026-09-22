@@ -334,6 +334,44 @@ def read_elf_symbol_addrs(blob):
     return out
 
 
+def derive_auto_imports(blob, xdk_lib_dir):
+    """Derive the import table from the kernel-import thunks the link kept.
+
+    With the global import library (build_import_lib.py) a title just links
+    kernel_import.a and --gc-sections keeps the thunks its code reaches. Here we
+    read those surviving symbols back out (<name> thunk + __imp_<name> record),
+    look each up in the same ordinal index the library was built from, group them
+    into the XEX import name table, and report the module_index each record must
+    carry -- so the caller can patch the placeholder-0 index the library left.
+
+    Returns (imports, patches): imports is the [(module, [record_va, ...])] list
+    build_import_libraries wants; patches is [(record_va, module_index)] naming
+    every 4-byte record word whose bits 16-23 must become module_index.
+    """
+    import gen_import_stubs as _g
+    index = _g.build_ordinal_index(xdk_lib_dir)
+    syms = read_elf_symbol_addrs(blob)                 # defined name -> VA
+    by_module = {}
+    for name, (module, ordinal, is_var) in index.items():
+        imp_va = syms.get("__imp_" + name)
+        if imp_va is None:
+            continue                                   # thunk was gc'd; not imported
+        thunk_va = None if is_var else syms.get(name)
+        by_module.setdefault(module, []).append((ordinal, is_var, thunk_va, imp_va))
+    imports, patches = [], []
+    for module_index, module in enumerate(sorted(by_module)):
+        records = []
+        for _ordinal, is_var, thunk_va, imp_va in by_module[module]:
+            records.append(imp_va)                     # the IAT record
+            patches.append((imp_va, module_index))
+            if not is_var:                             # a function also lists its thunk;
+                records.append(thunk_va)               # both thunk words carry the index
+                patches.append((thunk_va, module_index))
+                patches.append((thunk_va + 4, module_index))
+        imports.append((module, records))
+    return imports, patches
+
+
 def build_import_libraries(imports):
     """Build the IMPORT_LIBRARIES optional-header block.
 
@@ -487,7 +525,8 @@ def build_security_info(image_size, load_address, sections):
     return out
 
 
-def pack(elf_path, out_path, base_override=None, imports=None, sign=True, encrypt=True):
+def pack(elf_path, out_path, base_override=None, imports=None, sign=True, encrypt=True,
+         auto_imports_xdk=None):
     blob = open(elf_path, "rb").read()
     load_base, sections, entry = read_elf_sections(blob)
     if base_override is not None and base_override != load_base:
@@ -497,7 +536,14 @@ def pack(elf_path, out_path, base_override=None, imports=None, sign=True, encryp
     # resolve any import records: each is a library plus ELF symbol names whose
     # addresses become the import table (the records themselves live in the image)
     import_block = None
-    if imports:
+    patches = []
+    if auto_imports_xdk:
+        # SDK-style: the title linked the global kernel_import.a; derive the table
+        # from the thunks the link kept and patch the module_index the lib left 0.
+        resolved, patches = derive_auto_imports(blob, auto_imports_xdk)
+        if resolved:
+            import_block = build_import_libraries(resolved)
+    elif imports:
         syms = read_elf_symbol_addrs(blob)
         resolved = []
         for libname, symnames in imports:
@@ -510,6 +556,16 @@ def pack(elf_path, out_path, base_override=None, imports=None, sign=True, encryp
         import_block = build_import_libraries(resolved)
 
     load_base, image, entry, image_size = build_pe_basefile(load_base, sections, entry)
+
+    # Patch each import record word's module_index (bits 16-23), now that the
+    # image bytes are placed. VA maps to image offset as VA - load_base.
+    if patches:
+        image = bytearray(image)
+        for va, module_index in patches:
+            off = va - load_base
+            (word,) = struct.unpack_from(">I", image, off)
+            struct.pack_into(">I", image, off, word | (module_index << 16))
+        image = bytes(image)
 
     # the basefile is the PE image; nothing is zero-trimmed for the first cut.
     # the security-info section table counts pages in the load region's page
@@ -620,6 +676,10 @@ def main():
                          "(variable then thunk per function) as ELF symbols")
     ap.add_argument("--import-manifest", default=None,
                     help="JSON from gen_import_stubs.py listing the import records")
+    ap.add_argument("--auto-imports", default=None, metavar="XDK_LIB_DIR",
+                    help="SDK-style: derive the import table from the global "
+                         "kernel_import.a thunks the link kept (no manifest); the "
+                         "arg is the XDK lib\\xbox dir for the ordinal lookup")
     ap.add_argument("--no-sign", dest="sign", action="store_false",
                     help="leave the XEX unsigned and unencrypted (default: "
                          "debug-sign and -encrypt it so a real kit will load it)")
@@ -636,7 +696,8 @@ def main():
         m = json.load(open(args.import_manifest))
         for lib in m["libraries"]:
             imports.append((lib["module"], lib["records"]))
-    pack(args.elf, args.out, args.base, imports, sign=args.sign, encrypt=args.encrypt)
+    pack(args.elf, args.out, args.base, imports, sign=args.sign, encrypt=args.encrypt,
+         auto_imports_xdk=args.auto_imports)
 
 
 if __name__ == "__main__":
