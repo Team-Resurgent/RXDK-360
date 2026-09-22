@@ -100,52 +100,25 @@ namespace Rxdk.Xbox360.Modern.Build
 
             var ldflags = ExtraLinkerArgs();
 
-            // Trial link (no stubs): its undefined-symbol list IS the kernel-import
-            // discovery. --error-limit=0 so the full list is reported; --no-demangle
-            // so C++ names stay intact for genstubs.
-            var trial = LinkElf(objs, libs, null, layout, elf, ldflags);
-            var undefined = trial.ExitCode != 0 ? UndefinedFrom(trial.Combined) : new List<string>();
-
-            string manifest = null, stubsObj = null;
-            if (undefined.Count > 0)
-            {
-                string stubsS = outBase + "_stubs.s";
-                manifest = outBase + "_stubs.json";
-                var gs = Run(XexToolPath, new[] { "genstubs", "--xdk", XdkLibDir,
-                    "--names", string.Join(",", undefined), "-o", stubsS, "--manifest", manifest });
-                Log.LogMessage(MessageImportance.Normal, gs.StdOut);
-                if (gs.ExitCode != 0)
-                {
-                    LogDiagnostics(gs.Combined);
-                    Log.LogError("genstubs failed");
-                    return false;
-                }
-                // A symbol that is not a kernel export is a genuine link error.
-                var m = UnresolvedRe.Match(gs.StdOut);
-                if (m.Success)
-                {
-                    Log.LogError("unresolved symbols (not kernel imports): {0}", m.Groups[1].Value.Trim());
-                    return false;
-                }
-                // ld.lld links objects, not assembly: assemble the thunks first.
-                stubsObj = outBase + "_stubs.o";
-                var asm = Run(ClangPath, new[] { "--target=" + MsTriple, "-c", stubsS, "-o", stubsObj });
-                if (asm.ExitCode != 0)
-                {
-                    LogDiagnostics(asm.Combined);
-                    Log.LogError("assembling import stubs failed");
-                    return false;
-                }
-            }
-
-            // Final link.
-            var final = LinkElf(objs, libs, stubsObj, layout, elf, ldflags);
+            // Single link against the global kernel import library (kernel_import.a,
+            // in `libs` via ResolveLibraries). Every kernel/xam/xbdm export is its own
+            // gc-droppable COMDAT group, so --gc-sections keeps exactly the thunks the
+            // title reaches -- no trial link, no per-title genstubs. A symbol that is
+            // neither defined nor a kernel import is a genuine unresolved-symbol error,
+            // which this link reports directly.
+            var final = LinkElf(objs, libs, null, layout, elf, ldflags);
             if (final.ExitCode != 0)
             {
                 LogDiagnostics(final.Combined);
                 Log.LogError("link failed");
                 return false;
             }
+
+            // Bind the kernel imports the link kept from the global kernel_import.a
+            // (which leaves module_index a placeholder): patch the real per-title
+            // module index into each record word and emit the import manifest.
+            string manifest = BindKernelImports(elf, outBase);
+            if (Log.HasLoggedErrors) return false;
 
             // Pack the ELF into a XEX2, then debug-sign it. A zero RSA signature
             // is classified Retail; this kit then returns LDRX C000007B. `-m d`
@@ -309,6 +282,12 @@ namespace Rxdk.Xbox360.Modern.Build
                 {
                     pre.Add(Path.Combine(LibcDir, "libcpp.a"));
                     pre.Add(Path.Combine(LibcDir, "libc.a"));
+                    // The global kernel import library (like an SDK's xboxkrnl.lib):
+                    // one COMDAT group per kernel/xam/xbdm export, so --gc-sections
+                    // keeps exactly the thunks the title reaches. This replaces the
+                    // old per-title trial-link + XexTool genstubs discovery.
+                    var kimp = Path.Combine(LibcDir, "kernel_import.a");
+                    if (File.Exists(kimp)) pre.Add(kimp);
                 }
                 if (!string.IsNullOrEmpty(CoffDir))
                     user.Add(Path.Combine(CoffDir, "xapilib.a"));
@@ -363,6 +342,119 @@ namespace Rxdk.Xbox360.Modern.Build
                 if (!seen.Contains(name)) seen.Add(name);
             }
             return seen;
+        }
+
+        private static uint Be32(byte[] b, int o) =>
+            ((uint)b[o] << 24) | ((uint)b[o + 1] << 16) | ((uint)b[o + 2] << 8) | b[o + 3];
+        private static ushort Be16(byte[] b, int o) => (ushort)((b[o] << 8) | b[o + 1]);
+        private static void PutBe32(byte[] b, int o, uint v)
+        { b[o] = (byte)(v >> 24); b[o + 1] = (byte)(v >> 16); b[o + 2] = (byte)(v >> 8); b[o + 3] = (byte)v; }
+
+        private static readonly Regex ImportLibRe = new Regex(
+            "\\{\\s*\"module\"\\s*:\\s*\"(?<m>[^\"]+)\"\\s*,\\s*\"records\"\\s*:\\s*\\[(?<r>[^\\]]*)\\]",
+            RegexOptions.Singleline | RegexOptions.Compiled);
+        private static readonly Regex ImportRecRe = new Regex("\"([^\"]+)\"", RegexOptions.Compiled);
+
+        /// <summary>
+        /// Bind the kernel imports the link kept. A title links exactly one archive
+        /// for the console kernel -- the global kernel_import.a (build_import_lib.py)
+        /// -- and --gc-sections keeps only the thunks its code reaches. Those thunks
+        /// carry their ordinal but a placeholder module_index of 0, because the real
+        /// index is the module's slot in THIS title's XEX import name table, which is
+        /// not known until we see which modules the title ended up importing. Here we
+        /// read the kept __imp_ records out of the linked ELF, ask XexTool genstubs
+        /// which module each belongs to (the same ordinal index the library was built
+        /// from), patch the real module_index into every record word in place, and
+        /// return the manifest for `pack --import-manifest`. No per-title stub archive
+        /// is linked; this is just the per-title import binding imagexex would do.
+        /// Returns the manifest path, or null when the title imports nothing.
+        /// </summary>
+        private string BindKernelImports(string elf, string outBase)
+        {
+            byte[] blob = File.ReadAllBytes(elf);
+            if (blob.Length < 0x34 || blob[0] != 0x7F || blob[1] != (byte)'E' ||
+                blob[2] != (byte)'L' || blob[3] != (byte)'F')
+            { Log.LogError("import binding: not an ELF: {0}", elf); return null; }
+
+            int shoff = (int)Be32(blob, 0x20);
+            int shent = Be16(blob, 0x2E), shnum = Be16(blob, 0x30), shstrndx = Be16(blob, 0x32);
+            int Sh(int i, int f) => shoff + i * shent + f * 4;   // u32 field f of section i
+            var secType = new uint[shnum]; var secAddr = new uint[shnum];
+            var secOff = new uint[shnum]; var secSize = new uint[shnum]; var secName = new uint[shnum];
+            for (int i = 0; i < shnum; i++)
+            {
+                secName[i] = Be32(blob, Sh(i, 0)); secType[i] = Be32(blob, Sh(i, 1));
+                secAddr[i] = Be32(blob, Sh(i, 3)); secOff[i] = Be32(blob, Sh(i, 4));
+                secSize[i] = Be32(blob, Sh(i, 5));
+            }
+            int shstrOff = (int)secOff[shstrndx];
+            string CStr(int at) { int e = at; while (blob[e] != 0) e++; return Encoding.ASCII.GetString(blob, at, e - at); }
+            // The IAT records all land in .kvars; only __imp_ symbols there are kernel
+            // imports (so a stray dllimport-style __imp_ from elsewhere is ignored).
+            uint kvLo = 0, kvHi = 0;
+            for (int i = 0; i < shnum; i++)
+                if (CStr(shstrOff + (int)secName[i]) == ".kvars") { kvLo = secAddr[i]; kvHi = secAddr[i] + secSize[i]; }
+
+            int symIdx = -1;
+            for (int i = 0; i < shnum; i++) if (secType[i] == 2) symIdx = i;   // SHT_SYMTAB
+            if (symIdx < 0) return null;
+            int symOff = (int)secOff[symIdx], symSize = (int)secSize[symIdx], symEnt = (int)Be32(blob, Sh(symIdx, 9));
+            int strOff = (int)secOff[(int)Be32(blob, Sh(symIdx, 6))];   // sh_link -> strtab
+            var addr = new Dictionary<string, uint>(StringComparer.Ordinal);
+            for (int o = symOff; o + symEnt <= symOff + symSize; o += symEnt)
+            {
+                uint stName = Be32(blob, o), stValue = Be32(blob, o + 4);
+                if (stName != 0 && stValue != 0) addr[CStr(strOff + (int)stName)] = stValue;
+            }
+
+            // Kept imports = the base name of every __imp_ record placed in .kvars.
+            var names = new List<string>();
+            foreach (var kv in addr)
+                if (kv.Key.StartsWith("__imp_", StringComparison.Ordinal) && kv.Value >= kvLo && kv.Value < kvHi)
+                    names.Add(kv.Key.Substring(6));
+            if (names.Count == 0) return null;
+            names.Sort(StringComparer.Ordinal);
+
+            // genstubs is the module oracle: it maps each name to its module and
+            // writes the manifest whose library order defines the module indices.
+            string manifest = outBase + "_imports.json";
+            var gs = Run(XexToolPath, new[] { "genstubs", "--xdk", XdkLibDir, "--names",
+                string.Join(",", names), "-o", outBase + "_imports.s", "--manifest", manifest });
+            if (gs.ExitCode != 0) { LogDiagnostics(gs.Combined); Log.LogError("import binding (genstubs) failed"); return null; }
+            var un = UnresolvedRe.Match(gs.StdOut);
+            if (un.Success) { Log.LogError("unresolved symbols (not kernel imports): {0}", un.Groups[1].Value.Trim()); return null; }
+
+            int VaToOff(uint va)
+            {
+                for (int i = 0; i < shnum; i++)
+                    if (secType[i] != 8 && secSize[i] != 0 && va >= secAddr[i] && va < secAddr[i] + secSize[i])
+                        return (int)(secOff[i] + (va - secAddr[i]));
+                throw new InvalidOperationException($"import record VA 0x{va:X8} is in no section");
+            }
+            void SetIndex(uint va, int mi)
+            {
+                int off = VaToOff(va);
+                PutBe32(blob, off, (Be32(blob, off) & ~0x00FF0000u) | ((uint)mi << 16));
+            }
+
+            // Patch the module index into every kept record, per the manifest's
+            // library order. A function lists "__imp_x" (its IAT slot) and "x" (its
+            // two-word thunk); a data export lists only "__imp_x".
+            string json = File.ReadAllText(manifest);
+            int index = 0;
+            foreach (Match lib in ImportLibRe.Matches(json))
+            {
+                foreach (Match rec in ImportRecRe.Matches(lib.Groups["r"].Value))
+                {
+                    string r = rec.Groups[1].Value;
+                    if (!addr.TryGetValue(r, out uint va)) continue;
+                    SetIndex(va, index);
+                    if (!r.StartsWith("__imp_", StringComparison.Ordinal)) SetIndex(va + 4, index);
+                }
+                index++;
+            }
+            File.WriteAllBytes(elf, blob);
+            return manifest;
         }
 
         private static uint ParseBase(string s)
@@ -515,9 +607,9 @@ SECTIONS {{
   . = ALIGN(0x{page:X});             /* CODE after RO: ImageXex IM1031 if RX shares the header page */
   .text   : {{ *(.text*) }}
   . = ALIGN(0x{page:X});             /* import thunks on their own CODE page */
-  .kthunks : ALIGN(16) {{ KEEP(*(.kthunks)) }}
+  .kthunks : ALIGN(16) {{ *(.kthunks .kthunks.*) }}
   . = ALIGN(0x{page:X});             /* writable region: IAT then data. HV patches .kvars in place (C0000225 if RO). */
-  .kvars  : {{ KEEP(*(.kvars)) }}
+  .kvars  : {{ *(.kvars .kvars.*) }}
   .init_array : {{                   /* C++ static constructors, run pre-main */
     PROVIDE_HIDDEN(__init_array_start = .);
     KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*)))

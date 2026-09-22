@@ -36,3 +36,4 @@ build-log*.txt
 /vendor/llvm-project/
 /vendor/xextool/
 .scratch_clang/
+build/libc/kernel_import.*
