@@ -87,6 +87,35 @@ namespace Rxdk.Xdk.Unpacker
             // included on its own). nuiapi.h has its own include guard, so a TU that
             // already included it is unaffected.
             PrependInclude(Path.Combine(xboxInc, "XStudioApi.h"), "nuiapi.h");
+
+            // stdio.h/wchar.h/mbstring.h each define `typedef struct _iobuf FILE;`
+            // under `#ifndef _FILE_DEFINED`. picolibc already provides FILE (as
+            // struct __file) under its own guard `_FILE_DECLARED`, which the XDK
+            // guard does not know about -- so the block fires and clang reports a
+            // typedef redefinition (_iobuf vs __file). Teach the XDK guard about
+            // picolibc's so the block is skipped whenever picolibc's FILE is in
+            // scope, leaving one FILE (picolibc's) for the whole TU.
+            foreach (var h in new[] { "stdio.h", "wchar.h", "mbstring.h" })
+                ReplaceOnce(Path.Combine(xboxInc, h),
+                    "#ifndef _FILE_DEFINED\r\nstruct _iobuf",
+                    "#if !defined(_FILE_DEFINED) && !defined(_FILE_DECLARED) /* RXDK360 */\r\nstruct _iobuf",
+                    "#ifndef _FILE_DEFINED\nstruct _iobuf",
+                    "#if !defined(_FILE_DEFINED) && !defined(_FILE_DECLARED) /* RXDK360 */\nstruct _iobuf");
+        }
+
+        // Replace the first occurrence of a fixed anchor (CRLF and LF forms tried
+        // in turn), idempotent because the replacement no longer contains the
+        // anchor. A file already patched (or without the anchor) is left as-is.
+        private static void ReplaceOnce(string path, string crlfFrom, string crlfTo,
+                                        string lfFrom, string lfTo)
+        {
+            if (!File.Exists(path))
+                return;
+            string txt = File.ReadAllText(path);
+            int i = txt.IndexOf(crlfFrom, StringComparison.Ordinal);
+            if (i >= 0) { File.WriteAllText(path, txt.Substring(0, i) + crlfTo + txt.Substring(i + crlfFrom.Length)); return; }
+            i = txt.IndexOf(lfFrom, StringComparison.Ordinal);
+            if (i >= 0) { File.WriteAllText(path, txt.Substring(0, i) + lfTo + txt.Substring(i + lfFrom.Length)); }
         }
 
         private static void PrependInclude(string header, string include)
