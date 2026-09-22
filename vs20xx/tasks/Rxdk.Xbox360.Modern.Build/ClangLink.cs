@@ -13,11 +13,11 @@ namespace Rxdk.Xbox360.Modern.Build
 {
     /// <summary>
     /// Link compiled objects into a bootable XEX with the modern (LLVM) toolchain,
-    /// resolving the kernel imports a title calls. A faithful MSBuild port of
-    /// mktitle.py's link stage: write the layout script, trial-link with ld.lld to
-    /// discover the undefined kernel symbols, run XexTool genstubs to synthesise
-    /// linkable import thunks + a JSON import manifest, assemble the thunks with
-    /// clang, link the final ELF, then pack it with XexTool.
+    /// resolving the kernel imports a title calls. Writes the layout script and
+    /// links once against the global kernel import library (kernel_import.a), whose
+    /// per-import COMDAT groups let --gc-sections keep exactly the thunks the title
+    /// reaches; binds those kept imports (BindKernelImports: patch the per-title
+    /// module index, emit the manifest), then packs and debug-signs with XexTool.
     /// </summary>
     public sealed class ClangLink : ModernTool
     {
