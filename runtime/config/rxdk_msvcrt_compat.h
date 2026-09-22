@@ -108,6 +108,10 @@ static inline int _vscwprintf(const wchar_t *fmt, va_list a)
 /* ---- bounded printf (MS spelling) ---- */
 static inline int _vsnprintf_s(char *d, size_t dstsize, size_t count, const char *fmt, va_list a)
 { (void)count; return vsnprintf(d, dstsize, fmt, a); }
+static inline int _snprintf_s(char *d, size_t dstsize, size_t count, const char *fmt, ...)
+{ va_list a; int r; va_start(a, fmt); (void)count; r = vsnprintf(d, dstsize, fmt, a); va_end(a); return r; }
+static inline int _snwprintf_s(wchar_t *d, size_t dstsize, size_t count, const wchar_t *fmt, ...)
+{ va_list a; int r; va_start(a, fmt); (void)count; r = vswprintf(d, dstsize, fmt, a); va_end(a); return r; }
 
 /* ---- lowercase in place ---- */
 static inline int _wcslwr_s(wchar_t *s, size_t size)
@@ -117,18 +121,28 @@ static inline int _wcslwr_s(wchar_t *s, size_t size)
 static inline int _itoa_s(int val, char *buf, size_t size, int radix)
 { if (radix == 16) return snprintf(buf, size, "%x", (unsigned)val) < 0 ? 22 : 0;
   return snprintf(buf, size, "%d", val) < 0 ? 22 : 0; }
+static inline int _itow_s(int val, wchar_t *buf, size_t size, int radix)
+{ if (radix == 16) return swprintf(buf, size, L"%x", (unsigned)val) < 0 ? 22 : 0;
+  return swprintf(buf, size, L"%d", val) < 0 ? 22 : 0; }
 
 #ifdef __cplusplus
 }
 /* MSVC array-size-deducing overloads (C++ only). */
 template <size_t N> inline int _wcslwr_s(wchar_t (&s)[N]) { return _wcslwr_s(s, N); }
 template <size_t N> inline int _itoa_s(int val, char (&buf)[N], int radix) { return _itoa_s(val, buf, N, radix); }
+template <size_t N> inline int _itow_s(int val, wchar_t (&buf)[N], int radix) { return _itow_s(val, buf, N, radix); }
 /* _vsnprintf_s(buf, count, fmt, ap): buffer size deduced; count is usually
    _TRUNCATE (truncate to fit). Forward to vsnprintf bounded by the array size. */
 template <size_t N> inline int _vsnprintf_s(char (&d)[N], size_t count, const char *fmt, va_list a)
 { (void)count; return vsnprintf(d, N, fmt, a); }
 template <size_t N> inline int _vsnwprintf_s(wchar_t (&d)[N], size_t count, const wchar_t *fmt, va_list a)
 { (void)count; return vswprintf(d, N, fmt, a); }
+/* _snprintf_s(buf, count, fmt, ...): buffer size deduced (the 3-arg secure form,
+   distinct from the explicit-size overload above). */
+template <size_t N> inline int _snprintf_s(char (&d)[N], size_t count, const char *fmt, ...)
+{ va_list a; int r; va_start(a, fmt); (void)count; r = vsnprintf(d, N, fmt, a); va_end(a); return r; }
+template <size_t N> inline int _snwprintf_s(wchar_t (&d)[N], size_t count, const wchar_t *fmt, ...)
+{ va_list a; int r; va_start(a, fmt); (void)count; r = vswprintf(d, N, fmt, a); va_end(a); return r; }
 #endif
 
 /* ---- stack/heap alloc helpers. _malloca/_freea are paired; use the heap to
