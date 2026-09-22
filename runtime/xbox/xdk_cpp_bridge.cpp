@@ -162,21 +162,29 @@ extern "C" int   xps_Get(D3DXps*, const void**, unsigned long*)
 int D3DXps_Get(D3DXps* p, const void** pp, unsigned long* out) { return xps_Get(p, pp, out); }
 
 /* ---- XWMADecode (xwmadecode.a) ------------------------------------------ */
-/* XAUDIO2 namespace free functions; xwmadecode.a exports ?...@XAUDIO2@@. */
-struct tWAVEFORMATEX;
-struct XWMADECODE;
-struct XWMADECODE_INPUT_BUFFER_INFO;
+/* XAUDIO2-namespace free functions; the DECODE structs are ALSO in XAUDIO2
+   (Itanium: NS_10XWMADECODEE), so the tags must be declared inside the namespace
+   or the mangled name will not match what the title references. */
+struct tWAVEFORMATEX;   /* global (PBUtWAVEFORMATEX@@ / PK13tWAVEFORMATEX) */
 namespace XAUDIO2 {
+    struct XWMADECODE;
+    struct XWMADECODE_INPUT_BUFFER_INFO;
+
     extern "C" unsigned long xwma_GetRequiredBufferSize(const ::tWAVEFORMATEX*)
         __asm__("?XWMADecodeGetRequiredBufferSize@XAUDIO2@@YAKPBUtWAVEFORMATEX@@@Z");
     unsigned long XWMADecodeGetRequiredBufferSize(const ::tWAVEFORMATEX* f)
     { return xwma_GetRequiredBufferSize(f); }
 
-    extern "C" void xwma_ProcessData(::XWMADECODE*)
-        __asm__("?XWMADecodeProcessData@XAUDIO2@@YAJPAUXWMADECODE@1@@Z");
-    long XWMADecodeProcessData(::XWMADECODE* d) { xwma_ProcessData(d); return 0; }
+    extern "C" long xwma_Create(const ::tWAVEFORMATEX*, long(*)(void*, XWMADECODE_INPUT_BUFFER_INFO*), void*, unsigned char*, unsigned long, XWMADECODE**)
+        __asm__("?XWMADecodeCreate@XAUDIO2@@YAJPBUtWAVEFORMATEX@@P6AJPAXPAUXWMADECODE_INPUT_BUFFER_INFO@1@@Z1PAEKPAPAUXWMADECODE@1@@Z");
+    long XWMADecodeCreate(const ::tWAVEFORMATEX* f, long(*cb)(void*, XWMADECODE_INPUT_BUFFER_INFO*), void* ctx, unsigned char* buf, unsigned long n, XWMADECODE** out)
+    { return xwma_Create(f, cb, ctx, buf, n, out); }
 
-    extern "C" void xwma_Destroy(::XWMADECODE*)
+    extern "C" long xwma_ProcessData(XWMADECODE*)
+        __asm__("?XWMADecodeProcessData@XAUDIO2@@YAJPAUXWMADECODE@1@@Z");
+    long XWMADecodeProcessData(XWMADECODE* d) { return xwma_ProcessData(d); }
+
+    extern "C" void xwma_Destroy(XWMADECODE*)
         __asm__("?XWMADecodeDestroy@XAUDIO2@@YAXPAUXWMADECODE@1@@Z");
-    void XWMADecodeDestroy(::XWMADECODE* d) { xwma_Destroy(d); }
+    void XWMADecodeDestroy(XWMADECODE* d) { xwma_Destroy(d); }
 }
