@@ -442,3 +442,105 @@ __vector4 __vspltish(int sim)
 /* ---- scalar float select (fsel single) ----------------------------------- */
 /* __fsel/__fself: comparand >= 0.0 (including -0.0) selects valGE, else valLT. */
 float __fself(float c, float ge, float lt) { return c >= 0.0f ? ge : lt; }
+
+/* ---- VMX select / splat-halfword / alignment loads / partial stores ------- */
+
+/* Bitwise select: result bit = (VRC bit) ? VRB : VRA. */
+__vector4 __vsel(__vector4 a, __vector4 b, __vector4 c)
+{ __vector4 r; for(unsigned i=0;i<4u;++i) r.vector4_u32[i]=(a.vector4_u32[i]&~c.vector4_u32[i])|(b.vector4_u32[i]&c.vector4_u32[i]); return r; }
+
+/* Splat halfword: every halfword = VRB halfword[uim & 7]. */
+__vector4 __vsplth(__vector4 b, unsigned uim)
+{ __vector4 r; const unsigned short* pb=(const unsigned short*)&b; unsigned short* o=(unsigned short*)&r;
+  unsigned short v=pb[uim&7u]; for(unsigned i=0;i<8u;++i) o[i]=v; return r; }
+
+/* Load Vector for Shift Left/Right: permute-control vectors for aligning an
+   unaligned 16-byte access. sh = EA & 0xF. lvsl[i]=sh+i, lvsr[i]=16-sh+i. */
+__vector4 __lvsl(const void* base, int offset)
+{ __vector4 r; unsigned sh=(unsigned)(((uintptr_t)base+(uintptr_t)offset)&15u); unsigned char* o=(unsigned char*)&r;
+  for(unsigned i=0;i<16u;++i) o[i]=(unsigned char)(sh+i); return r; }
+__vector4 __lvsr(const void* base, int offset)
+{ __vector4 r; unsigned sh=(unsigned)(((uintptr_t)base+(uintptr_t)offset)&15u); unsigned char* o=(unsigned char*)&r;
+  for(unsigned i=0;i<16u;++i) o[i]=(unsigned char)(16u-sh+i); return r; }
+__vector4 __lvsl_volatile(const volatile void* base, int offset){ return __lvsl((const void*)base,offset); }
+__vector4 __lvsr_volatile(const volatile void* base, int offset){ return __lvsr((const void*)base,offset); }
+
+/* Store Vector Left/Right Indexed: partial stores, the mirror of __lvlx/__lvrx.
+   stvlx stores bytes [EA, next-16-boundary); stvrx stores [prev-boundary, EA). */
+void __stvlx(__vector4 vSrc, void* base, int offset)
+{ uintptr_t ea=(uintptr_t)base+(uintptr_t)offset; unsigned n=16u-(unsigned)(ea&15u);
+  const unsigned char* s=(const unsigned char*)&vSrc; unsigned char* p=(unsigned char*)ea;
+  for(unsigned i=0;i<n;++i) p[i]=s[i]; }
+void __stvrx(__vector4 vSrc, void* base, int offset)
+{ uintptr_t ea=(uintptr_t)base+(uintptr_t)offset; unsigned n=(unsigned)(ea&15u);
+  const unsigned char* s=(const unsigned char*)&vSrc; unsigned char* p=(unsigned char*)(ea-n);
+  for(unsigned i=0;i<n;++i) p[i]=s[16u-n+i]; }
+void __stvlx_volatile(__vector4 v, volatile void* base, int offset){ __stvlx(v,(void*)base,offset); }
+void __stvrx_volatile(__vector4 v, volatile void* base, int offset){ __stvrx(v,(void*)base,offset); }
+
+/* ---- VMX pack/unpack to D3D vertex formats (__vpkd3d / __vupkd3d) ---------
+ * DT selects the packed datatype, MS/SHW where the packed bits land in VRT.
+ * The common formats (D3DCOLOR and FLOAT16_2/4) are handled precisely; other
+ * NORM* formats fall back to a truncating 8-bit pack (linkable, rarely hit).
+ * Enum values mirror __VECTOR_PACK_TYPES/__VECTOR_PACK_MASK in vectorintrinsics.h. */
+enum { RXDK_VPACK_D3DCOLOR=0, RXDK_VPACK_NORMSHORT2=1, RXDK_VPACK_NORMPACKED32=2,
+       RXDK_VPACK_FLOAT16_2=3, RXDK_VPACK_NORMSHORT4=4, RXDK_VPACK_FLOAT16_4=5,
+       RXDK_VPACK_NORMPACKED64=6 };
+enum { RXDK_VPACK_32=1, RXDK_VPACK_64LO=2, RXDK_VPACK_64HI=3 };
+
+static unsigned short _f32_to_f16(float f)
+{
+    union { float f; unsigned u; } v; v.f=f;
+    unsigned s=(v.u>>16)&0x8000u; int e=(int)((v.u>>23)&0xFF)-127+15; unsigned m=v.u&0x7FFFFFu;
+    if(e<=0){ if(e<-10) return (unsigned short)s; m|=0x800000u; unsigned t=(unsigned)(14-e); unsigned a=(m+(1u<<(t-1))+(((m>>t)&1u)?0u:0u))>>t; return (unsigned short)(s|a); }
+    if(e>=31) return (unsigned short)(s|0x7C00u);
+    return (unsigned short)(s|((unsigned)e<<10)|((m+0x00001000u)>>13 & 0x3FFu));
+}
+static float _f16_to_f32(unsigned short h)
+{
+    unsigned s=(h&0x8000u)<<16; int e=(h>>10)&0x1F; unsigned m=h&0x3FFu; union{unsigned u;float f;}v;
+    if(e==0){ if(m==0){ v.u=s; return v.f; } while(!(m&0x400u)){ m<<=1; --e; } ++e; m&=~0x400u; }
+    else if(e==31){ v.u=s|0x7F800000u|(m<<13); return v.f; }
+    v.u=s|((unsigned)(e+112)<<23)|(m<<13); return v.f;
+}
+static unsigned char _clampu8f(float f){ int v=(int)(f+0.5f); return (unsigned char)(v<0?0:v>255?255:v); }
+
+__vector4 __vpkd3d(__vector4 t, __vector4 b, unsigned dt, unsigned ms, unsigned shw)
+{
+    unsigned long long packed=0; unsigned bits=32;
+    if(dt==RXDK_VPACK_D3DCOLOR){
+        packed=((unsigned long long)_clampu8f(b.vector4_f32[3])<<24)|((unsigned)_clampu8f(b.vector4_f32[0])<<16)
+              |((unsigned)_clampu8f(b.vector4_f32[1])<<8)|_clampu8f(b.vector4_f32[2]); bits=32;   /* ARGB */
+    } else if(dt==RXDK_VPACK_FLOAT16_2){
+        packed=((unsigned)_f32_to_f16(b.vector4_f32[0])<<16)|_f32_to_f16(b.vector4_f32[1]); bits=32;
+    } else if(dt==RXDK_VPACK_FLOAT16_4){
+        packed=((unsigned long long)_f32_to_f16(b.vector4_f32[0])<<48)|((unsigned long long)_f32_to_f16(b.vector4_f32[1])<<32)
+              |((unsigned long long)_f32_to_f16(b.vector4_f32[2])<<16)|_f32_to_f16(b.vector4_f32[3]); bits=64;
+    } else { /* NORM* fallback: 8-bit truncating pack */
+        packed=((unsigned long long)_clampu8f(b.vector4_f32[0])<<24)|((unsigned)_clampu8f(b.vector4_f32[1])<<16)
+              |((unsigned)_clampu8f(b.vector4_f32[2])<<8)|_clampu8f(b.vector4_f32[3]); bits=32;
+    }
+    __vector4 r=t;
+    if(ms==RXDK_VPACK_32 || bits==32){ r.vector4_u32[shw&3u]=(unsigned)packed; }
+    else { unsigned w=(shw&3u); if(w>2u) w=2u; r.vector4_u32[w]=(unsigned)(packed>>32); r.vector4_u32[w+1u]=(unsigned)packed; }
+    return r;
+}
+__vector4 __vupkd3d(__vector4 b, unsigned dt)
+{
+    __vector4 r; unsigned p=b.vector4_u32[0];
+    if(dt==RXDK_VPACK_D3DCOLOR){
+        r.vector4_f32[0]=(float)((p>>16)&0xFF); r.vector4_f32[1]=(float)((p>>8)&0xFF);
+        r.vector4_f32[2]=(float)(p&0xFF);       r.vector4_f32[3]=(float)((p>>24)&0xFF);
+    } else if(dt==RXDK_VPACK_FLOAT16_2){
+        r.vector4_f32[0]=_f16_to_f32((unsigned short)(p>>16)); r.vector4_f32[1]=_f16_to_f32((unsigned short)p);
+        r.vector4_f32[2]=0.0f; r.vector4_f32[3]=1.0f;
+    } else if(dt==RXDK_VPACK_FLOAT16_4){
+        unsigned p1=b.vector4_u32[1];
+        r.vector4_f32[0]=_f16_to_f32((unsigned short)(p>>16)); r.vector4_f32[1]=_f16_to_f32((unsigned short)p);
+        r.vector4_f32[2]=_f16_to_f32((unsigned short)(p1>>16)); r.vector4_f32[3]=_f16_to_f32((unsigned short)p1);
+    } else {
+        r.vector4_f32[0]=(float)((p>>24)&0xFF); r.vector4_f32[1]=(float)((p>>16)&0xFF);
+        r.vector4_f32[2]=(float)((p>>8)&0xFF);  r.vector4_f32[3]=(float)(p&0xFF);
+    }
+    return r;
+}
