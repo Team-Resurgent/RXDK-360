@@ -16,9 +16,10 @@ output for the two failure classes the vcomp bring-up surfaced:
 
     python tools/lib_linktest.py [--all] [--only a,b,c] [--release]
 
-Default scans the release libs (skips the *d / *i / *ltcg debug/variant
-suffixes). --all scans everything; --only restricts to a comma list of basenames
-(without .lib).
+Default scans the release libs, skipping a *d / *i / *ltcg debug/profile/LTCG
+variant only when stripping that suffix leaves an existing base lib (so base
+libs that merely end in the letter -- nuiapi, nuifitnessapi -- are kept). --all
+scans everything; --only restricts to a comma list of basenames (without .lib).
 """
 import argparse
 import glob
@@ -105,8 +106,17 @@ def main():
         want = set(args.only.split(","))
         names = {n: p for n, p in names.items() if n in want}
     elif not args.all:
-        names = {n: p for n, p in names.items()
-                 if not (n.endswith("d") or n.endswith("i") or n.endswith("ltcg"))}
+        # A lib is a Debug/Profile/LTCG variant only if stripping its suffix
+        # leaves an existing base lib -- otherwise a plain suffix test wrongly
+        # drops base libs that merely END in the suffix letter (nuiapi/
+        # nuifitnessapi end in "i" but are not Profile "i" variants).
+        allnames = set(names)
+        def _is_variant(n):
+            for suf in ("ltcg", "d", "i"):
+                if n.endswith(suf) and n[:-len(suf)] in allnames:
+                    return True
+            return False
+        names = {n: p for n, p in names.items() if not _is_variant(n)}
 
     kernel = set(g.build_ordinal_index(XDK).keys()) | set(
         getattr(g, "SUPPLEMENTAL_ORDINALS", {}).keys())
