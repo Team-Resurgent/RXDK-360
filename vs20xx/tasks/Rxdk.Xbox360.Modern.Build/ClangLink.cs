@@ -535,7 +535,13 @@ SECTIONS {{
     KEEP(*(SORT_BY_NAME(.CRT$XC*)))
     PROVIDE_HIDDEN(__xc_z = .);
   }}
-  .data : {{ *(.data*) }}
+  .data : {{
+    /* PPC TOC base. lld synthesizes .TOC. for a PPC64 target but not this PPC32
+       one, so some objects (OpenMP outlines, XLSP) reference it unresolved.
+       Define it at the conventional GOT+0x8000 anchor. */
+    PROVIDE_HIDDEN(.TOC. = . + 0x8000);
+    *(.data*)
+  }}
   .bss  : {{ *(.bss*) *(COMMON) }}
   /DISCARD/ : {{ *(.comment) *(.note*) }}
 }}
