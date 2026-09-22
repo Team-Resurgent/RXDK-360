@@ -303,3 +303,13 @@ __vector4 __vrlimi(__vector4 t, __vector4 b, unsigned wmask, unsigned shw)
         r.vector4_u32[i] = (wmask & (0x8u>>i)) ? b.vector4_u32[(i+shw)&3u] : t.vector4_u32[i];
     return r;
 }
+
+/* MSVC compiler-scheduling barriers. Titles declare these with
+   `#pragma intrinsic(_WriteBarrier)`; MSVC emits them inline as pure
+   reorder fences (no code). clang ignores the pragma and leaves a real call,
+   so provide the family out-of-line -- the opaque call plus the "memory"
+   clobber is exactly the compiler barrier the intrinsic promises. These are
+   compiler-only (not hardware) fences, matching MSVC's semantics. */
+void _WriteBarrier(void)     { __asm__ __volatile__("" ::: "memory"); }
+void _ReadBarrier(void)      { __asm__ __volatile__("" ::: "memory"); }
+void _ReadWriteBarrier(void) { __asm__ __volatile__("" ::: "memory"); }
