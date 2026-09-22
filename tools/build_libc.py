@@ -133,6 +133,8 @@ XBOX_GLUE = [
     os.path.join(ROOT, "runtime", "xbox", "setjmp.S"),             # setjmp/longjmp (PPC callee-saved GPR/FPR/LR/CR/SP)
     os.path.join(ROOT, "runtime", "xbox", "ke_perf.S"),            # 64-bit-safe KeQueryPerformanceFrequency wrapper (single-r3 MS return -> pointer)
     os.path.join(ROOT, "runtime", "xbox", "vmx_intrinsics.c"),     # MS PPC/VMX intrinsics clang lacks (__lvlx/__vaddfp/__mftb/byte-reverse/...)
+    os.path.join(ROOT, "runtime", "xbox", "win32_wide.c"),         # complete Win32 *W family (narrow to the XDK's *A entries); XDK ships *A only
+
     os.path.join(ROOT, "runtime", "xbox", "fxl_bridge.cpp"),       # Itanium->MSVC forwarder for FXL's non-extern-"C" routines (FXLSetShaders)
     os.path.join(ROOT, "runtime", "xbox", "xdk_cpp_bridge.cpp"),   # Itanium->MSVC forwarders for XDK C++ APIs (XJSON/ASF/XAV/QNet)
 ]
