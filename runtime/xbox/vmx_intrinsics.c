@@ -134,6 +134,18 @@ unsigned short __loadshortbytereverse(int offset, const void* base)
     const unsigned char* p = (const unsigned char*)base + offset;
     return (unsigned short)(p[0] | (p[1] << 8));
 }
+unsigned long long __loaddoublewordbytereverse(int offset, const void* base)
+{
+    const unsigned char* p = (const unsigned char*)base + offset;
+    unsigned long long v = 0;
+    for (int i = 0; i < 8; ++i) v |= (unsigned long long)p[i] << (8 * i);
+    return v;
+}
+void __storedoublewordbytereverse(unsigned long long v, int offset, void* base)
+{
+    unsigned char* p = (unsigned char*)base + offset;
+    for (int i = 0; i < 8; ++i) p[i] = (unsigned char)(v >> (8 * i));
+}
 void __storewordbytereverse(unsigned long v, int offset, void* base)
 {
     unsigned char* p = (unsigned char*)base + offset;
