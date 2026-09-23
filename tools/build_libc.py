@@ -52,6 +52,13 @@ FLAGS = [
 ]
 INCLUDES = [
     "-I" + CONFIG,
+    # Machine headers first so <machine/fenv.h> resolves to the powerpc version
+    # (which pulls machine/fenv-fp.h -- the hardware-FPSCR fegetround/fesetround/...
+    # bodies). The generic libc/include/machine/fenv.h only defines the FE_*
+    # constants, so without this the fenv.c instantiation TU emits nothing and
+    # fegetround is undefined. Only machine/fenv.h and machine/_ssp_tls.h are
+    # shadowed (stack-protector is off), so nothing else changes.
+    "-I" + os.path.join(PICO, "libc", "machine", "powerpc"),
     "-I" + os.path.join(PICO, "libc", "include"),
     "-I" + os.path.join(PICO, "libc", "stdio"),
     "-I" + os.path.join(PICO, "libc", "locale"),   # locale_private.h, internal
@@ -86,6 +93,12 @@ SUBDIRS = [
 LIBM_SUBDIRS = [
     "libm/common",
     "libm/math",
+    # libm/fenv: fenv.c re-includes the machine fenv inlines (powerpc FPSCR) as
+    # out-of-line definitions, so callers that reference fegetround/fesetround/...
+    # externally (libc++'s <cfenv>, float rounding) resolve. The consolidated
+    # picolibc 'xbox' branch dropped these as "RXDK never builds" (true on the OG
+    # side); the 360 needs them, so fenv.c is recovered from the xbox360 branch.
+    "libm/fenv",
 ]
 
 # Mirrors RXDK-Libs' libm excludes. In libm/common the transcendental *f and
