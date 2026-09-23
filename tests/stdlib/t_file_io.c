@@ -62,6 +62,28 @@ int main(void) {
     CHECK(f == NULL, "removed file no longer opens");
     if (f) fclose(f);
 
+    /* tmpfile()/tmpnam(): these link mkstemp/fdopen/unlink and were a real gap --
+       52 samples once failed to link with "undefined symbol: tmpfile" while this
+       suite passed, because nothing here referenced it. tmpfile() creates its temp
+       in the cwd, so point the cwd at the writable drive for the round-trip. */
+    char oldcwd[260];
+    CHECK(getcwd(oldcwd, sizeof oldcwd) != NULL, "getcwd (for tmpfile cwd swap)");
+    CHECK_EQI(chdir("cache:/"), 0, "chdir to writable drive");
+    FILE *tf = tmpfile();
+    CHECK(tf != NULL, "tmpfile opens a stream");
+    if (tf) {
+        CHECK(fputs("tmp\n", tf) >= 0, "write to tmpfile");
+        rewind(tf);
+        char tb[16];
+        memset(tb, 0, sizeof tb);
+        CHECK(fgets(tb, sizeof tb, tf) != NULL, "read back from tmpfile");
+        CHECK(strcmp(tb, "tmp\n") == 0, "tmpfile round-trip matches");
+        CHECK_EQI(fclose(tf), 0, "fclose tmpfile (auto-unlinks)");
+    }
+    char nm[L_tmpnam];
+    CHECK(tmpnam(nm) != NULL, "tmpnam returns a candidate name");
+    chdir(oldcwd);
+
     CHECK_DONE("file_io");
     return 0;
 }

@@ -5,6 +5,7 @@
 #include <condition_variable>
 #include <atomic>
 #include <vector>
+#include <unistd.h>   // sysconf(_SC_NPROCESSORS_*)
 
 int main() {
     // join returns a computed value
@@ -46,7 +47,13 @@ int main() {
     w.join();
     CHECK(woke, "condition_variable wait/notify");
 
-    CHECK(std::thread::hardware_concurrency() >= 1, "hardware_concurrency >= 1");
+    // The Xenon CPU is fixed at 3 cores x 2 hardware threads = 6. Assert the exact
+    // count (not just >= 1): the consolidated picolibc branch re-fixed the 360 CPU
+    // count, and hardware_concurrency() flows from sysconf(_SC_NPROCESSORS_ONLN).
+    CHECK_EQI((long)std::thread::hardware_concurrency(), 6,
+              "hardware_concurrency == 6 (Xenon: 3 cores x 2 HW threads)");
+    CHECK_EQI((long)sysconf(_SC_NPROCESSORS_ONLN), 6, "sysconf(_SC_NPROCESSORS_ONLN) == 6");
+    CHECK_EQI((long)sysconf(_SC_NPROCESSORS_CONF), 6, "sysconf(_SC_NPROCESSORS_CONF) == 6");
 
     CHECK_DONE("threads");
     return 0;
