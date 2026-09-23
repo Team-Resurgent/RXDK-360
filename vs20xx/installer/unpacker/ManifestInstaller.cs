@@ -58,8 +58,11 @@ namespace Rxdk.Xdk.Unpacker
 
                 // locale: common + en-US only
                 if (lcid != "0000" && lcid != "0409") { continue; }
-                // skip the old VS integration rows (we ship our own)
-                if (arch.StartsWith("vs")) { continue; }
+                // skip the old VS integration rows (we ship our own) -- but keep the
+                // VS2010 host import libs (lib\{win32,x64}\vs2010\*, tagged arch vs100),
+                // which we deploy flat into {app}\lib\{win32,x64} so the lib tree mirrors
+                // the real XDK (win32/x64/xbox), not just xbox.
+                if (arch.StartsWith("vs") && !IsVs2010HostLib(action, Get(f, 4))) { continue; }
 
                 try
                 {
@@ -126,7 +129,23 @@ namespace Rxdk.Xdk.Unpacker
             rel = (rel ?? "").Replace('/', '\\');
             if (!string.Equals(token, "XDK", StringComparison.OrdinalIgnoreCase))
                 return Path.Combine(ResolveDir(token) ?? "", rel);
+            // Flatten the VS2010 host import libs: lib\{win32,x64}\vs2010\foo.lib ->
+            // lib\{win32,x64}\foo.lib (drop the vs2010 folder; they also link with the
+            // modern VS host linker).
+            rel = rel.Replace("lib\\win32\\vs2010\\", "lib\\win32\\")
+                     .Replace("lib\\x64\\vs2010\\", "lib\\x64\\");
             return Path.Combine(_installDir, rel);
+        }
+
+        // A VS2010 host import-lib install row (lib\{win32,x64}\vs2010\*), kept and
+        // deployed flat even though its arch is tagged vs100 like the VS-integration rows.
+        private static bool IsVs2010HostLib(string action, string arg1)
+        {
+            if (!string.Equals(action, "file", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(action, "copy", StringComparison.OrdinalIgnoreCase)) return false;
+            arg1 = (arg1 ?? "").Replace('/', '\\');
+            return arg1.IndexOf("lib\\win32\\vs2010\\", StringComparison.OrdinalIgnoreCase) >= 0
+                || arg1.IndexOf("lib\\x64\\vs2010\\", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         // ---- file / copy -------------------------------------------------------

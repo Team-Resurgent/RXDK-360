@@ -308,6 +308,12 @@ begin
     // are already laid down (manifest + Inno).
     if WizardIsComponentSelected('clang') then
     begin
+      // these steps run hidden for a few minutes; tell the user so the bar is not
+      // a dead-looking pause. (The gauge stays put while the child runs.)
+      WizardForm.StatusLabel.Caption :=
+        'Building the Clang runtime and translating the XDK libraries (a few minutes)...';
+      WizardForm.StatusLabel.Update;
+      WizardForm.ProgressGauge.Style := npbstMarquee;
       ExtractTemporaryFile('RxdkXdkUnpacker.exe');
       Exec(ExpandConstant('{tmp}\RxdkXdkUnpacker.exe'),
         'stageclang "' + ExpandConstant('{app}') + '" "' + ExpandConstant('{app}\bin\clang') + '"',
@@ -316,6 +322,10 @@ begin
     { materialise the RXDK360-Samples binary assets (split-zip parts) in place }
     if WizardIsComponentSelected('samples') then
     begin
+      WizardForm.StatusLabel.Caption :=
+        'Unpacking the sample assets (~800 MB, a few minutes)...';
+      WizardForm.StatusLabel.Update;
+      WizardForm.ProgressGauge.Style := npbstMarquee;
       ExtractTemporaryFile('RxdkXdkUnpacker.exe');
       Exec(ExpandConstant('{tmp}\RxdkXdkUnpacker.exe'),
         'unpacksamples "' + ExpandConstant('{app}\Source\Samples') + '"',
