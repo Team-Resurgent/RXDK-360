@@ -1,8 +1,9 @@
 #Requires -Version 5.1
 # Initialise the RXDK-360 submodules.
 #
-#   vendor/picolibc  - the C23 libc (full checkout; Xbox 360 changes live on
-#                      the Team-Resurgent/picolibc xbox360 branch)
+#   vendor/picolibc  - the C23 libc (full checkout; Xbox changes live on the
+#                      Team-Resurgent/picolibc xbox branch, the consolidated
+#                      xboxog+xbox360 branch)
 #
 # Clang, lld, libcxx, libcxxabi and libunwind come from the llvm-project
 # GitHub zip (scripts/fetch-clang.ps1 -> build/llvm), not a submodule.

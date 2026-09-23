@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Build the VSIX + Inno installer and publish a rolling "latest" GitHub Release.
-# Clang/lld come from Team-Resurgent/llvm-project xbox360-windows-x64.zip.
+# Clang/lld come from Team-Resurgent/llvm-project xbox-windows-x64.zip
+# (the consolidated xboxog+xbox360 "xbox" branch build).
 # XexTool comes from Team-Resurgent/XexTool XexTool-windows-x64.zip.
 # xdvdfs comes from Team-Resurgent/XDVDFS-TR latest Windows zip.
 

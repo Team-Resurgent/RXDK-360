@@ -1,5 +1,5 @@
 #Requires -Version 5.1
-# Download Team-Resurgent/llvm-project rolling "latest" xbox360-windows-x64.zip
+# Download Team-Resurgent/llvm-project rolling "latest" xbox-windows-x64.zip
 # into build/llvm (clang, ld.lld, llvm-ar, lib/clang, libcxx/libcxxabi/libunwind).
 #
 #   powershell -NoProfile -File scripts/fetch-clang.ps1
@@ -10,7 +10,7 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path $PSScriptRoot -Parent
 Set-Location $RepoRoot
 
-$zipName = "xbox360-windows-x64.zip"
+$zipName = "xbox-windows-x64.zip"
 New-Item -ItemType Directory -Force -Path deps, build | Out-Null
 $zipPath = Join-Path $RepoRoot "deps\$zipName"
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }

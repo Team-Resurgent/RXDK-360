@@ -1,4 +1,4 @@
 [submodule "vendor/picolibc"]
 	path = vendor/picolibc
 	url = https://github.com/Team-Resurgent/picolibc.git
-	branch = xbox360
+	branch = xbox
