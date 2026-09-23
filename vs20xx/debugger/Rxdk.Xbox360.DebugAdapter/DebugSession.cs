@@ -464,17 +464,30 @@ namespace Rxdk.Xbox360.DebugAdapter
                 if (_holdingInitialBreak) return;
                 if (n.Kind is not ("break" or "singlestep" or "data" or "exception")) return;
 
-                // Pre-main / loader break: after the initial load break is continued, the
-                // kit can trap again before main() at an address that isn't in the loaded
-                // title and isn't a breakpoint we set (e.g. the loader's pre-main entry
-                // break, 0x800Axxxx). Breakpoints are already applied, so resume
-                // transparently instead of surfacing a "stopped" VS can't map to a frame.
-                if (n.Kind == "break" && _titleSize != 0 && n.Addr is uint bpc
-                    && !(bpc >= _titleBase && bpc < _titleBase + _titleSize)
+                // A 'break' that isn't one of the breakpoints we planted is a trap the
+                // title (or loader) executes itself, not a user stop: the pre-main loader
+                // break, or the XDK debug runtime's break-on-level (RtlDebugError /
+                // RtlpDebugPrint testing XDebugBrkLevel), which fire on ordinary debug
+                // output. Resume past them -- only user breakpoints, steps, data BPs and
+                // real exceptions (access violations, which arrive as Kind=="exception")
+                // should surface. If the PC sits on an embedded trap instruction (twi/tw),
+                // advance NIA past it first or the kit would re-execute it and re-trap.
+                if (n.Kind == "break" && n.Addr is uint bpc
                     && !_breakpoints.Exists(e => e.addr == bpc))
                 {
+                    try
+                    {
+                        uint tid0 = n.Thread ?? _stoppedThread; if (tid0 == 0) tid0 = 1;
+                        var word = new KitMemory(_kit!).ReadDword(bpc);
+                        if (word is uint w && IsTrapInstruction(w))
+                        {
+                            var ctx = _kit!.GetContext(tid0, XContextFlags.Control);
+                            if ((uint)ctx.Iar == bpc) { ctx.Iar = bpc + 4; _kit.SetContext(tid0, ref ctx); }
+                        }
+                    }
+                    catch { /* best-effort: fall through to a plain continue */ }
                     _dap.SendEvent("output", new { category = "console",
-                        output = $"KIT pre-main break addr=0x{bpc:X8} outside title -> continue\n" });
+                        output = $"KIT auto-continue non-breakpoint trap addr=0x{bpc:X8}\n" });
                     try { _kit?.ContinueAll(); } catch { }
                     return;
                 }
@@ -502,6 +515,16 @@ namespace Rxdk.Xbox360.DebugAdapter
                 });
             }
             catch { }
+        }
+
+        // PowerPC trap instructions the XDK debug runtime and __debugbreak plant inline:
+        //   twi TO,RA,SI  -> primary opcode 3
+        //   tw  TO,RA,RB  -> primary opcode 31, extended opcode 4
+        private static bool IsTrapInstruction(uint word)
+        {
+            uint op = word >> 26;
+            if (op == 3) return true;
+            return op == 31 && ((word >> 1) & 0x3FF) == 4;
         }
 
         private void WriteTitleOutput(string text)
