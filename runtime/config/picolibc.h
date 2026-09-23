@@ -34,19 +34,16 @@
 #define __HAVE_POSIX_LOCALE_API 1
 #define __OBSOLETE_MATH_FLOAT 0
 #define __OBSOLETE_MATH_DOUBLE 0
-/* Legacy newlib ctype mask macros (_U/_L/_N/_S/_P/_C/_X/_B). The consolidated
-   picolibc 'xbox' branch gates these (ctype.h) behind __cplusplus && (__i386__ ||
-   _PICOLIBC_LEGACY_CTYPE_MACROS): the __i386__ arm covers the original Xbox, so
-   the PowerPC 360 must opt in explicitly. libc++'s <__locale_dir/ctype_base.h>
-   (the _LIBCPP_LIBC_NEWLIB path) builds its ctype masks from these, so without it
-   libc++ and any title using <locale>/<cctype> facets fail to compile.
+/* Legacy newlib ctype mask macros (_U/_L/_N/_S/_P/_C/_X/_B) are single-uppercase-
+   letter object-like macros that collide with the stock XDK headers, which use those
+   names as identifiers -- e.g. float.h's `double _chgsign(double _X)` and _X/_C
+   throughout math.h -- in ANY translation unit that pulls <ctype.h> before an XDK
+   header (Debug configs hit this readily). The 360 therefore does NOT opt into
+   _PICOLIBC_LEGACY_CTYPE_MACROS at all.
 
-   BUT these are single-uppercase-letter object-like macros (_X especially) that
-   collide with XDK headers using them as identifiers -- e.g. float.h's
-   `double _chgsign(double _X)` -- when a translation unit pulls <ctype.h> before the
-   XDK header (the compat sources' XAPOBase.h chain does; xtl.h-first titles do not).
-   A build that includes XDK headers but NOT libc++ ctype facets (the libcompat build)
-   opts out with -D_RXDK_NO_LEGACY_CTYPE to avoid the clash. */
-#if !defined(_RXDK_NO_LEGACY_CTYPE)
-#define _PICOLIBC_LEGACY_CTYPE_MACROS 1
-#endif
+   libc++ is the only consumer that needed them: <__locale_dir/ctype_base.h>'s
+   _LIBCPP_LIBC_NEWLIB path built its ctype masks from _S/_P/_U/.... The installer's
+   StageClang (PatchLibcxxCtype) rewrites that header to read picolibc's non-colliding
+   __CTYPE_UPPER..__CTYPE_HEX instead (identical values -> ABI-neutral), so it no
+   longer needs the legacy names. The original Xbox keeps them via ctype.h's __i386__
+   arm, which is left intact. */

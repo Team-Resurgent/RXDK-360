@@ -31,7 +31,7 @@ namespace Rxdk.Xbox360.Clang.Build
         //   main.c:12:5: error: use of undeclared identifier 'foo'
         //   ld.lld: error: undefined symbol: DbgPrint
         private static readonly Regex FileDiag =
-            new Regex(@"^(?<file>[^:]+(?::[^:]+)?):(?<line>\d+):(?<col>\d+):\s*(?<sev>error|warning|note):\s*(?<msg>.*)$",
+            new Regex(@"^(?<file>[^:]+(?::[^:]+)?):(?<line>\d+):(?<col>\d+):\s*(?<sev>fatal error|error|warning|note):\s*(?<msg>.*)$",
                       RegexOptions.Compiled);
         private static readonly Regex ToolDiag =
             new Regex(@"^(?<tool>[\w.\-]+):\s*(?<sev>error|warning):\s*(?<msg>.*)$",
