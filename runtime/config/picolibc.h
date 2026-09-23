@@ -34,3 +34,10 @@
 #define __HAVE_POSIX_LOCALE_API 1
 #define __OBSOLETE_MATH_FLOAT 0
 #define __OBSOLETE_MATH_DOUBLE 0
+/* Legacy newlib ctype mask macros (_U/_L/_N/_S/_P/_C/_X/_B). The consolidated
+   picolibc 'xbox' branch gates these (ctype.h) behind __cplusplus && (__i386__ ||
+   _PICOLIBC_LEGACY_CTYPE_MACROS): the __i386__ arm covers the original Xbox, so
+   the PowerPC 360 must opt in explicitly. libc++'s <__locale_dir/ctype_base.h>
+   (the _LIBCPP_LIBC_NEWLIB path) builds its ctype masks from these, so without it
+   libc++ and any title using <locale>/<cctype> facets fail to compile. */
+#define _PICOLIBC_LEGACY_CTYPE_MACROS 1
