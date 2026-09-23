@@ -458,22 +458,32 @@ namespace Rxdk.Xbox360.DebugAdapter
                 {
                     string text = n.Fields.TryGetValue("string", out var s) ? s : n.Raw;
                     if (!string.IsNullOrEmpty(text))
-                        WriteTitleOutput(text.EndsWith("\n", StringComparison.Ordinal) ? text : text + "\n");
+                    {
+                        string line = text.EndsWith("\n", StringComparison.Ordinal) ? text : text + "\n";
+                        WriteTitleOutput(line);
+                        // Surface the title's own debug output (OutputDebugString, ATG/D3D
+                        // WRN/ERR, asserts) in the VS Output window -- these carry the real
+                        // diagnosis (e.g. "ERR[D3D]: BOOL value for constant 3 must be 0 or 1")
+                        // that a bare break address never shows.
+                        _dap.SendEvent("output", new { category = "stdout", output = line });
+                    }
                     return;
                 }
                 if (_holdingInitialBreak) return;
                 if (n.Kind is not ("break" or "singlestep" or "data" or "exception")) return;
 
-                // A 'break' that isn't one of the breakpoints we planted is a trap the
-                // title (or loader) executes itself, not a user stop: the pre-main loader
-                // break, or the XDK debug runtime's break-on-level (RtlDebugError /
-                // RtlpDebugPrint testing XDebugBrkLevel), which fire on ordinary debug
-                // output. Resume past them -- only user breakpoints, steps, data BPs and
-                // real exceptions (access violations, which arrive as Kind=="exception")
-                // should surface. If the PC sits on an embedded trap instruction (twi/tw),
-                // advance NIA past it first or the kit would re-execute it and re-trap.
+                // Auto-continue ONLY the loader's pre-main break: a 'break' that is not a
+                // breakpoint we planted AND lies outside the loaded title (e.g. 0x800Axxxx).
+                // It is a resumable loader sync-stop with no diagnostic value, and surfacing
+                // it just yields a frame VS can't map. An IN-title trap is left to surface:
+                // the XDK debug runtime's break-on-level (RtlDebugError) marks a REAL error
+                // (a failed D3D validation, an assert), whose message we now forward to the
+                // Output window -- continuing past it would hide the actual bug. If the PC
+                // sits on an embedded trap instruction (twi/tw), advance NIA past it first
+                // or the kit would re-execute it and re-trap.
                 if (n.Kind == "break" && n.Addr is uint bpc
-                    && !_breakpoints.Exists(e => e.addr == bpc))
+                    && !_breakpoints.Exists(e => e.addr == bpc)
+                    && !(_titleSize != 0 && bpc >= _titleBase && bpc < _titleBase + _titleSize))
                 {
                     try
                     {
