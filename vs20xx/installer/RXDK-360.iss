@@ -51,6 +51,10 @@ Name: "custom"; Description: "Custom"; Flags: iscustom
 ; contained Clang/LLVM toolchain, XexTool and xdvdfs so RXDK-360 needs no
 ; external toolchain.
 Name: "clang"; Description: "Clang/LLVM toolchain (+ XexTool + xdvdfs, self-contained)"; Types: full
+; RXDK360-Samples replaces the XDK's stock Source\Samples with our ported samples
+; (committed .sln/.vcxproj that build under the clang toolset) + their runtime
+; assets. Large (~1.3 GB installed after the assets are unpacked).
+Name: "samples"; Description: "RXDK360-Samples (ported samples + assets, ~1.3 GB installed)"; Types: full
 
 [Tasks]
 Name: "envvar";    Description: "Set the RXDK360 environment variable"; GroupDescription: "Integration:"
@@ -117,6 +121,13 @@ Source: "..\..\runtime\config\*";           DestDir: "{app}\bin\clang\include\co
 Source: "..\..\vendor\picolibc\libc\include\*";          DestDir: "{app}\bin\clang\include\picolibc"; Flags: recursesubdirs createallsubdirs; Components: clang
 Source: "..\..\build\llvm\libcxx\include\*";    DestDir: "{app}\bin\clang\include\libcxx"; Flags: recursesubdirs createallsubdirs; Components: clang
 Source: "..\..\build\llvm\libcxxabi\include\*"; DestDir: "{app}\bin\clang\include\libcxxabi"; Flags: recursesubdirs createallsubdirs; Components: clang
+
+; --- RXDK360-Samples ----------------------------------------------------------
+; Our ported samples replace the XDK's stock Source\Samples (the manifest engine
+; skips those). The binary runtime media ships as split-zip parts under assets\ and
+; is materialised in place post-install by the unpacker's unpacksamples step (the
+; C# twin of samples\tools\Manage-Assets.ps1). Git metadata is excluded.
+Source: "..\..\samples\*"; DestDir: "{app}\Source\Samples"; Flags: recursesubdirs createallsubdirs; Excludes: "\.git,\.git\*,\.gitignore,\.gitattributes,\.gitmodules,\.github\*"; Components: samples
 
 [Registry]
 ; RXDK-360's own SDK key (read first by the RXDK-360 platform's Toolset.props),
@@ -285,6 +296,14 @@ begin
       ExtractTemporaryFile('RxdkXdkUnpacker.exe');
       Exec(ExpandConstant('{tmp}\RxdkXdkUnpacker.exe'),
         'stageclang "' + ExpandConstant('{app}') + '" "' + ExpandConstant('{app}\bin\clang') + '"',
+        '', SW_HIDE, ewWaitUntilTerminated, code);
+    end;
+    { materialise the RXDK360-Samples binary assets (split-zip parts) in place }
+    if WizardIsComponentSelected('samples') then
+    begin
+      ExtractTemporaryFile('RxdkXdkUnpacker.exe');
+      Exec(ExpandConstant('{tmp}\RxdkXdkUnpacker.exe'),
+        'unpacksamples "' + ExpandConstant('{app}\Source\Samples') + '"',
         '', SW_HIDE, ewWaitUntilTerminated, code);
     end;
     { machine-wide RXDK360 env var -> the (relocated) XDK; Uninstall removes it }

@@ -187,6 +187,42 @@ namespace Rxdk.Xdk.Unpacker
             return sources.Length;
         }
 
+        // Reassemble the split sample-asset parts (<samplesRoot>\assets\
+        // samples-assets.zip.part.NNN) into one zip and extract every entry into
+        // <samplesRoot> in place. The C# twin of samples\tools\Manage-Assets.ps1
+        // unpack, so the installer needs no PowerShell. Returns the file count.
+        private static int UnpackSampleAssets(string samplesRoot)
+        {
+            string assetsDir = Path.Combine(samplesRoot, "assets");
+            if (!Directory.Exists(assetsDir)) return 0;
+            var parts = Directory.GetFiles(assetsDir, "samples-assets.zip.part.*");
+            if (parts.Length == 0) return 0;
+            Array.Sort(parts, StringComparer.Ordinal);   // .part.000, .001, ... in order
+
+            string tmp = Path.Combine(Path.GetTempPath(), "rxdk_assets_" + Guid.NewGuid().ToString("N") + ".zip");
+            int n = 0;
+            try
+            {
+                using (var outFs = new FileStream(tmp, FileMode.Create, FileAccess.Write))
+                    foreach (var p in parts)
+                        using (var inFs = new FileStream(p, FileMode.Open, FileAccess.Read))
+                            inFs.CopyTo(outFs);
+                using (var zip = System.IO.Compression.ZipFile.OpenRead(tmp))
+                    foreach (var entry in zip.Entries)
+                    {
+                        if (entry.FullName.EndsWith("/")) continue;               // directory entry
+                        string safe = entry.FullName.Replace('/', '\\');
+                        if (safe.StartsWith("\\") || safe.Contains("..")) continue; // path-traversal guard
+                        string dest = Path.Combine(samplesRoot, safe);
+                        Directory.CreateDirectory(Path.GetDirectoryName(dest));
+                        System.IO.Compression.ZipFileExtensions.ExtractToFile(entry, dest, true);
+                        n++;
+                    }
+            }
+            finally { try { File.Delete(tmp); } catch { } }
+            return n;
+        }
+
         private static void RunOrThrow(string exe, List<string> args, string what)
         {
             // net472 has no ProcessStartInfo.ArgumentList; build a quoted command
@@ -316,6 +352,17 @@ namespace Rxdk.Xdk.Unpacker
                     return 0;
                 }
 
+                // Materialise the RXDK360-Samples binary assets (split-zip parts) in
+                // place -- the C# twin of samples\tools\Manage-Assets.ps1 unpack, run
+                // at install so the shipped samples have their runtime media.
+                if (args.Length >= 1 && args[0].Equals("unpacksamples", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (args.Length < 2) return Usage();
+                    int nu = UnpackSampleAssets(args[1]);
+                    Report.Line("unpacked {0} sample asset(s) -> {1}", nu, args[1]);
+                    return 0;
+                }
+
                 // Test/CI helper: translate one PPC-COFF .lib to an ELF .a.
                 //   coffarchive <lib> <out.a> [<runtime1.a> <runtime2.a> ...]
                 if (args.Length >= 1 && args[0].Equals("coffarchive", StringComparison.OrdinalIgnoreCase))
@@ -384,6 +431,7 @@ namespace Rxdk.Xdk.Unpacker
             Console.Error.WriteLine("  RxdkXdkUnpacker install <XDKSetup.exe> <installDir> (manifest-driven install)");
             Console.Error.WriteLine("  RxdkXdkUnpacker uninstall <installDir>              (reverse an install)");
             Console.Error.WriteLine("  RxdkXdkUnpacker stageclang <appRoot> <clangRoot>   (patch headers + build archives in place)");
+            Console.Error.WriteLine("  RxdkXdkUnpacker unpacksamples <samplesRoot>        (materialise RXDK360-Samples assets in place)");
             Console.Error.WriteLine("  RxdkXdkUnpacker vsinstall   <vs20xx|vsintegrationDir> [--skip-vsix] [--skip-platform]");
             Console.Error.WriteLine("  RxdkXdkUnpacker vsuninstall <vs20xx|vsintegrationDir>");
             return 2;

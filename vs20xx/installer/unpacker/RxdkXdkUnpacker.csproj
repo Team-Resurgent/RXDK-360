@@ -27,4 +27,10 @@
     <Company>Team Resurgent</Company>
     <Product>RXDK-360</Product>
   </PropertyGroup>
+
+  <!-- ZipFile / ZipFileExtensions for unpacking the sample assets in place. -->
+  <ItemGroup>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
 </Project>
