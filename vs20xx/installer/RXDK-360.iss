@@ -76,41 +76,47 @@ Source: "..\tasks\Rxdk.Xbox360.Modern.Build\bin\Release\net472\Rxdk.Xbox360.Mode
 Source: "..\extension\Rxdk360.Vsix\bin\Release\Rxdk360.Vsix.vsix"; DestDir: "{app}\vsintegration"
 Source: "..\README.md";   DestDir: "{app}\vsintegration"
 
-; --- Modern (Clang/LLVM) toolchain payload -------------------------------------
-; Self-contained, clean {bin,lib,include} tree under {app}\modern: our Clang +
-; ld.lld (only the two binaries we drive + clang's resource headers, not the full
-; LLVM bin), XexTool, the modern C/C++ runtime archives + headers. xdvdfs lives
-; in {app}\bin (product-root host tools), not modern\bin. The XDK stock headers
-; (include\xbox) and import .libs (lib\*.lib for genstubs) are copied
-; in at install time from the legacy tree by the unpacker's stagemodern step, so
-; this tree never reaches into the stock XDK while building.
-; CI fills build/llvm from Team-Resurgent/llvm-project xbox360-windows-x64.zip
+; --- Clang/LLVM compiler bundle -----------------------------------------------
+; The install mirrors the real XDK tree (no modern\ / legacy\ split). Our clang is
+; a self-contained compiler bundle at {app}\bin\clang, laid out like the XDK's own
+; TechPreview\Jul12Compiler (its own bin\include\lib): our Clang + ld.lld (only the
+; two binaries we drive + clang's resource headers, not the full LLVM bin), XexTool,
+; and the modern C/C++ runtime headers. clang.exe sits at bin\clang\bin so its
+; default resource-dir resolution (bin\..\lib\clang) finds bin\clang\lib\clang -- no
+; -resource-dir flag needed. Our generated ELF archives (libc.a/libcpp.a) go to the
+; product-root {app}\lib\xbox next to the stock console .libs (coexist: .a vs .lib);
+; xdvdfs stays in {app}\bin. The XDK stock headers ({app}\include\xbox) and import
+; .libs ({app}\lib\xbox\*.lib for genstubs) are placed by the manifest engine and
+; patched/translated in place by stagemodern -- a single copy, no staged duplicate.
+; CI fills build/llvm from Team-Resurgent/llvm-project xbox-windows-x64.zip
 ; (scripts/fetch-clang.ps1), XexTool from Team-Resurgent/XexTool latest
 ; (scripts/fetch-xextool.ps1), xdvdfs from Team-Resurgent/XDVDFS-TR.
 ; coff/*.a are XDK translations (not redistributable); NOT shipped -- the
 ; unpacker's stagemodern step generates them at install from the user's own XDK
 ; libs (Coff2Elf), like kernel_import.a.
-; bin\ - the tools the build drives
-Source: "..\..\build\llvm\bin\clang.exe";   DestDir: "{app}\modern\bin"; Components: modern
-Source: "..\..\build\llvm\bin\ld.lld.exe";  DestDir: "{app}\modern\bin"; Components: modern
-Source: "..\..\build\llvm\bin\llvm-ar.exe"; DestDir: "{app}\modern\bin"; Components: modern
-Source: "..\..\build\xextool\XexTool.exe"; DestDir: "{app}\modern\bin"; Components: modern
+; bin\clang\bin\ - the tools the build drives
+Source: "..\..\build\llvm\bin\clang.exe";   DestDir: "{app}\bin\clang\bin"; Components: modern
+Source: "..\..\build\llvm\bin\ld.lld.exe";  DestDir: "{app}\bin\clang\bin"; Components: modern
+Source: "..\..\build\llvm\bin\llvm-ar.exe"; DestDir: "{app}\bin\clang\bin"; Components: modern
+Source: "..\..\build\xextool\XexTool.exe";  DestDir: "{app}\bin\clang\bin"; Components: modern
 Source: "..\..\build\tools\xdvdfs.exe";     DestDir: "{app}\bin"; Components: modern
-; lib\ - clang's resource dir (found relative to bin\..\lib\clang) + all archives
-Source: "..\..\build\llvm\lib\clang\*";     DestDir: "{app}\modern\lib\clang"; Flags: recursesubdirs createallsubdirs; Components: modern
+; bin\clang\lib\clang\ - clang's resource dir (found relative to bin\..\lib\clang)
+Source: "..\..\build\llvm\lib\clang\*";     DestDir: "{app}\bin\clang\lib\clang"; Flags: recursesubdirs createallsubdirs; Components: modern
+; {app}\lib\xbox\ - our runtime archives, alongside the stock console .libs.
 ; kernel_import.a and libcompat.a are NOT shipped: the unpacker's stagemodern
 ; step builds them at install from the user's own XDK (import ordinals /
 ; XDK-header C++ helpers), so they always match the installed XDK rather than
 ; whichever one the release was built on -- and CI, which has no XDK, need not.
-Source: "..\..\build\libc\*.a";             DestDir: "{app}\modern\lib"; Excludes: "kernel_import.a,libcompat.a"; Components: modern
-; compat\ - our clang reimplementations of XDK C++ helper classes (source, since
-; they #include XDK headers); stagemodern compiles them into modern\lib\libcompat.a.
-Source: "..\..\runtime\compat\*";           DestDir: "{app}\modern\compat"; Components: modern
-; include\ - the modern C/C++23 runtime headers (xbox\ is staged in at install time)
-Source: "..\..\runtime\config\*";           DestDir: "{app}\modern\include\config"; Flags: recursesubdirs createallsubdirs; Components: modern
-Source: "..\..\vendor\picolibc\libc\include\*";          DestDir: "{app}\modern\include\picolibc"; Flags: recursesubdirs createallsubdirs; Components: modern
-Source: "..\..\build\llvm\libcxx\include\*";    DestDir: "{app}\modern\include\libcxx"; Flags: recursesubdirs createallsubdirs; Components: modern
-Source: "..\..\build\llvm\libcxxabi\include\*"; DestDir: "{app}\modern\include\libcxxabi"; Flags: recursesubdirs createallsubdirs; Components: modern
+Source: "..\..\build\libc\*.a";             DestDir: "{app}\lib\xbox"; Excludes: "kernel_import.a,libcompat.a"; Components: modern
+; bin\clang\compat\ - our clang reimplementations of XDK C++ helper classes (source,
+; since they #include XDK headers); stagemodern compiles them into lib\xbox\libcompat.a.
+Source: "..\..\runtime\compat\*";           DestDir: "{app}\bin\clang\compat"; Components: modern
+; bin\clang\include\ - the modern C/C++23 runtime headers (the XDK's own include\xbox
+; is a separate single copy at the product root, placed by the manifest engine)
+Source: "..\..\runtime\config\*";           DestDir: "{app}\bin\clang\include\config"; Flags: recursesubdirs createallsubdirs; Components: modern
+Source: "..\..\vendor\picolibc\libc\include\*";          DestDir: "{app}\bin\clang\include\picolibc"; Flags: recursesubdirs createallsubdirs; Components: modern
+Source: "..\..\build\llvm\libcxx\include\*";    DestDir: "{app}\bin\clang\include\libcxx"; Flags: recursesubdirs createallsubdirs; Components: modern
+Source: "..\..\build\llvm\libcxxabi\include\*"; DestDir: "{app}\bin\clang\include\libcxxabi"; Flags: recursesubdirs createallsubdirs; Components: modern
 
 [Registry]
 ; RXDK-360's own SDK key (read first by the RXDK-360 platform's Toolset.props),
@@ -124,14 +130,15 @@ Root: HKLM32; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; Valu
 Root: HKLM64; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletekey
 Root: HKLM32; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "Version";     ValueData: "{#AppVersion}"
 Root: HKLM64; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "Version";     ValueData: "{#AppVersion}"
-; Headers + xbox import libs live under {app}\legacy (XdkPath). Bin, other lib
-; folders (win32, ...), and the rest live at {app} (InstallPath / %RXDK360%).
-Root: HKLM32; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "XdkPath"; ValueData: "{app}\legacy"; Flags: uninsdeletevalue
-Root: HKLM64; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "XdkPath"; ValueData: "{app}\legacy"; Flags: uninsdeletevalue
-; Modern toolchain root: the clang Toolset.props + Platform.targets resolve the
-; Clang/LLVM tools and runtime from here (see ModernPath). xdvdfs is {app}\bin.
-Root: HKLM32; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "ModernPath"; ValueData: "{app}\modern"; Components: modern; Flags: uninsdeletevalue
-Root: HKLM64; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "ModernPath"; ValueData: "{app}\modern"; Components: modern; Flags: uninsdeletevalue
+; The install mirrors the real XDK, so the XDK tree lives at the product root:
+; XdkPath == InstallPath == {app} (headers at {app}\include\xbox, import libs at
+; {app}\lib\xbox). No separate legacy\ tree.
+Root: HKLM32; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "XdkPath"; ValueData: "{app}"; Flags: uninsdeletevalue
+Root: HKLM64; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "XdkPath"; ValueData: "{app}"; Flags: uninsdeletevalue
+; Clang compiler bundle root: the clang Toolset.props + Platform.targets resolve the
+; Clang/LLVM tools and runtime headers from here (see ModernPath). xdvdfs is {app}\bin.
+Root: HKLM32; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "ModernPath"; ValueData: "{app}\bin\clang"; Components: modern; Flags: uninsdeletevalue
+Root: HKLM64; Subkey: "SOFTWARE\TeamResurgent\RXDK-360"; ValueType: string; ValueName: "ModernPath"; ValueData: "{app}\bin\clang"; Components: modern; Flags: uninsdeletevalue
 
 [Icons]
 ; The XDK's own Start-menu shortcuts are created (under the RXDK-360 group) by
@@ -269,13 +276,15 @@ begin
   end
   else if CurStep = ssPostInstall then
   begin
-    { self-contained modern tree: copy the XDK stock headers + import libs from
-      the product root into the modern tree (its files are already laid down) }
+    { finish the mirrored tree in place: patch the XDK headers at {app}\include\xbox,
+      translate the XDK import libs {app}\lib\xbox\*.lib -> *.a, and build
+      kernel_import.a + libcompat.a into {app}\lib\xbox. Args: product root, clang
+      bundle root. Both trees are already laid down (manifest + Inno). }
     if WizardIsComponentSelected('modern') then
     begin
       ExtractTemporaryFile('RxdkXdkUnpacker.exe');
       Exec(ExpandConstant('{tmp}\RxdkXdkUnpacker.exe'),
-        'stagemodern "' + ExpandConstant('{app}\legacy') + '" "' + ExpandConstant('{app}\modern') + '"',
+        'stagemodern "' + ExpandConstant('{app}') + '" "' + ExpandConstant('{app}\bin\clang') + '"',
         '', SW_HIDE, ewWaitUntilTerminated, code);
     end;
     { machine-wide RXDK360 env var -> the (relocated) XDK; Uninstall removes it }

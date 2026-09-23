@@ -1,14 +1,17 @@
 <!--
-  RXDK-360 on-disk layout:
+  RXDK-360 on-disk layout -- mirrors the real Xbox 360 XDK tree (no modern/legacy
+  split). XdkPath == InstallPath == {app}; the XDK content sits at its native paths:
 
-    {app}\                      InstallPath / %RXDK360%
-      bin\win32\                stock XDK tools (cl, link, xbcp, xbdm.dll)
+    {app}\                      InstallPath / %RXDK360% / XdkPath
+      include\xbox\  win32\     XDK headers (single copy, patched in place)
+      lib\win32\  x64\  xbox\   XDK libs; our generated ELF .a live inside lib\xbox
+      bin\win32\  x64\  xbox\   stock XDK tools (cl, link, resx2bin, fxc, XuiTool, ...)
       bin\xdvdfs.exe            Xenia disc packer
-      lib\win32\, ...           host libs (not xbox)
-      legacy\                   XdkPath  (headers + xbox import libs)
-        include\
-        lib\                    xbox .libs here (no xbox\ subfolder)
-      modern\                   clang/LLVM sidecar
+      bin\clang\                the clang/LLVM compiler bundle (ModernPath):
+        bin\                      clang.exe, ld.lld.exe, llvm-ar.exe, XexTool.exe
+        include\                  config, picolibc, libcxx, libcxxabi (our CRT/STL)
+        lib\clang\                clang resource headers (found via bin\..\lib\clang)
+        compat\                   our compat .cpp (built at install -> lib\xbox\libcompat.a)
 -->
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
@@ -23,8 +26,8 @@
     <XDKInstallDir Condition="'$(XDKInstallDir)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Microsoft\Xbox\2.0\SDK@InstallPath)</XDKInstallDir>
     <XDKInstallDir Condition="'$(XDKInstallDir)' != '' and !HasTrailingSlash('$(XDKInstallDir)')">$(XDKInstallDir)\</XDKInstallDir>
 
-    <!-- RXDK-360 flattens stock lib\xbox into XdkPath\lib. Stock XEDK keeps lib\xbox. -->
-    <RxdkXboxLibDir Condition="'$(RxdkXboxLibDir)' == '' and '$(RxdkInstallDir)' != ''">$(XDKInstallDir)lib</RxdkXboxLibDir>
+    <!-- Both stock XEDK and RXDK-360 keep the console import libs at lib\xbox (the
+         install now mirrors the real XDK; the old flatten into XdkPath\lib is gone). -->
     <RxdkXboxLibDir Condition="'$(RxdkXboxLibDir)' == ''">$(XDKInstallDir)lib\xbox</RxdkXboxLibDir>
     <RxdkXboxLibDir Condition="'$(RxdkXboxLibDir)' != '' and !HasTrailingSlash('$(RxdkXboxLibDir)')">$(RxdkXboxLibDir)\</RxdkXboxLibDir>
 

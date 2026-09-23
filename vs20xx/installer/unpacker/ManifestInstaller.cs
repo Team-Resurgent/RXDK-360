@@ -117,22 +117,16 @@ namespace Rxdk.Xdk.Unpacker
             return i >= 0 ? p.Substring(i + 1) : p;
         }
 
-        // Console compile SDK under {app}\legacy: include\ as-is, lib\xbox files
-        // flattened into legacy\lib (no xbox subfolder). Other lib folders stay
-        // under {app}\lib.
+        // The install mirrors the real XDK tree verbatim (no modern\/legacy\ split):
+        // every XDK file lands at its own native path under the product root --
+        // include\xbox, include\win32, lib\{win32,x64,xbox}, bin\{win32,x64,xbox}, ...
+        // The clang bundle's stagemodern step later patches include\xbox and translates
+        // lib\xbox\*.lib -> *.a in place.
         private string Relocate(string token, string rel)
         {
             rel = (rel ?? "").Replace('/', '\\');
             if (!string.Equals(token, "XDK", StringComparison.OrdinalIgnoreCase))
                 return Path.Combine(ResolveDir(token) ?? "", rel);
-            if (rel.StartsWith("include\\", StringComparison.OrdinalIgnoreCase) ||
-                rel.Equals("include", StringComparison.OrdinalIgnoreCase))
-                return Path.Combine(_installDir, "legacy", rel);
-            const string xboxLib = "lib\\xbox";
-            if (rel.Equals(xboxLib, StringComparison.OrdinalIgnoreCase))
-                return Path.Combine(_installDir, "legacy", "lib");
-            if (rel.StartsWith(xboxLib + "\\", StringComparison.OrdinalIgnoreCase))
-                return Path.Combine(_installDir, "legacy", "lib", rel.Substring(xboxLib.Length + 1));
             return Path.Combine(_installDir, rel);
         }
 
@@ -227,10 +221,9 @@ namespace Rxdk.Xdk.Unpacker
         {
             if (string.IsNullOrEmpty(s)) return s;
             string root = _installDir.TrimEnd('\\') + "\\";
-            string legacy = Path.Combine(_installDir, "legacy").TrimEnd('\\') + "\\";
-            return s.Replace("%XDK%include", legacy + "include")
-                    .Replace("%XDK%lib", legacy + "lib")
-                    .Replace("%XDK%", root)
+            // The install mirrors the real XDK, so %XDK% is the product root and every
+            // %XDK%<rel> (include, lib, ...) expands to its native path under {app}.
+            return s.Replace("%XDK%", root)
                     .Replace("%SYSTEM_DIR%", ResolveDir("SYSTEM_DIR") + "\\");
         }
 

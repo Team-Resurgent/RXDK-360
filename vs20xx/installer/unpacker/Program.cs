@@ -35,42 +35,34 @@ namespace Rxdk.Xdk.Unpacker
             return rc;
         }
 
-        // Populate the modern tree's XDK-derived parts from the relocated XDK
-        // at {app}: stock headers (for the XDK-headers compile mode) and COFF
-        // import .libs (which genstubs reads for the console ordinals). This makes
-        // the modern toolchain self-contained.
-        private static void StageModern(string xdkRoot, string modernRoot)
+        // Finish the mirrored install tree IN PLACE. The install mirrors the real XDK
+        // (no modern\/legacy\ split): the XDK headers ({app}\include\xbox) and import
+        // .libs ({app}\lib\xbox\*.lib) are a single copy at the product root, placed by
+        // the manifest engine. We patch the headers and translate the libs where they
+        // are, and generate our archives (kernel_import.a, the coff2elf ELF .a,
+        // libcompat.a) next to them in {app}\lib\xbox. clang + llvm-ar live in the
+        // compiler bundle at {app}\bin\clang. Args: appRoot ({app}), clangRoot
+        // ({app}\bin\clang).
+        private static void StageModern(string appRoot, string clangRoot)
         {
             var undo = new List<string>();
-            string srcInc = Path.Combine(xdkRoot, "include", "xbox");
-            if (Directory.Exists(srcInc))
+            string dstInc = Path.Combine(appRoot, "include", "xbox");
+            if (Directory.Exists(dstInc))
             {
-                string dstInc = Path.Combine(modernRoot, "include", "xbox");
-                CopyDir(srcInc, dstInc, undo);
-                Report.Line("staged XDK headers -> {0}", dstInc);
+                // The XDK headers are the single product-root copy; patch them in place
+                // (idempotent) rather than staging a duplicate under the compiler tree.
                 PatchModernHeaders(dstInc);
+                Report.Line("patched XDK headers in place -> {0}", dstInc);
             }
-            string srcLib = Path.Combine(xdkRoot, "lib");
-            if (Directory.Exists(srcLib))
+            string dstLib = Path.Combine(appRoot, "lib", "xbox");
+            if (Directory.Exists(dstLib))
             {
-                string dstLib = Path.Combine(modernRoot, "lib");
-                Directory.CreateDirectory(dstLib);
-                int n = 0;
-                foreach (var f in Directory.GetFiles(srcLib, "*.lib"))
-                {
-                    string dst = Path.Combine(dstLib, Path.GetFileName(f));
-                    File.Copy(f, dst, true);
-                    undo.Add("file|" + dst);
-                    n++;
-                }
-                Report.Line("staged {0} XDK import libs -> {1}", n, dstLib);
-
-                // Build the global kernel import library from the just-staged libs,
-                // so every title links one kernel_import.a (like an SDK's xboxkrnl.lib)
-                // instead of discovering imports per-title. clang + llvm-ar ship in
-                // the modern tree; the console ordinals come from these XDK libs.
-                string clang = Path.Combine(modernRoot, "bin", "clang.exe");
-                string ar = Path.Combine(modernRoot, "bin", "llvm-ar.exe");
+                // Build the global kernel import library from the in-place XDK libs, so
+                // every title links one kernel_import.a (like an SDK's xboxkrnl.lib)
+                // instead of discovering imports per-title. clang + llvm-ar come from
+                // the compiler bundle; the console ordinals come from the XDK libs.
+                string clang = Path.Combine(clangRoot, "bin", "clang.exe");
+                string ar = Path.Combine(clangRoot, "bin", "llvm-ar.exe");
                 string kimp = Path.Combine(dstLib, "kernel_import.a");
                 if (File.Exists(clang) && File.Exists(ar))
                 {
@@ -83,15 +75,16 @@ namespace Rxdk.Xdk.Unpacker
                     catch (Exception ex) { Report.Line("WARNING: kernel_import.a not built: {0}", ex.Message); }
                 }
                 else
-                    Report.Line("WARNING: clang/llvm-ar missing under {0}\\bin; kernel_import.a not built", modernRoot);
+                    Report.Line("WARNING: clang/llvm-ar missing under {0}\\bin; kernel_import.a not built", clangRoot);
 
-                // Translate every staged XDK static .lib (big-endian PPC COFF, which
-                // lld cannot read) into a PPC32 ELF .a lld links natively (Coff2Elf,
-                // the byte-for-byte port of tools/coff2elf.py). These are XDK-derived
-                // (not redistributable), so they are generated here from the user's own
-                // libs rather than shipped. The runtime archives (libcpp.a/libc.a, laid
-                // down by the installer) form the external-strong set so a COMDAT
-                // signature the runtime owns strong stays strong.
+                // Translate every XDK static .lib (big-endian PPC COFF, which lld cannot
+                // read) into a PPC32 ELF .a lld links natively (Coff2Elf, the byte-for-
+                // byte port of tools/coff2elf.py). These are XDK-derived (not
+                // redistributable), so they are generated here from the user's own libs
+                // rather than shipped -- the .a land beside the .lib in {app}\lib\xbox.
+                // The runtime archives (libcpp.a/libc.a, laid down by the installer in
+                // the same dir) form the external-strong set so a COMDAT signature the
+                // runtime owns strong stays strong.
                 var runtimes = new List<string>();
                 foreach (var rl in new[] { "libcpp.a", "libc.a" })
                 {
@@ -119,40 +112,41 @@ namespace Rxdk.Xdk.Unpacker
                 // HERE rather than shipping it prebuilt: its sources #include the XDK's
                 // own headers, so it can only be compiled where the XDK exists -- the
                 // install machine, not CI. Same self-contained rule as kernel_import.a
-                // and the coff translations.
+                // and the coff translations. Output goes to {app}\lib\xbox.
                 if (File.Exists(clang) && File.Exists(ar))
                 {
                     try
                     {
-                        int nc = BuildCompatLib(modernRoot, dstLib, clang, ar);
+                        int nc = BuildCompatLib(clangRoot, dstInc, dstLib, clang, ar);
                         if (nc > 0) { undo.Add("file|" + Path.Combine(dstLib, "libcompat.a")); Report.Line("built libcompat.a ({0} sources) -> {1}", nc, dstLib); }
                     }
                     catch (Exception ex) { Report.Line("WARNING: libcompat.a not built: {0}", ex.Message); }
                 }
             }
-            // {app}\rxdk360-uninstall.log sits next to modern\, not under legacy\.
-            string undoLog = Path.GetFullPath(Path.Combine(modernRoot, "..", UndoLog));
+            // {app}\rxdk360-uninstall.log sits at the product root.
+            string undoLog = Path.Combine(appRoot, UndoLog);
             if (undo.Count > 0 && File.Exists(undoLog))
                 File.AppendAllLines(undoLog, undo);
         }
 
-        // Compile the compat sources (modern\compat\*.cpp) into modern\lib\libcompat.a
-        // with the shipped clang, in XDK-headers mode against the staged XDK headers
-        // (mirrors tools/build_libcompat.py's flag recipe). Returns the source count,
-        // or 0 when there are no compat sources to build.
-        private static int BuildCompatLib(string modernRoot, string dstLib, string clang, string ar)
+        // Compile the compat sources (bin\clang\compat\*.cpp) into {app}\lib\xbox\
+        // libcompat.a with the shipped clang, in XDK-headers mode against the XDK
+        // headers at the product root (mirrors tools/build_libcompat.py's flag recipe).
+        // Returns the source count, or 0 when there are no compat sources to build.
+        // clangRoot = {app}\bin\clang; xdkInc = {app}\include\xbox; dstLib = {app}\lib\xbox.
+        private static int BuildCompatLib(string clangRoot, string xdkInc, string dstLib, string clang, string ar)
         {
-            string srcDir = Path.Combine(modernRoot, "compat");
+            string srcDir = Path.Combine(clangRoot, "compat");
             if (!Directory.Exists(srcDir)) return 0;
             var sources = Directory.GetFiles(srcDir, "*.cpp");
             if (sources.Length == 0) return 0;
 
-            string inc = Path.Combine(modernRoot, "include");
+            string inc = Path.Combine(clangRoot, "include");
             string cfg = Path.Combine(inc, "config");
             string pico = Path.Combine(inc, "picolibc");
             string lx = Path.Combine(inc, "libcxx");
             string la = Path.Combine(inc, "libcxxabi");
-            string xdk = Path.Combine(inc, "xbox");
+            string xdk = xdkInc;   // {app}\include\xbox -- the single product-root copy
             // AutoClangFlags(C++) + the XDK-headers MS-compat recipe (ClangCompile's
             // XdkHeaderFlags / build_libcompat.py). -frtti so the base classes' _ZTI
             // typeinfo the subclass needs is emitted.
@@ -389,7 +383,7 @@ namespace Rxdk.Xdk.Unpacker
             Console.Error.WriteLine("  RxdkXdkUnpacker <XDKSetup.exe> <outDir>            (extract the XDK\\ tree)");
             Console.Error.WriteLine("  RxdkXdkUnpacker install <XDKSetup.exe> <installDir> (manifest-driven install)");
             Console.Error.WriteLine("  RxdkXdkUnpacker uninstall <installDir>              (reverse an install)");
-            Console.Error.WriteLine("  RxdkXdkUnpacker stagemodern <xdkRoot> <modernRoot>  (copy include/lib into modern)");
+            Console.Error.WriteLine("  RxdkXdkUnpacker stagemodern <appRoot> <clangRoot>   (patch headers + build archives in place)");
             Console.Error.WriteLine("  RxdkXdkUnpacker vsinstall   <vs20xx|vsintegrationDir> [--skip-vsix] [--skip-platform]");
             Console.Error.WriteLine("  RxdkXdkUnpacker vsuninstall <vs20xx|vsintegrationDir>");
             return 2;

@@ -25,21 +25,33 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild; a bad edit here breaks
   <PropertyGroup>
     <!-- Relocated XDK at {app} (include, lib, bin). Same resolution as 2010-01. -->
 
-    <!-- The modern toolchain payload root. Env RXDK360_MODERN wins (dev tree);
-         then RXDK-360's own registry ModernPath; else {app}\modern. -->
+    <!-- The clang toolchain bundle root. The installed tree mirrors the real XDK:
+         the bundle is a self-contained compiler at {app}\bin\clang (its own
+         bin\include\lib, like the XDK's TechPreview\Jul12Compiler), NOT a {app}\modern
+         sidecar. Env RXDK360_MODERN wins (dev tree); then registry ModernPath (set to
+         {app}\bin\clang by the installer); else {app}\bin\clang. -->
     <RxdkModernRoot Condition="'$(RxdkModernRoot)' == '' and '$(RXDK360_MODERN)' != ''">$(RXDK360_MODERN)</RxdkModernRoot>
     <RxdkModernRoot Condition="'$(RxdkModernRoot)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\TeamResurgent\RXDK-360@ModernPath)</RxdkModernRoot>
     <RxdkModernRoot Condition="'$(RxdkModernRoot)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\TeamResurgent\RXDK-360@ModernPath)</RxdkModernRoot>
-    <RxdkModernRoot Condition="'$(RxdkModernRoot)' == '' and '$(RxdkInstallDir)' != '' and Exists('$(RxdkInstallDir)modern\bin\clang.exe')">$(RxdkInstallDir)modern</RxdkModernRoot>
+    <RxdkModernRoot Condition="'$(RxdkModernRoot)' == '' and '$(RxdkInstallDir)' != '' and Exists('$(RxdkInstallDir)bin\clang\bin\clang.exe')">$(RxdkInstallDir)bin\clang</RxdkModernRoot>
     <RxdkModernRoot Condition="'$(RxdkModernRoot)' == ''">$(XDKInstallDir)</RxdkModernRoot>
     <RxdkModernRoot Condition="'$(RxdkModernRoot)' != '' and HasTrailingSlash('$(RxdkModernRoot)')">$(RxdkModernRoot.TrimEnd('\'))</RxdkModernRoot>
 
-    <!-- Two supported layouts, detected by whether the clean installed tree exists:
-         INSTALLED (clean)  RxdkModernRoot\{bin,lib,include}
+    <!-- Two supported layouts, detected by whether the clean installed bundle exists:
+         INSTALLED (clean)  RxdkModernRoot\{bin,include,lib} = {app}\bin\clang\...  (the
+                            compiler bundle), and the XDK content + our archives at the
+                            product root: {app}\include\xbox and {app}\lib\xbox.
          DEV (source tree)  RxdkModernRoot\{build\llvm\bin, build\libc, build\coff,
                             vendor\..., runtime\config} + the XDK install for headers.
          Everything is overridable. -->
     <_RxdkClean Condition="'$(_RxdkClean)' == '' and Exists('$(RxdkModernRoot)\bin\clang.exe')">true</_RxdkClean>
+
+    <!-- In the clean install the XDK headers (include\xbox), the XDK import .libs and
+         our generated archives (all in lib\xbox) live at the product root, one level
+         above the clang bundle (bin\clang). Prefer the registry InstallPath; fall back
+         to the bundle's grandparent (bin\clang\.. \.. = {app}). -->
+    <_RxdkXdkRoot Condition="'$(_RxdkXdkRoot)' == '' and '$(_RxdkClean)' == 'true' and '$(RxdkInstallDir)' != ''">$(RxdkInstallDir.TrimEnd('\'))</_RxdkXdkRoot>
+    <_RxdkXdkRoot Condition="'$(_RxdkXdkRoot)' == '' and '$(_RxdkClean)' == 'true'">$([System.IO.Path]::GetFullPath('$(RxdkModernRoot)\..\..'))</_RxdkXdkRoot>
 
     <!-- binary tools -->
     <RxdkClangPath   Condition="'$(RxdkClangPath)'   == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\bin\clang.exe</RxdkClangPath>
@@ -52,11 +64,13 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild; a bad edit here breaks
     <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == '' and Exists('$(RxdkModernRoot)\build\xextool\XexTool.exe')">$(RxdkModernRoot)\build\xextool\XexTool.exe</RxdkXexToolPath>
     <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == ''">$(RxdkModernRoot)\vendor\xextool\build\Release\XexTool.exe</RxdkXexToolPath>
 
-    <!-- library dirs: clean layout keeps every archive (our libc/libcpp, the coff2elf
-         libs, and the copied XDK import .libs for genstubs) under a single lib\. -->
-    <RxdkLibcDir Condition="'$(RxdkLibcDir)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\lib</RxdkLibcDir>
+    <!-- library dirs: the clean layout mirrors the XDK, so every archive (our
+         libc/libcpp, the coff2elf ELF libs, kernel_import/libcompat, and the XDK
+         import .libs for genstubs) lives together under {app}\lib\xbox next to the
+         stock console .libs (they coexist -- ours are .a, the XDK's are .lib). -->
+    <RxdkLibcDir Condition="'$(RxdkLibcDir)' == '' and '$(_RxdkClean)' == 'true'">$(_RxdkXdkRoot)\lib\xbox</RxdkLibcDir>
     <RxdkLibcDir Condition="'$(RxdkLibcDir)' == ''">$(RxdkModernRoot)\build\libc</RxdkLibcDir>
-    <RxdkCoffDir Condition="'$(RxdkCoffDir)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\lib</RxdkCoffDir>
+    <RxdkCoffDir Condition="'$(RxdkCoffDir)' == '' and '$(_RxdkClean)' == 'true'">$(_RxdkXdkRoot)\lib\xbox</RxdkCoffDir>
     <RxdkCoffDir Condition="'$(RxdkCoffDir)' == ''">$(RxdkModernRoot)\build\coff</RxdkCoffDir>
 
     <!-- modern C/C++23 runtime include dirs (picolibc + libc++), passed to the
@@ -73,10 +87,12 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild; a bad edit here breaks
     <RxdkLibcxxabiInc Condition="'$(RxdkLibcxxabiInc)' == ''">$(RxdkModernRoot)\vendor\llvm-project\libcxxabi\include</RxdkLibcxxabiInc>
 
     <!-- XDK headers (for XDK-headers mode) + import .libs (for genstubs). The clean
-         modern tree carries its own copies so it does not reach into the XDK. -->
-    <RxdkXdkIncludeDir Condition="'$(RxdkXdkIncludeDir)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\include\xbox</RxdkXdkIncludeDir>
+         install keeps a single copy of the XDK tree at the product root (mirroring the
+         real XDK: {app}\include\xbox, {app}\lib\xbox) -- no staged duplicate under the
+         compiler bundle. -->
+    <RxdkXdkIncludeDir Condition="'$(RxdkXdkIncludeDir)' == '' and '$(_RxdkClean)' == 'true'">$(_RxdkXdkRoot)\include\xbox</RxdkXdkIncludeDir>
     <RxdkXdkIncludeDir Condition="'$(RxdkXdkIncludeDir)' == ''">$(XDKInstallDir)include\xbox</RxdkXdkIncludeDir>
-    <RxdkXdkLibDir Condition="'$(RxdkXdkLibDir)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\lib</RxdkXdkLibDir>
+    <RxdkXdkLibDir Condition="'$(RxdkXdkLibDir)' == '' and '$(_RxdkClean)' == 'true'">$(_RxdkXdkRoot)\lib\xbox</RxdkXdkLibDir>
     <RxdkXdkLibDir Condition="'$(RxdkXdkLibDir)' == ''">$(RxdkXboxLibDir)</RxdkXdkLibDir>
 
     <!-- IntelliSense include search order (this is IntelliSense-only: the
