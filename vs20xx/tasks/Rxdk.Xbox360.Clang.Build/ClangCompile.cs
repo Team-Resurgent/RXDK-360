@@ -7,7 +7,7 @@ using System.IO;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
 
-namespace Rxdk.Xbox360.Modern.Build
+namespace Rxdk.Xbox360.Clang.Build
 {
     /// <summary>
     /// Compile C/C++/asm sources with the patched MS-PPC clang, one object per
@@ -16,7 +16,7 @@ namespace Rxdk.Xbox360.Modern.Build
     /// RTTI flags and the libc++/libc++abi headers (before picolibc so &lt;cstdlib&gt;
     /// etc. resolve to libc++'s wrappers). Prebuilt .o sources pass through.
     /// </summary>
-    public sealed class ClangCompile : ModernTool
+    public sealed class ClangCompile : ClangTool
     {
         [Required] public string ClangPath { get; set; }
 
@@ -49,7 +49,7 @@ namespace Rxdk.Xbox360.Modern.Build
         /// <summary>Compile against the stock XDK headers (D3D9 / XGraphics / xtl.h)
         /// instead of the modern picolibc/libc++ environment - the MS-compat recipe
         /// that lets clang parse the Win32/MSVC-style XDK headers. The title still
-        /// links the modern runtime; only the header set differs.</summary>
+        /// links the clang runtime; only the header set differs.</summary>
         public bool XdkHeaders { get; set; }
 
         /// <summary>Include dirs added in XDK-headers mode (the XDK's include\xbox).</summary>
@@ -192,7 +192,7 @@ namespace Rxdk.Xbox360.Modern.Build
                 // 1920 keeps char16_t a keyword (libc++ needs it) while enabling the
                 // MSVC lookup the XDK/ATG templates rely on.
                 "-fms-compatibility-version=1920",
-                // Reconcile the standard types/functions to the modern runtime so
+                // Reconcile the standard types/functions to the clang runtime so
                 // the XDK CRT headers don't redefine picolibc's (size_t/intptr_t),
                 // give picolibc's stdio its __gnuc_va_list, keep char16_t native,
                 // and expose picolibc's Annex K secure-CRT (__STDC_WANT_LIB_EXT1__).
@@ -213,7 +213,7 @@ namespace Rxdk.Xbox360.Modern.Build
                 // build (14.00.50727, the build-11886 compiler these headers ship for),
                 // which clears every XDK gate (all <= 14006016). Safe unlike a global
                 // _MSC_VER: nothing in libc++/picolibc/config tests _MSC_FULL_VER, so
-                // the modern runtime headers are unaffected.
+                // the clang runtime headers are unaffected.
                 "-D_MSC_FULL_VER=140050727",
                 // The stock secure CRT (stdio.h) declares vsprintf_s/vswprintf_s
                 // AFTER the inline templates that call them; MSVC's late template
@@ -239,7 +239,7 @@ namespace Rxdk.Xbox360.Modern.Build
                 "-D_WIN32=1", "-D_M_PPCBE=1", "-D_M_PPC=1", "-D_XBOX=1", "-D_XBOX_VER=200",
                 "-D__export=", "-D_SIZE_T_DEFINED", "-D_XM_NO_INTRINSICS_",
             });
-            // Reconciliation force-includes, AFTER the modern runtime's picolibc.h:
+            // Reconciliation force-includes, AFTER the clang runtime's picolibc.h:
             //  - stdint.h so picolibc's intptr_t/uintptr_t are in scope (we suppress
             //    the XDK's above), __stddef_max_align_t.h because the XDK stddef.h
             //    lacks max_align_t (libc++ <memory_resource> needs it), and the two

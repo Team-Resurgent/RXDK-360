@@ -23,7 +23,7 @@ ISOLATED MODE (--isolate): each test is its own title, run headless in its own
 xenia. Slower (one launch per section) but a crash cannot take the others down;
 useful to bisect a fault the combined run attributes to one section.
 
-Builds with mktitle --cc clang (which auto-links the modern runtime), parses the
+Builds with mktitle --cc clang (which auto-links the clang runtime), parses the
 [T] SECT/PASS/FAIL/DONE lines from xenia.log.
 
   python tools/run_stdlib_tests.py                 # all sections, one launch

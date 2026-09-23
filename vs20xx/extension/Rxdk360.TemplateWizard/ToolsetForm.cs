@@ -60,7 +60,7 @@ namespace Rxdk360.TemplateWizard
                 "so you can change it later in the project's Platform Toolset.");
             _modern = Radio("Modern (clang / LLVM)", true);
             var modernDesc = Wrap(wrapW - 20, 20,
-                "C/C++23 with the modern runtime (picolibc + libc++), packed by XexTool. " +
+                "C/C++23 with the clang runtime (picolibc + libc++), packed by XexTool. " +
                 "The productised RXDK-360 toolchain.", SystemColors.GrayText);
             var legacy = Radio("Legacy (stock Xbox 360 XDK)", false);
             var legacyDesc = Wrap(wrapW - 20, 20,

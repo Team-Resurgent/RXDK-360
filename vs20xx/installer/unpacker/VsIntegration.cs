@@ -175,7 +175,7 @@ namespace Rxdk.Xdk.Unpacker
         {
             string srcPlat = Path.Combine(msbuildPayload, "Xbox 360");
             string stockDll = Path.Combine(msbuildPayload, "tasks", toolset, "Rxdk.Xbox360.Build.dll");
-            string modernDll = Path.Combine(msbuildPayload, "tasks", "Rxdk.Xbox360.Modern.Build.dll");
+            string modernDll = Path.Combine(msbuildPayload, "tasks", "Rxdk.Xbox360.Clang.Build.dll");
             if (!Directory.Exists(srcPlat))
                 throw new DirectoryNotFoundException("extension is missing MSBuild\\Xbox 360");
             if (!File.Exists(stockDll))
@@ -189,7 +189,7 @@ namespace Rxdk.Xdk.Unpacker
             if (!string.IsNullOrEmpty(vcDir))
                 File.Copy(stockDll, Path.Combine(vcDir, "Rxdk.Xbox360.Build.dll"), true);
             if (File.Exists(modernDll))
-                File.Copy(modernDll, Path.Combine(dst, "Rxdk.Xbox360.Modern.Build.dll"), true);
+                File.Copy(modernDll, Path.Combine(dst, "Rxdk.Xbox360.Clang.Build.dll"), true);
         }
 
         private static void CopyTree(string src, string dst)

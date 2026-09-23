@@ -116,7 +116,7 @@
     <PropertyGroup>
       <_PlatRoot>$(MSBuildThisFileDirectory)..\..\Platforms\Xbox 360\</_PlatRoot>
       <_StockProj>$(MSBuildThisFileDirectory)..\..\tasks\Rxdk.Xbox360.Build\Rxdk.Xbox360.Build.csproj</_StockProj>
-      <_ModernProj>$(MSBuildThisFileDirectory)..\..\tasks\Rxdk.Xbox360.Modern.Build\Rxdk.Xbox360.Modern.Build.csproj</_ModernProj>
+      <_ClangProj>$(MSBuildThisFileDirectory)..\..\tasks\Rxdk.Xbox360.Clang.Build\Rxdk.Xbox360.Clang.Build.csproj</_ClangProj>
       <_TaskOut>$(MSBuildThisFileDirectory)obj\$(Configuration)\msbuild-tasks\</_TaskOut>
       <_Vs2022 Condition="Exists('C:\Program Files\Microsoft Visual Studio\2022\Enterprise')">C:\Program Files\Microsoft Visual Studio\2022\Enterprise</_Vs2022>
       <_Vs2022 Condition="'$(_Vs2022)' == '' AND Exists('C:\Program Files\Microsoft Visual Studio\2022\Professional')">C:\Program Files\Microsoft Visual Studio\2022\Professional</_Vs2022>
@@ -126,8 +126,8 @@
       <_Vs18 Condition="'$(_Vs18)' == '' AND Exists('C:\Program Files\Microsoft Visual Studio\18\Community')">C:\Program Files\Microsoft Visual Studio\18\Community</_Vs18>
     </PropertyGroup>
     <Error Condition="'$(_Vs2022)' == ''" Text="VS 2022 not found; needed to bind Rxdk.Xbox360.Build.dll against v170 CPPTasks." />
-    <MakeDir Directories="$(_TaskOut)v170;$(_TaskOut)v180;$(_TaskOut)modern" />
-    <Exec Command="dotnet build &quot;$(_ModernProj)&quot; -c $(Configuration) -o &quot;$(_TaskOut)modern&quot; -v q -nologo" />
+    <MakeDir Directories="$(_TaskOut)v170;$(_TaskOut)v180;$(_TaskOut)clang" />
+    <Exec Command="dotnet build &quot;$(_ClangProj)&quot; -c $(Configuration) -o &quot;$(_TaskOut)clang&quot; -v q -nologo" />
     <Exec Command="dotnet build &quot;$(_StockProj)&quot; -c $(Configuration) -o &quot;$(_TaskOut)v170&quot; -p:VcTaskVersion=v170 -p:VsInstallDir=&quot;$(_Vs2022)\\&quot; -v q -nologo" />
     <Exec Condition="'$(_Vs18)' != ''" Command="dotnet build &quot;$(_StockProj)&quot; -c $(Configuration) -o &quot;$(_TaskOut)v180&quot; -p:VcTaskVersion=v180 -p:VsInstallDir=&quot;$(_Vs18)\\&quot; -v q -nologo" />
     <ItemGroup>
@@ -141,7 +141,7 @@
       <VSIXSourceItem Include="$(_TaskOut)v180\Rxdk.Xbox360.Build.dll" Condition="Exists('$(_TaskOut)v180\Rxdk.Xbox360.Build.dll')">
         <VSIXSubPath>MSBuild\tasks\v180</VSIXSubPath>
       </VSIXSourceItem>
-      <VSIXSourceItem Include="$(_TaskOut)modern\Rxdk.Xbox360.Modern.Build.dll">
+      <VSIXSourceItem Include="$(_TaskOut)clang\Rxdk.Xbox360.Clang.Build.dll">
         <VSIXSubPath>MSBuild\tasks</VSIXSubPath>
       </VSIXSourceItem>
     </ItemGroup>

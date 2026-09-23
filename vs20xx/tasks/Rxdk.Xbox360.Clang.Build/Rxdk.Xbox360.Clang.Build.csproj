@@ -3,7 +3,7 @@
   <!--
     RXDK-360 *modern* Xbox 360 MSBuild task assembly.
 
-    Drives the modern (clang/LLVM) toolchain: clang.exe -> ld.lld trial link ->
+    Drives the clang/LLVM toolchain: clang.exe -> ld.lld trial link ->
     XexTool genstubs -> assemble stubs -> ld.lld final link -> XexTool pack, i.e.
     the mktitle.py flow, as MSBuild tasks so a title builds from Visual Studio.
 
@@ -14,13 +14,13 @@
     under VS2022 (v170) and VS "18" (v180) alike - no per-toolset rebuild.
 
     Build:  dotnet build -c Release
-    Output: bin\Release\net472\Rxdk.Xbox360.Modern.Build.dll
+    Output: bin\Release\net472\Rxdk.Xbox360.Clang.Build.dll
   -->
 
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
-    <AssemblyName>Rxdk.Xbox360.Modern.Build</AssemblyName>
-    <RootNamespace>Rxdk.Xbox360.Modern.Build</RootNamespace>
+    <AssemblyName>Rxdk.Xbox360.Clang.Build</AssemblyName>
+    <RootNamespace>Rxdk.Xbox360.Clang.Build</RootNamespace>
     <LangVersion>latest</LangVersion>
     <Deterministic>true</Deterministic>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>

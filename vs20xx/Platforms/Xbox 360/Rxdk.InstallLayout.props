@@ -7,7 +7,7 @@
       lib\win32\  x64\  xbox\   XDK libs; our generated ELF .a live inside lib\xbox
       bin\win32\  x64\  xbox\   stock XDK tools (cl, link, resx2bin, fxc, XuiTool, ...)
       bin\xdvdfs.exe            Xenia disc packer
-      bin\clang\                the clang/LLVM compiler bundle (ModernPath):
+      bin\clang\                the clang/LLVM compiler bundle (ClangRoot):
         bin\                      clang.exe, ld.lld.exe, llvm-ar.exe, XexTool.exe
         include\                  config, picolibc, libcxx, libcxxabi (our CRT/STL)
         lib\clang\                clang resource headers (found via bin\..\lib\clang)

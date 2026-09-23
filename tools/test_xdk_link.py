@@ -8,7 +8,7 @@ the script:
   1. "unable to find library from dependent library specifier: libcpmt" -- XDK
      headers (use_ansi.h et al) bake #pragma comment(lib, ...) into every object
      that includes them, which clang emits as a .deplibs record; ld.lld follows
-     it and searches for MSVC's C++ static runtime, which the modern toolchain
+     it and searches for MSVC's C++ static runtime, which the clang toolchain
      does not ship. Fixed by mktitle passing --no-dependent-libraries.
   2. "duplicate symbol: atan2f" (and similar) -- XDK static libs bundle their own
      CRT pieces (xaudio2.lib carries its own atan2f) that collide with the modern

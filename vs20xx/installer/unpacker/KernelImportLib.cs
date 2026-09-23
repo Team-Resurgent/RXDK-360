@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Part of RXDK-360 - see LICENSE.md for the full GNU GPL v3.
 //
-// Build the modern toolchain's global kernel import library, kernel_import.a,
+// Build the clang toolchain's global kernel import library, kernel_import.a,
 // at install time from the user's own XDK import libraries. This is the C#
 // twin of tools/build_import_lib.py (which the developer uses); it exists here
 // because the console ordinals come from the user's XDK and clang/llvm-ar ship

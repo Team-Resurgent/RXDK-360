@@ -253,7 +253,7 @@ def link(objects, libs, stubs, layout, out_elf, lld=DEFAULT_LLD, gc=True,
     # --no-dependent-libraries: XDK headers (use_ansi.h et al) bake
     # #pragma comment(lib, "libcpmt") into every object that includes them, which
     # clang emits as a .deplibs record; ld.lld would otherwise follow it and fail
-    # to find MSVC's C++ static runtime, which the modern toolchain deliberately
+    # to find MSVC's C++ static runtime, which the clang toolchain deliberately
     # does not ship (issue #3). Every archive we need is named explicitly, so
     # dropping the auto-pull loses nothing. Matches the VS path (ClangLink.cs).
     cmd = [lld, "-T", layout, "-e", "_start", "--error-limit=0", "--no-demangle",
@@ -310,7 +310,7 @@ def main():
                          "-> <coff-dir>/<name>.a. Added on TOP of the default "
                          "runtime libs (see --no-default-libs)")
     ap.add_argument("--no-default-libs", action="store_true",
-                    help="do not auto-link the modern runtime (libc.a, xapilib.a, "
+                    help="do not auto-link the clang runtime (libc.a, xapilib.a, "
                          "and libcpp.a for C++). Use when linking libcMT instead, "
                          "or managing the lib set by hand")
     ap.add_argument("--coff-dir", default=os.path.join(ROOT, "build", "coff"),
@@ -358,7 +358,7 @@ def main():
     # set that varies per solution configuration (d3d9/xgraphics/xnet/xaudio2/
     # xact3/x3daudio/xmcore/vcomp/xbdm, with debug/profile/ltcg suffixes). That
     # full per-config list is the project template's job once those components are
-    # brought up for the modern toolchain; a title needing them adds them via
+    # brought up for the clang toolchain; a title needing them adds them via
     # --lib in the meantime. --no-default-libs opts out entirely (to link libcMT
     # instead, or to manage the set by hand). User --lib entries go first, the
     # runtime after, matching the official link order (title libs, then CRT).

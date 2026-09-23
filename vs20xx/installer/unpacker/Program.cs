@@ -43,7 +43,7 @@ namespace Rxdk.Xdk.Unpacker
         // libcompat.a) next to them in {app}\lib\xbox. clang + llvm-ar live in the
         // compiler bundle at {app}\bin\clang. Args: appRoot ({app}), clangRoot
         // ({app}\bin\clang).
-        private static void StageModern(string appRoot, string clangRoot)
+        private static void StageClang(string appRoot, string clangRoot)
         {
             var undo = new List<string>();
             string dstInc = Path.Combine(appRoot, "include", "xbox");
@@ -51,7 +51,7 @@ namespace Rxdk.Xdk.Unpacker
             {
                 // The XDK headers are the single product-root copy; patch them in place
                 // (idempotent) rather than staging a duplicate under the compiler tree.
-                PatchModernHeaders(dstInc);
+                PatchXdkHeaders(dstInc);
                 Report.Line("patched XDK headers in place -> {0}", dstInc);
             }
             string dstLib = Path.Combine(appRoot, "lib", "xbox");
@@ -209,11 +209,11 @@ namespace Rxdk.Xdk.Unpacker
 
         // Small, idempotent fixups to stock XDK headers that only clang (not the
         // XDK's cl.exe) rejects. Each is a prepend/replace guarded by a marker so
-        // re-running stagemodern is a no-op. Kept here (not as patch files) so the
+        // re-running stageclang is a no-op. Kept here (not as patch files) so the
         // set is visible and travels with the unpacker.
         private const string HdrMarker = "/* RXDK360-patched */";
 
-        private static void PatchModernHeaders(string xboxInc)
+        private static void PatchXdkHeaders(string xboxInc)
         {
             // XStudioApi.h declares fields of enum _NUI_IMAGE_TYPE but #includes
             // nothing, relying on the TU having pulled the NUI headers first. clang
@@ -282,7 +282,7 @@ namespace Rxdk.Xdk.Unpacker
         {
             try
             {
-                // verbs: unpack | install | uninstall | stagemodern | vsinstall | vsuninstall
+                // verbs: unpack | install | uninstall | stageclang | vsinstall | vsuninstall
                 if (args.Length >= 1 && args[0].Equals("uninstall", StringComparison.OrdinalIgnoreCase))
                 {
                     if (args.Length < 2) return Usage();
@@ -299,10 +299,10 @@ namespace Rxdk.Xdk.Unpacker
                     return VsIntegration.Run(args[0].Equals("vsuninstall", StringComparison.OrdinalIgnoreCase), rest);
                 }
 
-                if (args.Length >= 1 && args[0].Equals("stagemodern", StringComparison.OrdinalIgnoreCase))
+                if (args.Length >= 1 && args[0].Equals("stageclang", StringComparison.OrdinalIgnoreCase))
                 {
                     if (args.Length < 3) return Usage();
-                    StageModern(args[1], args[2]);
+                    StageClang(args[1], args[2]);
                     return 0;
                 }
 
@@ -383,7 +383,7 @@ namespace Rxdk.Xdk.Unpacker
             Console.Error.WriteLine("  RxdkXdkUnpacker <XDKSetup.exe> <outDir>            (extract the XDK\\ tree)");
             Console.Error.WriteLine("  RxdkXdkUnpacker install <XDKSetup.exe> <installDir> (manifest-driven install)");
             Console.Error.WriteLine("  RxdkXdkUnpacker uninstall <installDir>              (reverse an install)");
-            Console.Error.WriteLine("  RxdkXdkUnpacker stagemodern <appRoot> <clangRoot>   (patch headers + build archives in place)");
+            Console.Error.WriteLine("  RxdkXdkUnpacker stageclang <appRoot> <clangRoot>   (patch headers + build archives in place)");
             Console.Error.WriteLine("  RxdkXdkUnpacker vsinstall   <vs20xx|vsintegrationDir> [--skip-vsix] [--skip-platform]");
             Console.Error.WriteLine("  RxdkXdkUnpacker vsuninstall <vs20xx|vsintegrationDir>");
             return 2;

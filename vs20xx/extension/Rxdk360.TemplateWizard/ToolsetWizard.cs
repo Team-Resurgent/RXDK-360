@@ -23,7 +23,7 @@ namespace Rxdk360.TemplateWizard
     ///   * Modern: Debug / Release / Release_LTCG. The clang toolchain cannot link
     ///     the debug/profile lib variants (they pull xbdm/PIX), so every config uses
     ///     the retail libs; Release_LTCG turns on real clang/lld link-time
-    ///     optimisation (RxdkModernLto).
+    ///     optimisation (RxdkClangLto).
     /// The three $rxdk...$ template parameters below are substituted into
     /// Xbox360Game.vcxproj.
     /// </summary>
@@ -99,7 +99,7 @@ namespace Rxdk360.TemplateWizard
 
         // ---- MODERN (clang) : Debug / Release / Release_LTCG, retail libs -------
         // _DEBUG is intentionally not defined even in Debug: it selects the stock
-        // debug D3D runtime (d3d9d + xapilibd/xbdm/PIX) which the modern toolchain
+        // debug D3D runtime (d3d9d + xapilibd/xbdm/PIX) which the clang toolchain
         // cannot link, so Debug pins the retail runtime and just keeps -O0 + DWARF.
         private const string RetailLibs = "xboxkrnl.lib;xapilib.lib;d3d9.lib;d3dx9.lib;xgraphics.lib";
 
@@ -110,11 +110,11 @@ namespace Rxdk360.TemplateWizard
             "    <ConfigurationType>Application</ConfigurationType>\r\n" +
             "    <PlatformToolset>clang</PlatformToolset>\r\n" +
             "    <CharacterSet>Unicode</CharacterSet>\r\n" +
-            "    <RxdkModernXdkHeaders>true</RxdkModernXdkHeaders>\r\n" +
+            "    <RxdkClangXdkHeaders>true</RxdkClangXdkHeaders>\r\n" +
             "  </PropertyGroup>\r\n" +
             "  <PropertyGroup Condition=\"'$(Configuration)'=='Release_LTCG'\" Label=\"Configuration\">\r\n" +
             "    <!-- Real link-time optimisation: clang -flto on every TU + lld LTO. -->\r\n" +
-            "    <RxdkModernLto>true</RxdkModernLto>\r\n" +
+            "    <RxdkClangLto>true</RxdkClangLto>\r\n" +
             "  </PropertyGroup>\r\n";
 
         private static readonly string ModernItemDefs =

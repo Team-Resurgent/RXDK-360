@@ -4,13 +4,12 @@
 // Manifest-driven installer. The Xbox 360 XDK setup carries a manifest.csv that
 // maps every payload file to a destination token and lists registry, shortcut
 // and self-register actions. This engine replays those actions RELOCATED for
-// RXDK-360 (XDK token -> {app}; Start-menu group -> "RXDK-360"):
-//   include\          -> {app}\legacy\include\
-//   lib\xbox\*        -> {app}\legacy\lib\*       (console .libs, no xbox\ folder)
-//   lib\<other>\      -> {app}\lib\<other>\       (host libs stay at the root)
-//   everything else   -> {app}\                   (bin, doc, source, shortcuts)
-// {app}\modern is the clang sidecar. Never rewrites the stock Xbox\2.0\SDK /
-// XenonSDK keys.
+// RXDK-360, mirroring the real XDK tree (XDK token -> {app}; group -> "RXDK-360"):
+//   include\xbox\, lib\xbox\, bin\win32\, ...  -> {app}\...  (native XDK paths, verbatim)
+//   Source\Samples\*                            -> dropped (RXDK360-Samples replaces them)
+// The clang compiler bundle is a separate self-contained tree at {app}\bin\clang; the
+// stageclang step patches include\xbox and translates lib\xbox\*.lib -> *.a in place.
+// Never rewrites the stock Xbox\2.0\SDK / XenonSDK keys.
 //
 // Columns:  lcid,arch,action,destToken,arg1,arg2,arg3,hash
 //   file/copy : arg1 = <destToken>\relpath (source in staging), arg2 = flags (SO=self-register)
@@ -120,7 +119,7 @@ namespace Rxdk.Xdk.Unpacker
         // The install mirrors the real XDK tree verbatim (no modern\/legacy\ split):
         // every XDK file lands at its own native path under the product root --
         // include\xbox, include\win32, lib\{win32,x64,xbox}, bin\{win32,x64,xbox}, ...
-        // The clang bundle's stagemodern step later patches include\xbox and translates
+        // The clang bundle's stageclang step later patches include\xbox and translates
         // lib\xbox\*.lib -> *.a in place.
         private string Relocate(string token, string rel)
         {
@@ -136,6 +135,17 @@ namespace Rxdk.Xdk.Unpacker
             string destBase = ResolveDir(token);
             if (destBase == null) { _skipped++; return; }
             string rel = Rel(srcRelWithToken);
+            // Drop the XDK's stock samples: RXDK360-Samples (shipped by the installer,
+            // with the committed .sln/.vcxproj that build under the clang toolset)
+            // replaces the whole Source\Samples tree. Source\Tools (SampleBrowser) and
+            // Source\crt stay. Guard both separators; the manifest uses backslashes.
+            if (string.Equals(token, "XDK", StringComparison.OrdinalIgnoreCase) &&
+                (rel.StartsWith("Source\\Samples\\", StringComparison.OrdinalIgnoreCase) ||
+                 rel.Equals("Source\\Samples", StringComparison.OrdinalIgnoreCase)))
+            {
+                _skipped++;
+                return;
+            }
             string src = Path.Combine(_staging, srcRelWithToken.Replace('/', '\\'));
             if (!File.Exists(src)) { _skipped++; return; }
             string dst = Relocate(token, rel);
@@ -315,7 +325,7 @@ namespace Rxdk.Xdk.Unpacker
             File.Delete(path);
         }
 
-        // XDK + stagemodern leftovers. Leave tools, vsintegration, and the Inno
+        // XDK + stageclang leftovers. Leave tools, vsintegration, and the Inno
         // uninstaller so later UninstallRun entries and Inno itself can finish.
         private static void WipeInstallPayload(string installDir)
         {

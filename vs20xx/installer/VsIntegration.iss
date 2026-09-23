@@ -156,9 +156,9 @@ begin
     CopyFile(dll, vcDir + '\Rxdk.Xbox360.Build.dll', False);
     CopyFile(dll, dst + '\Rxdk.Xbox360.Build.dll', False);
   end;
-  dll := ExpandConstant('{app}\vsintegration\MSBuild\tasks\Rxdk.Xbox360.Modern.Build.dll');
+  dll := ExpandConstant('{app}\vsintegration\MSBuild\tasks\Rxdk.Xbox360.Clang.Build.dll');
   if FileExists(dll) then
-    CopyFile(dll, dst + '\Rxdk.Xbox360.Modern.Build.dll', False);
+    CopyFile(dll, dst + '\Rxdk.Xbox360.Clang.Build.dll', False);
 end;
 
 procedure RemoveOneToolset(const VsRoot, Ts: String);

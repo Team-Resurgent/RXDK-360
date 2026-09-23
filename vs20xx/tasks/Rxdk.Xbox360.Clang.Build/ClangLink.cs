@@ -9,7 +9,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
 
-namespace Rxdk.Xbox360.Modern.Build
+namespace Rxdk.Xbox360.Clang.Build
 {
     /// <summary>
     /// Link compiled objects into a bootable XEX with the modern (LLVM) toolchain,
@@ -19,7 +19,7 @@ namespace Rxdk.Xbox360.Modern.Build
     /// reaches; binds those kept imports (BindKernelImports: patch the per-title
     /// module index, emit the manifest), then packs and debug-signs with XexTool.
     /// </summary>
-    public sealed class ClangLink : ModernTool
+    public sealed class ClangLink : ClangTool
     {
         [Required] public string ClangPath { get; set; }
         [Required] public string LldPath { get; set; }
@@ -38,7 +38,7 @@ namespace Rxdk.Xbox360.Modern.Build
 
         /// <summary>Where bare library names resolve (coff2elf archives).</summary>
         public string CoffDir { get; set; }
-        /// <summary>Where the modern runtime archives (libc.a/libcpp.a) live.</summary>
+        /// <summary>Where the clang runtime archives (libc.a/libcpp.a) live.</summary>
         public string LibcDir { get; set; }
 
         public string MsTriple { get; set; } = "powerpc-unknown-xbox360";
@@ -48,10 +48,10 @@ namespace Rxdk.Xbox360.Modern.Build
         public string[] Libraries { get; set; }
         /// <summary>The project's standard Linker -&gt; Input -&gt; Additional Dependencies
         /// (e.g. "xboxkrnl.lib;xapilib.lib;d3d9.lib;..."), mirroring an official title.
-        /// Each ".lib" is mapped to the modern toolchain's equivalent - see
+        /// Each ".lib" is mapped to the clang toolchain's equivalent - see
         /// ResolveLibraries.</summary>
         public string[] AdditionalDependencies { get; set; }
-        /// <summary>Do not auto-link the modern runtime (libc.a, libcpp.a, xapilib.a).</summary>
+        /// <summary>Do not auto-link the clang runtime (libc.a, libcpp.a, xapilib.a).</summary>
         public bool NoDefaultLibs { get; set; }
 
         public string AdditionalOptions { get; set; }
@@ -219,11 +219,11 @@ namespace Rxdk.Xbox360.Modern.Build
 
         /// <summary>
         /// Resolve the archives to link. Two sources, treated the same: Libraries
-        /// (the RxdkModernLibs bare-name list) and AdditionalDependencies (the
+        /// (the RxdkClangLibs bare-name list) and AdditionalDependencies (the
         /// project's standard Linker Input field, mirroring an official title). Each
         /// entry maps like this:
         ///   * a full path or a *.a           -> taken as-is
-        ///   * the CRT (libc/libcmt/libcpp..) -> the modern runtime archive
+        ///   * the CRT (libc/libcmt/libcpp..) -> the clang runtime archive
         ///   * an XEX-import module (xboxkrnl/xam/xbdm) -> skipped (genstubs handles it)
         ///   * anything else                  -> CoffDir\name.a (our translated code;
         ///                                       --gc-sections drops what the title
@@ -249,7 +249,7 @@ namespace Rxdk.Xbox360.Modern.Build
                         name = name.Substring(0, name.Length - 4);
                     if (name.Length == 0) continue;
                     var lower = name.ToLowerInvariant();
-                    // CRT aliases (retail + debug spellings) -> the modern runtime.
+                    // CRT aliases (retail + debug spellings) -> the clang runtime.
                     if (lower == "libc" || lower == "libcmt" || lower == "libcmtd" || lower == "msvcrt")
                     { if (!string.IsNullOrEmpty(LibcDir)) user.Add(Path.Combine(LibcDir, "libc.a")); continue; }
                     if (lower == "libcpp" || lower == "libc++" || lower == "libcpmt" || lower == "libcpmtd")

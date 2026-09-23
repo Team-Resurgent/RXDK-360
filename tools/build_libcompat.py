@@ -6,7 +6,7 @@ Clean clang reimplementations of the XDK C++ helper classes that titles subclass
 give the base class the modern *Itanium* C++ ABI -- vtable, RTTI, this-adjusting
 thunks, mangled names -- that a clang-compiled subclass links against. Compiled
 in XDK-headers mode (against the XDK's own headers, exactly as a title is), then
-archived. libcompat is OUR code, so it ships prebuilt in the modern runtime and
+archived. libcompat is OUR code, so it ships prebuilt in the clang runtime and
 nothing runs on the user's machine.
 
     python tools/build_libcompat.py            -> build/libc/libcompat.a

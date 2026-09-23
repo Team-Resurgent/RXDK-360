@@ -45,8 +45,8 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <NativeExecutablePath Condition="'$(NativeExecutablePath)' == ''">$(ExecutablePath)</NativeExecutablePath>
     <!-- Surfaced read-only on the General property page (general.xml ->
          RxdkToolchainDisplay) so it is obvious at a glance which toolchain a
-         project builds with. The modern clang toolset sets "Modern (clang/LLVM)". -->
-    <RxdkToolchain Condition="'$(RxdkToolchain)' == ''">Legacy (stock XDK)</RxdkToolchain>
+         project builds with. The clang toolset sets "Clang/LLVM". -->
+    <RxdkToolchain Condition="'$(RxdkToolchain)' == ''">Stock XDK</RxdkToolchain>
   </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter\*.2010-01.props" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter')" />

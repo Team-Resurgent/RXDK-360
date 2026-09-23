@@ -10,7 +10,7 @@ namespace Rxdk.Xbox360.Dwarf
 {
     /// <summary>
     /// Minimal 32-bit big-endian ELF reader - just enough to pull the DWARF debug
-    /// sections out of a linked RXDK-360 modern title (.elf). The modern toolchain
+    /// sections out of a linked RXDK-360 modern title (.elf). The clang toolchain
     /// links a PowerPC big-endian ELF32, so only that shape is handled.
     /// </summary>
     public sealed class ElfFile

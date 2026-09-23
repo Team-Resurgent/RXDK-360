@@ -4,7 +4,7 @@ RXDK-360 "clang" platform toolset - build targets.
 
 Imported at the END of Platform.targets (after the stock ClCompile/Link/ImageXex
 targets are defined), so these definitions OVERRIDE them: an RXDK-360 project set
-to <PlatformToolset>clang</PlatformToolset> builds with the modern (clang/LLVM)
+to <PlatformToolset>clang</PlatformToolset> builds with the clang/LLVM
 toolchain instead of the stock XDK cl.exe/link.exe/imagexex.
 
   ClCompile - patched MS-PPC clang, one object per source into $(IntDir).
@@ -13,7 +13,7 @@ toolchain instead of the stock XDK cl.exe/link.exe/imagexex.
               (ImageXex is therefore a no-op for this toolset - packing already
               happened in Link, including Image Conversion title id / privileges
               via XexTool applyxml.)
-  Lib       - not yet supported for the modern toolchain (no archiver shipped);
+  Lib       - not yet supported for the clang toolchain (no archiver shipped);
               use a stock-toolset (2010-01) StaticLibrary, or link sources directly.
 
 WARNING:  DO NOT MODIFY unless you understand MSBuild.
@@ -22,33 +22,33 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportBefore\*.clang.targets" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportBefore')" />
 
-  <UsingTask TaskName="Rxdk.Xbox360.Modern.Build.ClangCompile" AssemblyFile="$(MSBuildThisFileDirectory)..\..\Rxdk.Xbox360.Modern.Build.dll"/>
-  <UsingTask TaskName="Rxdk.Xbox360.Modern.Build.ClangLink"    AssemblyFile="$(MSBuildThisFileDirectory)..\..\Rxdk.Xbox360.Modern.Build.dll"/>
+  <UsingTask TaskName="Rxdk.Xbox360.Clang.Build.ClangCompile" AssemblyFile="$(MSBuildThisFileDirectory)..\..\Rxdk.Xbox360.Clang.Build.dll"/>
+  <UsingTask TaskName="Rxdk.Xbox360.Clang.Build.ClangLink"    AssemblyFile="$(MSBuildThisFileDirectory)..\..\Rxdk.Xbox360.Clang.Build.dll"/>
 
   <PropertyGroup>
-    <!-- Where the modern link stage writes its scratch (.ld/.elf/stubs), kept out
+    <!-- Where the clang link stage writes its scratch (.ld/.elf/stubs), kept out
          of $(IntDir) so the object glob below sees only compiled sources. -->
-    <RxdkModernLinkDir Condition="'$(RxdkModernLinkDir)' == ''">$(IntDir)link\</RxdkModernLinkDir>
+    <RxdkClangLinkDir Condition="'$(RxdkClangLinkDir)' == ''">$(IntDir)link\</RxdkClangLinkDir>
     <!-- Comma/semicolon list of extra libraries (bare name -> coff archive). The
-         modern runtime (libc.a/libcpp.a/xapilib.a) is auto-linked unless opted out. -->
-    <RxdkModernLibs Condition="'$(RxdkModernLibs)' == ''"></RxdkModernLibs>
-    <RxdkModernNoDefaultLibs Condition="'$(RxdkModernNoDefaultLibs)' == ''">false</RxdkModernNoDefaultLibs>
+         clang runtime (libc.a/libcpp.a/xapilib.a) is auto-linked unless opted out. -->
+    <RxdkClangLibs Condition="'$(RxdkClangLibs)' == ''"></RxdkClangLibs>
+    <RxdkClangNoDefaultLibs Condition="'$(RxdkClangNoDefaultLibs)' == ''">false</RxdkClangNoDefaultLibs>
 
     <!-- Debug configs compile with DWARF at -O0 and keep the linked .elf beside
          the .xex as the symbol file (source-level debugging reads DWARF from it,
          mapped onto the XEX load base); Release optimises with no debug info. -->
-    <RxdkModernDebug Condition="'$(RxdkModernDebug)' == '' and '$(Configuration)' == 'Debug'">true</RxdkModernDebug>
-    <RxdkModernDebug Condition="'$(RxdkModernDebug)' == ''">false</RxdkModernDebug>
-    <RxdkModernOpt Condition="'$(RxdkModernOpt)' == '' and '$(RxdkModernDebug)' == 'true'">-O0</RxdkModernOpt>
-    <RxdkModernOpt Condition="'$(RxdkModernOpt)' == ''">-O2</RxdkModernOpt>
+    <RxdkClangDebug Condition="'$(RxdkClangDebug)' == '' and '$(Configuration)' == 'Debug'">true</RxdkClangDebug>
+    <RxdkClangDebug Condition="'$(RxdkClangDebug)' == ''">false</RxdkClangDebug>
+    <RxdkClangOpt Condition="'$(RxdkClangOpt)' == '' and '$(RxdkClangDebug)' == 'true'">-O0</RxdkClangOpt>
+    <RxdkClangOpt Condition="'$(RxdkClangOpt)' == ''">-O2</RxdkClangOpt>
 
     <!-- XDK-headers mode: compile against the stock XDK headers (D3D9 / XGraphics /
          xtl.h) with the MS-compat recipe, for titles that use the XDK API surface
          (e.g. a D3D9 game). Off by default (pure modern C/C++23 on picolibc/libc++).
          The XDK headers are C++03-era, so this mode compiles at c++14. -->
-    <RxdkModernXdkHeaders Condition="'$(RxdkModernXdkHeaders)' == ''">false</RxdkModernXdkHeaders>
-    <RxdkModernCppStd Condition="'$(RxdkModernCppStd)' == '' and '$(RxdkModernXdkHeaders)' == 'true'">c++14</RxdkModernCppStd>
-    <RxdkModernCppStd Condition="'$(RxdkModernCppStd)' == ''">c++23</RxdkModernCppStd>
+    <RxdkClangXdkHeaders Condition="'$(RxdkClangXdkHeaders)' == ''">false</RxdkClangXdkHeaders>
+    <RxdkClangCppStd Condition="'$(RxdkClangCppStd)' == '' and '$(RxdkClangXdkHeaders)' == 'true'">c++14</RxdkClangCppStd>
+    <RxdkClangCppStd Condition="'$(RxdkClangCppStd)' == ''">c++23</RxdkClangCppStd>
   </PropertyGroup>
 
   <!-- ***** ClCompile ***** -->
@@ -65,18 +65,18 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
 
     <ClangCompile
         ClangPath="$(RxdkClangPath)"
-        RxdkRoot="$(RxdkModernRoot)"
+        RxdkRoot="$(RxdkClangRoot)"
         PicolibcIncludeDir="$(RxdkPicolibcInc)"
         ConfigDir="$(RxdkConfigInc)"
         LibcxxIncludeDir="$(RxdkLibcxxInc)"
         LibcxxabiIncludeDir="$(RxdkLibcxxabiInc)"
         OutputDir="$(IntDir)"
         Sources="@(ClCompile)"
-        Optimization="$(RxdkModernOpt)"
-        LanguageStandardCpp="$(RxdkModernCppStd)"
-        DebugInformation="$(RxdkModernDebug)"
-        Lto="$(RxdkModernLto)"
-        XdkHeaders="$(RxdkModernXdkHeaders)"
+        Optimization="$(RxdkClangOpt)"
+        LanguageStandardCpp="$(RxdkClangCppStd)"
+        DebugInformation="$(RxdkClangDebug)"
+        Lto="$(RxdkClangLto)"
+        XdkHeaders="$(RxdkClangXdkHeaders)"
         XdkIncludeDirectories="$(RxdkXdkIncludeDir)"
         AdditionalIncludeDirectories="$(_RxdkInc)"
         PreprocessorDefinitions="$(_RxdkDef)"
@@ -88,30 +88,30 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
           Condition="'@(Link)' != '' and ('$(ConfigurationType)' == 'Application' or '$(ConfigurationType)' == 'DynamicLibrary')"
           DependsOnTargets="ComputeLinkSwitches">
     <PropertyGroup>
-      <_ModernXex>@(ImageXex->'%(ImageXexOutput)')</_ModernXex>
-      <_ModernXex Condition="'$(_ModernXex)' == ''">$(OutDir)$(TargetName).xex</_ModernXex>
-      <_ModernBase>@(ImageXex->'%(BaseAddress)')</_ModernBase>
-      <_ModernBase Condition="'$(_ModernBase)' == ''">0x82000000</_ModernBase>
+      <_ClangXex>@(ImageXex->'%(ImageXexOutput)')</_ClangXex>
+      <_ClangXex Condition="'$(_ClangXex)' == ''">$(OutDir)$(TargetName).xex</_ClangXex>
+      <_ClangBase>@(ImageXex->'%(BaseAddress)')</_ClangBase>
+      <_ClangBase Condition="'$(_ClangBase)' == ''">0x82000000</_ClangBase>
       <!-- The standard Linker -> Input -> Additional Dependencies field, mirroring an
-           official title. The task maps each .lib to the modern equivalent (code
+           official title. The task maps each .lib to the clang equivalent (code
            archive / CRT / XEX-import-via-genstubs). Same across the Link items. -->
-      <_ModernLinkDeps>@(Link->'%(AdditionalDependencies)'->Distinct())</_ModernLinkDeps>
+      <_ClangLinkDeps>@(Link->'%(AdditionalDependencies)'->Distinct())</_ClangLinkDeps>
     </PropertyGroup>
     <ItemGroup>
-      <_ModernObj Include="$(IntDir)*.o" />
+      <_ClangObj Include="$(IntDir)*.o" />
     </ItemGroup>
 
     <ClangLink
         ClangPath="$(RxdkClangPath)"
         LldPath="$(RxdkLldPath)"
         XexToolPath="$(RxdkXexToolPath)"
-        Objects="@(_ModernObj)"
-        OutputFile="$(_ModernXex)"
-        IntDir="$(RxdkModernLinkDir)"
+        Objects="@(_ClangObj)"
+        OutputFile="$(_ClangXex)"
+        IntDir="$(RxdkClangLinkDir)"
         XdkLibDir="$(RxdkXdkLibDir)"
         CoffDir="$(RxdkCoffDir)"
         LibcDir="$(RxdkLibcDir)"
-        BaseAddress="$(_ModernBase)"
+        BaseAddress="$(_ClangBase)"
         TitleID="%(ImageXex.TitleID)"
         LanKey="%(ImageXex.LanKey)"
         HeapSize="%(ImageXex.HeapSize)"
@@ -130,13 +130,13 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
         KinectSupportLevel="%(ImageXex.KinectSupportLevel)"
         ConfigurationFile="%(ImageXex.ConfigurationFile)"
         AdditionalSections="%(ImageXex.AdditionalSections)"
-        Libraries="$(RxdkModernLibs)"
-        AdditionalDependencies="$(_ModernLinkDeps)"
-        NoDefaultLibs="$(RxdkModernNoDefaultLibs)"
-        KeepElf="$(RxdkModernDebug)"
+        Libraries="$(RxdkClangLibs)"
+        AdditionalDependencies="$(_ClangLinkDeps)"
+        NoDefaultLibs="$(RxdkClangNoDefaultLibs)"
+        KeepElf="$(RxdkClangDebug)"
         AdditionalOptions="%(Link.AdditionalOptions)" />
 
-    <Message Text="$(MSBuildProjectFile) -&gt; $(_ModernXex)" Importance="High" />
+    <Message Text="$(MSBuildProjectFile) -&gt; $(_ClangXex)" Importance="High" />
   </Target>
 
   <!-- ***** ImageXex ***** : packing already happened in Link. -->
@@ -156,20 +156,20 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
           Condition="'$(ConfigurationType)' == 'StaticLibrary'"
           DependsOnTargets="ClCompile">
     <ItemGroup>
-      <_ModernLibObj Include="$(IntDir)*.o" />
+      <_ClangLibObj Include="$(IntDir)*.o" />
     </ItemGroup>
-    <Error Condition="'@(_ModernLibObj)' == ''" Text="RXDK-360 clang toolset: no compiled objects to archive." />
+    <Error Condition="'@(_ClangLibObj)' == ''" Text="RXDK-360 clang toolset: no compiled objects to archive." />
     <PropertyGroup>
-      <_ModernLibOut Condition="'$(_ModernLibOut)' == ''">$(OutDir)$(TargetName).lib</_ModernLibOut>
-      <_ModernLibOut Condition="'$(OutputFile)' != ''">$(OutputFile)</_ModernLibOut>
-      <_ModernLibObjs>@(_ModernLibObj->'&quot;%(FullPath)&quot;', ' ')</_ModernLibObjs>
+      <_ClangLibOut Condition="'$(_ClangLibOut)' == ''">$(OutDir)$(TargetName).lib</_ClangLibOut>
+      <_ClangLibOut Condition="'$(OutputFile)' != ''">$(OutputFile)</_ClangLibOut>
+      <_ClangLibObjs>@(_ClangLibObj->'&quot;%(FullPath)&quot;', ' ')</_ClangLibObjs>
     </PropertyGroup>
     <MakeDir Directories="$(OutDir)" />
     <!-- Delete first: llvm-ar 'rc' updates in place, so a stale archive would
          keep members from sources that no longer exist. -->
-    <Delete Files="$(_ModernLibOut)" />
-    <Exec Command="&quot;$(RxdkArPath)&quot; rcs &quot;$(_ModernLibOut)&quot; $(_ModernLibObjs)" />
-    <Message Importance="High" Text="$(MSBuildProjectFile) -&gt; $(_ModernLibOut)" />
+    <Delete Files="$(_ClangLibOut)" />
+    <Exec Command="&quot;$(RxdkArPath)&quot; rcs &quot;$(_ClangLibOut)&quot; $(_ClangLibObjs)" />
+    <Message Importance="High" Text="$(MSBuildProjectFile) -&gt; $(_ClangLibOut)" />
   </Target>
 
   <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter\*.clang.targets" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter')" />

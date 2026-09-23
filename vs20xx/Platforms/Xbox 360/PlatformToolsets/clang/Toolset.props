@@ -2,14 +2,14 @@
 ***********************************************************************************************
 RXDK-360 "clang" platform toolset - properties.
 
-The MODERN toolchain: titles are built with the patched MS-PPC clang + LLVM lld
+The clang toolchain: titles are built with the patched MS-PPC clang + LLVM lld
 and packed by XexTool, instead of the stock XDK cl.exe/link.exe/imagexex. Selected
 per project with <PlatformToolset>clang</PlatformToolset> under <Platform>RXDK-360.
 
-This file resolves the two roots the modern build needs:
+This file resolves the two roots the clang build needs:
   * XDKInstallDir  - the (relocated, side-by-side) XDK, for its import libraries
                      (lib\xbox), the same resolution the stock toolset uses; and
-  * RxdkModernRoot - the modern toolchain payload (clang/lld/XexTool + the C/C++
+  * RxdkClangRoot - the clang toolchain payload (clang/lld/XexTool + the C/C++
                      runtime archives and headers). Every tool/dir below derives
                      from it and is individually overridable, so the dev tree and
                      an installed layout differ only in these property values.
@@ -28,63 +28,63 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild; a bad edit here breaks
     <!-- The clang toolchain bundle root. The installed tree mirrors the real XDK:
          the bundle is a self-contained compiler at {app}\bin\clang (its own
          bin\include\lib, like the XDK's TechPreview\Jul12Compiler), NOT a {app}\modern
-         sidecar. Env RXDK360_MODERN wins (dev tree); then registry ModernPath (set to
+         sidecar. Env RXDK360_CLANG wins (dev tree); then registry ClangRoot (set to
          {app}\bin\clang by the installer); else {app}\bin\clang. -->
-    <RxdkModernRoot Condition="'$(RxdkModernRoot)' == '' and '$(RXDK360_MODERN)' != ''">$(RXDK360_MODERN)</RxdkModernRoot>
-    <RxdkModernRoot Condition="'$(RxdkModernRoot)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\TeamResurgent\RXDK-360@ModernPath)</RxdkModernRoot>
-    <RxdkModernRoot Condition="'$(RxdkModernRoot)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\TeamResurgent\RXDK-360@ModernPath)</RxdkModernRoot>
-    <RxdkModernRoot Condition="'$(RxdkModernRoot)' == '' and '$(RxdkInstallDir)' != '' and Exists('$(RxdkInstallDir)bin\clang\bin\clang.exe')">$(RxdkInstallDir)bin\clang</RxdkModernRoot>
-    <RxdkModernRoot Condition="'$(RxdkModernRoot)' == ''">$(XDKInstallDir)</RxdkModernRoot>
-    <RxdkModernRoot Condition="'$(RxdkModernRoot)' != '' and HasTrailingSlash('$(RxdkModernRoot)')">$(RxdkModernRoot.TrimEnd('\'))</RxdkModernRoot>
+    <RxdkClangRoot Condition="'$(RxdkClangRoot)' == '' and '$(RXDK360_CLANG)' != ''">$(RXDK360_CLANG)</RxdkClangRoot>
+    <RxdkClangRoot Condition="'$(RxdkClangRoot)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\TeamResurgent\RXDK-360@ClangRoot)</RxdkClangRoot>
+    <RxdkClangRoot Condition="'$(RxdkClangRoot)' == ''">$(Registry:HKEY_LOCAL_MACHINE\SOFTWARE\TeamResurgent\RXDK-360@ClangRoot)</RxdkClangRoot>
+    <RxdkClangRoot Condition="'$(RxdkClangRoot)' == '' and '$(RxdkInstallDir)' != '' and Exists('$(RxdkInstallDir)bin\clang\bin\clang.exe')">$(RxdkInstallDir)bin\clang</RxdkClangRoot>
+    <RxdkClangRoot Condition="'$(RxdkClangRoot)' == ''">$(XDKInstallDir)</RxdkClangRoot>
+    <RxdkClangRoot Condition="'$(RxdkClangRoot)' != '' and HasTrailingSlash('$(RxdkClangRoot)')">$(RxdkClangRoot.TrimEnd('\'))</RxdkClangRoot>
 
     <!-- Two supported layouts, detected by whether the clean installed bundle exists:
-         INSTALLED (clean)  RxdkModernRoot\{bin,include,lib} = {app}\bin\clang\...  (the
+         INSTALLED (clean)  RxdkClangRoot\{bin,include,lib} = {app}\bin\clang\...  (the
                             compiler bundle), and the XDK content + our archives at the
                             product root: {app}\include\xbox and {app}\lib\xbox.
-         DEV (source tree)  RxdkModernRoot\{build\llvm\bin, build\libc, build\coff,
+         DEV (source tree)  RxdkClangRoot\{build\llvm\bin, build\libc, build\coff,
                             vendor\..., runtime\config} + the XDK install for headers.
          Everything is overridable. -->
-    <_RxdkClean Condition="'$(_RxdkClean)' == '' and Exists('$(RxdkModernRoot)\bin\clang.exe')">true</_RxdkClean>
+    <_RxdkClean Condition="'$(_RxdkClean)' == '' and Exists('$(RxdkClangRoot)\bin\clang.exe')">true</_RxdkClean>
 
     <!-- In the clean install the XDK headers (include\xbox), the XDK import .libs and
          our generated archives (all in lib\xbox) live at the product root, one level
          above the clang bundle (bin\clang). Prefer the registry InstallPath; fall back
          to the bundle's grandparent (bin\clang\.. \.. = {app}). -->
     <_RxdkXdkRoot Condition="'$(_RxdkXdkRoot)' == '' and '$(_RxdkClean)' == 'true' and '$(RxdkInstallDir)' != ''">$(RxdkInstallDir.TrimEnd('\'))</_RxdkXdkRoot>
-    <_RxdkXdkRoot Condition="'$(_RxdkXdkRoot)' == '' and '$(_RxdkClean)' == 'true'">$([System.IO.Path]::GetFullPath('$(RxdkModernRoot)\..\..'))</_RxdkXdkRoot>
+    <_RxdkXdkRoot Condition="'$(_RxdkXdkRoot)' == '' and '$(_RxdkClean)' == 'true'">$([System.IO.Path]::GetFullPath('$(RxdkClangRoot)\..\..'))</_RxdkXdkRoot>
 
     <!-- binary tools -->
-    <RxdkClangPath   Condition="'$(RxdkClangPath)'   == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\bin\clang.exe</RxdkClangPath>
-    <RxdkClangPath   Condition="'$(RxdkClangPath)'   == ''">$(RxdkModernRoot)\build\llvm\bin\clang.exe</RxdkClangPath>
-    <RxdkLldPath     Condition="'$(RxdkLldPath)'     == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\bin\ld.lld.exe</RxdkLldPath>
-    <RxdkLldPath     Condition="'$(RxdkLldPath)'     == ''">$(RxdkModernRoot)\build\llvm\bin\ld.lld.exe</RxdkLldPath>
-    <RxdkArPath      Condition="'$(RxdkArPath)'      == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\bin\llvm-ar.exe</RxdkArPath>
-    <RxdkArPath      Condition="'$(RxdkArPath)'      == ''">$(RxdkModernRoot)\build\llvm\bin\llvm-ar.exe</RxdkArPath>
-    <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\bin\XexTool.exe</RxdkXexToolPath>
-    <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == '' and Exists('$(RxdkModernRoot)\build\xextool\XexTool.exe')">$(RxdkModernRoot)\build\xextool\XexTool.exe</RxdkXexToolPath>
-    <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == ''">$(RxdkModernRoot)\vendor\xextool\build\Release\XexTool.exe</RxdkXexToolPath>
+    <RxdkClangPath   Condition="'$(RxdkClangPath)'   == '' and '$(_RxdkClean)' == 'true'">$(RxdkClangRoot)\bin\clang.exe</RxdkClangPath>
+    <RxdkClangPath   Condition="'$(RxdkClangPath)'   == ''">$(RxdkClangRoot)\build\llvm\bin\clang.exe</RxdkClangPath>
+    <RxdkLldPath     Condition="'$(RxdkLldPath)'     == '' and '$(_RxdkClean)' == 'true'">$(RxdkClangRoot)\bin\ld.lld.exe</RxdkLldPath>
+    <RxdkLldPath     Condition="'$(RxdkLldPath)'     == ''">$(RxdkClangRoot)\build\llvm\bin\ld.lld.exe</RxdkLldPath>
+    <RxdkArPath      Condition="'$(RxdkArPath)'      == '' and '$(_RxdkClean)' == 'true'">$(RxdkClangRoot)\bin\llvm-ar.exe</RxdkArPath>
+    <RxdkArPath      Condition="'$(RxdkArPath)'      == ''">$(RxdkClangRoot)\build\llvm\bin\llvm-ar.exe</RxdkArPath>
+    <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkClangRoot)\bin\XexTool.exe</RxdkXexToolPath>
+    <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == '' and Exists('$(RxdkClangRoot)\build\xextool\XexTool.exe')">$(RxdkClangRoot)\build\xextool\XexTool.exe</RxdkXexToolPath>
+    <RxdkXexToolPath Condition="'$(RxdkXexToolPath)' == ''">$(RxdkClangRoot)\vendor\xextool\build\Release\XexTool.exe</RxdkXexToolPath>
 
     <!-- library dirs: the clean layout mirrors the XDK, so every archive (our
          libc/libcpp, the coff2elf ELF libs, kernel_import/libcompat, and the XDK
          import .libs for genstubs) lives together under {app}\lib\xbox next to the
          stock console .libs (they coexist -- ours are .a, the XDK's are .lib). -->
     <RxdkLibcDir Condition="'$(RxdkLibcDir)' == '' and '$(_RxdkClean)' == 'true'">$(_RxdkXdkRoot)\lib\xbox</RxdkLibcDir>
-    <RxdkLibcDir Condition="'$(RxdkLibcDir)' == ''">$(RxdkModernRoot)\build\libc</RxdkLibcDir>
+    <RxdkLibcDir Condition="'$(RxdkLibcDir)' == ''">$(RxdkClangRoot)\build\libc</RxdkLibcDir>
     <RxdkCoffDir Condition="'$(RxdkCoffDir)' == '' and '$(_RxdkClean)' == 'true'">$(_RxdkXdkRoot)\lib\xbox</RxdkCoffDir>
-    <RxdkCoffDir Condition="'$(RxdkCoffDir)' == ''">$(RxdkModernRoot)\build\coff</RxdkCoffDir>
+    <RxdkCoffDir Condition="'$(RxdkCoffDir)' == ''">$(RxdkClangRoot)\build\coff</RxdkCoffDir>
 
     <!-- modern C/C++23 runtime include dirs (picolibc + libc++), passed to the
          compile task explicitly so the clean and dev layouts both work. -->
-    <RxdkPicolibcInc  Condition="'$(RxdkPicolibcInc)'  == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\include\picolibc</RxdkPicolibcInc>
-    <RxdkPicolibcInc  Condition="'$(RxdkPicolibcInc)'  == ''">$(RxdkModernRoot)\vendor\picolibc\libc\include</RxdkPicolibcInc>
-    <RxdkConfigInc    Condition="'$(RxdkConfigInc)'    == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\include\config</RxdkConfigInc>
-    <RxdkConfigInc    Condition="'$(RxdkConfigInc)'    == ''">$(RxdkModernRoot)\runtime\config</RxdkConfigInc>
-    <RxdkLibcxxInc    Condition="'$(RxdkLibcxxInc)'    == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\include\libcxx</RxdkLibcxxInc>
-    <RxdkLibcxxInc    Condition="'$(RxdkLibcxxInc)'    == '' and Exists('$(RxdkModernRoot)\build\llvm\libcxx\include')">$(RxdkModernRoot)\build\llvm\libcxx\include</RxdkLibcxxInc>
-    <RxdkLibcxxInc    Condition="'$(RxdkLibcxxInc)'    == ''">$(RxdkModernRoot)\vendor\llvm-project\libcxx\include</RxdkLibcxxInc>
-    <RxdkLibcxxabiInc Condition="'$(RxdkLibcxxabiInc)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkModernRoot)\include\libcxxabi</RxdkLibcxxabiInc>
-    <RxdkLibcxxabiInc Condition="'$(RxdkLibcxxabiInc)' == '' and Exists('$(RxdkModernRoot)\build\llvm\libcxxabi\include')">$(RxdkModernRoot)\build\llvm\libcxxabi\include</RxdkLibcxxabiInc>
-    <RxdkLibcxxabiInc Condition="'$(RxdkLibcxxabiInc)' == ''">$(RxdkModernRoot)\vendor\llvm-project\libcxxabi\include</RxdkLibcxxabiInc>
+    <RxdkPicolibcInc  Condition="'$(RxdkPicolibcInc)'  == '' and '$(_RxdkClean)' == 'true'">$(RxdkClangRoot)\include\picolibc</RxdkPicolibcInc>
+    <RxdkPicolibcInc  Condition="'$(RxdkPicolibcInc)'  == ''">$(RxdkClangRoot)\vendor\picolibc\libc\include</RxdkPicolibcInc>
+    <RxdkConfigInc    Condition="'$(RxdkConfigInc)'    == '' and '$(_RxdkClean)' == 'true'">$(RxdkClangRoot)\include\config</RxdkConfigInc>
+    <RxdkConfigInc    Condition="'$(RxdkConfigInc)'    == ''">$(RxdkClangRoot)\runtime\config</RxdkConfigInc>
+    <RxdkLibcxxInc    Condition="'$(RxdkLibcxxInc)'    == '' and '$(_RxdkClean)' == 'true'">$(RxdkClangRoot)\include\libcxx</RxdkLibcxxInc>
+    <RxdkLibcxxInc    Condition="'$(RxdkLibcxxInc)'    == '' and Exists('$(RxdkClangRoot)\build\llvm\libcxx\include')">$(RxdkClangRoot)\build\llvm\libcxx\include</RxdkLibcxxInc>
+    <RxdkLibcxxInc    Condition="'$(RxdkLibcxxInc)'    == ''">$(RxdkClangRoot)\vendor\llvm-project\libcxx\include</RxdkLibcxxInc>
+    <RxdkLibcxxabiInc Condition="'$(RxdkLibcxxabiInc)' == '' and '$(_RxdkClean)' == 'true'">$(RxdkClangRoot)\include\libcxxabi</RxdkLibcxxabiInc>
+    <RxdkLibcxxabiInc Condition="'$(RxdkLibcxxabiInc)' == '' and Exists('$(RxdkClangRoot)\build\llvm\libcxxabi\include')">$(RxdkClangRoot)\build\llvm\libcxxabi\include</RxdkLibcxxabiInc>
+    <RxdkLibcxxabiInc Condition="'$(RxdkLibcxxabiInc)' == ''">$(RxdkClangRoot)\vendor\llvm-project\libcxxabi\include</RxdkLibcxxabiInc>
 
     <!-- XDK headers (for XDK-headers mode) + import .libs (for genstubs). The clean
          install keeps a single copy of the XDK tree at the product root (mirroring the
@@ -109,15 +109,15 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild; a bad edit here breaks
          headers AHEAD of libc++ so the C includes resolve to real C headers; libc++
          stays on the path (last) so <vector>/<string>/... still resolve for std::.
 
-         Pure-modern mode (no XDK headers): keep libc++ first, the normal layering. -->
-    <IncludePath Condition="'$(IncludePath)' == '' and '$(RxdkModernXdkHeaders)' == 'true'">$(RxdkConfigInc);$(RxdkPicolibcInc);$(RxdkXdkIncludeDir);$(RxdkLibcxxInc);$(RxdkLibcxxabiInc);</IncludePath>
+         Pure-clang mode (no XDK headers): keep libc++ first, the normal layering. -->
+    <IncludePath Condition="'$(IncludePath)' == '' and '$(RxdkClangXdkHeaders)' == 'true'">$(RxdkConfigInc);$(RxdkPicolibcInc);$(RxdkXdkIncludeDir);$(RxdkLibcxxInc);$(RxdkLibcxxabiInc);</IncludePath>
     <IncludePath Condition="'$(IncludePath)' == ''">$(RxdkLibcxxInc);$(RxdkLibcxxabiInc);$(RxdkConfigInc);$(RxdkPicolibcInc);$(RxdkXdkIncludeDir);</IncludePath>
     <LibraryPath Condition="'$(LibraryPath)' == ''">$(RxdkLibcDir);$(RxdkCoffDir);</LibraryPath>
     <ExecutablePath Condition="'$(ExecutablePath)' == ''">$([System.IO.Path]::GetDirectoryName('$(RxdkClangPath)'));$(PATH);</ExecutablePath>
     <!-- Surfaced read-only on the General property page (general.xml ->
          RxdkToolchainDisplay) so it is obvious at a glance which toolchain a
-         project builds with. The legacy 2010-01 toolset sets "Legacy (stock XDK)". -->
-    <RxdkToolchain Condition="'$(RxdkToolchain)' == ''">Modern (clang/LLVM)</RxdkToolchain>
+         project builds with. The stock 2010-01 toolset sets "Stock XDK". -->
+    <RxdkToolchain Condition="'$(RxdkToolchain)' == ''">Clang/LLVM</RxdkToolchain>
   </PropertyGroup>
 
   <!-- IntelliSense parity with the real compile. The C++ language service never
@@ -145,7 +145,7 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild; a bad edit here breaks
       <PreprocessorDefinitions>__Picolibc__;_GNU_SOURCE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(RxdkModernXdkHeaders)' == 'true'">
+  <ItemDefinitionGroup Condition="'$(RxdkClangXdkHeaders)' == 'true'">
     <ClCompile>
       <!-- _M_PPC / _M_PPCBE / _XBOX_VER / __VMX128_SUPPORTED are supplied for
            IntelliSense by the stock xbox_intellisense_platform.h shim (force-included

@@ -9,14 +9,14 @@ using System.Text.RegularExpressions;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
 
-namespace Rxdk.Xbox360.Modern.Build
+namespace Rxdk.Xbox360.Clang.Build
 {
     /// <summary>
-    /// Shared helpers for the modern (clang/LLVM) Xbox 360 tasks: running a tool
+    /// Shared helpers for the clang/LLVM Xbox 360 tasks: running a tool
     /// and capturing its output, and turning clang/lld diagnostics into MSBuild
     /// errors/warnings so they surface in the Visual Studio Error List.
     /// </summary>
-    public abstract class ModernTool : Task
+    public abstract class ClangTool : Task
     {
         /// <summary>Result of running a child process.</summary>
         protected sealed class ProcResult
