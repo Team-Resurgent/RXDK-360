@@ -1,0 +1,82 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of RXDK-360 - see LICENSE.md for the full GNU GPL v3.
+//
+// MSVC's <hash_map> (stdext::hash_map, which the XDK STL also re-exposes as
+// std::hash_map) over libc++'s <unordered_map>. libc++ has no <hash_map>, so a
+// title that includes it -- TiledResources -- otherwise pulls the XDK's MSVC STL
+// copy, which does not build on our runtime (unknown _STD_BEGIN, ...).
+//
+// The one behavioural gap to bridge: MSVC's hash_compare supplies a DEFAULT hash
+// and ordering for ANY key, so hash_map keys need no std::hash specialization.
+// libc++'s unordered_map requires std::hash<Key>. We match MSVC EXACTLY, not with
+// a byte-blob: Dinkumware's default hash_value(k) is `(size_t)k` and it orders
+// with `operator<`. Keys therefore only need a size_t conversion and operator<,
+// which is precisely what the sample's keys provide (UINT64 has both implicitly;
+// the _VirtualPageID union defines operator size_t() and operator< for exactly
+// this reason). No per-key std::hash, and no misrepresentation of the contract.
+#pragma once
+#include <unordered_map>
+#include <cstddef>
+#include <memory>
+#include <utility>
+
+namespace stdext {
+
+template <class Key>
+struct hash_compare {
+    // Hash: Dinkumware's default hash_value(k) == (size_t)k. Relies on the key's
+    // conversion to size_t (integral keys implicitly; the union via operator size_t()).
+    ::std::size_t operator()(const Key& k) const {
+        return static_cast< ::std::size_t>(k);
+    }
+    // Ordering: MSVC's hash_compare compares with operator< (its _Pr = less<Key>).
+    bool operator()(const Key& a, const Key& b) const {
+        return a < b;
+    }
+};
+
+namespace _rxdk_detail {
+template <class Cmp> struct hasher {
+    Cmp c;
+    template <class K> ::std::size_t operator()(const K& k) const { return c(k); }
+};
+// unordered_map needs an equality predicate; derive it faithfully from the single
+// ordering predicate MSVC's hash_compare exposes: equal iff neither orders before.
+template <class Cmp> struct eq {
+    Cmp c;
+    template <class K> bool operator()(const K& a, const K& b) const {
+        return !c(a, b) && !c(b, a);
+    }
+};
+}  // namespace _rxdk_detail
+
+template <class Key, class Ty, class Cmp = hash_compare<Key>,
+          class Alloc = ::std::allocator< ::std::pair<const Key, Ty> > >
+class hash_map
+    : public ::std::unordered_map<Key, Ty, _rxdk_detail::hasher<Cmp>,
+                                  _rxdk_detail::eq<Cmp>, Alloc> {
+    typedef ::std::unordered_map<Key, Ty, _rxdk_detail::hasher<Cmp>,
+                                 _rxdk_detail::eq<Cmp>, Alloc> _Base;
+public:
+    using _Base::_Base;
+};
+
+template <class Key, class Ty, class Cmp = hash_compare<Key>,
+          class Alloc = ::std::allocator< ::std::pair<const Key, Ty> > >
+class hash_multimap
+    : public ::std::unordered_multimap<Key, Ty, _rxdk_detail::hasher<Cmp>,
+                                       _rxdk_detail::eq<Cmp>, Alloc> {
+    typedef ::std::unordered_multimap<Key, Ty, _rxdk_detail::hasher<Cmp>,
+                                      _rxdk_detail::eq<Cmp>, Alloc> _Base;
+public:
+    using _Base::_Base;
+};
+
+}  // namespace stdext
+
+// The XDK STL surfaces hash_map in std too (the sample writes std::hash_map).
+namespace std {
+using ::stdext::hash_compare;
+using ::stdext::hash_map;
+using ::stdext::hash_multimap;
+}  // namespace std

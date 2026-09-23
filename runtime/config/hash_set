@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of RXDK-360 - see LICENSE.md for the full GNU GPL v3.
+//
+// MSVC's <hash_set> (stdext::hash_set / std::hash_set) over libc++'s
+// <unordered_set>; the default hash (size_t conversion) and ordering (operator<)
+// live in <hash_map> (stdext::hash_compare), matching MSVC where <hash_set>
+// shares that same machinery.
+#pragma once
+#include <hash_map>          // stdext::hash_compare + _rxdk_detail helpers
+#include <unordered_set>
+#include <memory>
+
+namespace stdext {
+
+template <class Key, class Cmp = hash_compare<Key>,
+          class Alloc = ::std::allocator<Key> >
+class hash_set
+    : public ::std::unordered_set<Key, _rxdk_detail::hasher<Cmp>,
+                                  _rxdk_detail::eq<Cmp>, Alloc> {
+    typedef ::std::unordered_set<Key, _rxdk_detail::hasher<Cmp>,
+                                 _rxdk_detail::eq<Cmp>, Alloc> _Base;
+public:
+    using _Base::_Base;
+};
+
+template <class Key, class Cmp = hash_compare<Key>,
+          class Alloc = ::std::allocator<Key> >
+class hash_multiset
+    : public ::std::unordered_multiset<Key, _rxdk_detail::hasher<Cmp>,
+                                       _rxdk_detail::eq<Cmp>, Alloc> {
+    typedef ::std::unordered_multiset<Key, _rxdk_detail::hasher<Cmp>,
+                                      _rxdk_detail::eq<Cmp>, Alloc> _Base;
+public:
+    using _Base::_Base;
+};
+
+}  // namespace stdext
+
+namespace std {
+using ::stdext::hash_set;
+using ::stdext::hash_multiset;
+}  // namespace std
