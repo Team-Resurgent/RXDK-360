@@ -129,7 +129,20 @@ Source: "..\..\build\llvm\libcxxabi\include\*"; DestDir: "{app}\bin\clang\includ
 ; C# twin of samples\tools\Manage-Assets.ps1). Git metadata is excluded.
 Source: "..\..\samples\*"; DestDir: "{app}\Source\Samples"; Flags: recursesubdirs createallsubdirs; Excludes: "\.git,\.git\*,\.gitignore,\.gitattributes,\.gitmodules,\.github\*"; Components: samples
 
+[Dirs]
+; SampleBrowser "Install Project" copies the chosen sample here before opening it.
+Name: "{commondocs}\RXDK-360 Samples"; Components: samples
+
 [Registry]
+; SampleBrowser shim. The stock MFC Sample Browser (Source\Tools\SampleBrowser,
+; kept from the XDK) reads the projects-copy location from the VS 10.0 key (falling
+; back to 9.0), copies the chosen sample there, rewrites its name, and opens the
+; .sln by file association -> whichever modern VS owns .sln. Our ported samples
+; carry .sln/.vcxproj, so no binary patch is needed: just give the browser a
+; writable copy location under a key it reads. It is a 32-bit MFC exe, so the value
+; must live in the 32-bit view (HKLM32 = Wow6432Node).
+Root: HKLM32; Subkey: "SOFTWARE\Microsoft\VisualStudio\10.0"; ValueType: string; ValueName: "VisualStudioProjectsLocation"; ValueData: "{commondocs}\RXDK-360 Samples"; Components: samples; Flags: uninsdeletevalue
+
 ; RXDK-360's own SDK key (read first by the RXDK-360 platform's Toolset.props),
 ; kept separate from the stock HKLM\...\Xbox\2.0\SDK so the two SDKs coexist.
 ; IMPORTANT: written to BOTH the 32-bit (HKLM32 = WOW6432Node) and 64-bit views.
@@ -275,7 +288,9 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
-var code: Integer;
+var
+  code: Integer;
+  vsInstalls, vsIds: TArrayOfString;
 begin
   if CurStep = ssInstall then
   begin
@@ -305,6 +320,14 @@ begin
       Exec(ExpandConstant('{tmp}\RxdkXdkUnpacker.exe'),
         'unpacksamples "' + ExpandConstant('{app}\Source\Samples') + '"',
         '', SW_HIDE, ewWaitUntilTerminated, code);
+      { SampleBrowser shim (cont.): point the VS 10.0 InstallDir at the newest modern
+        VS IDE so the browser has a valid IDE path (it opens the .sln by association).
+        32-bit browser -> the Wow6432Node view. }
+      GetVsInstalls(vsInstalls, vsIds);
+      if GetArrayLength(vsInstalls) > 0 then
+        RegWriteStringValue(HKEY_LOCAL_MACHINE,
+          'SOFTWARE\Wow6432Node\Microsoft\VisualStudio\10.0', 'InstallDir',
+          AddBackslash(vsInstalls[0]) + 'Common7\IDE\');
     end;
     { machine-wide RXDK360 env var -> the (relocated) XDK; Uninstall removes it }
     if WizardIsTaskSelected('envvar') then
