@@ -302,10 +302,10 @@ begin
   end
   else if CurStep = ssPostInstall then
   begin
-    { finish the mirrored tree in place: patch the XDK headers at {app}\include\xbox,
-      translate the XDK import libs {app}\lib\xbox\*.lib -> *.a, and build
-      kernel_import.a + libcompat.a into {app}\lib\xbox. Args: product root, clang
-      bundle root. Both trees are already laid down (manifest + Inno). }
+    // finish the mirrored tree in place: patch the XDK headers at include\xbox,
+    // translate the XDK import libs lib\xbox\*.lib -> *.a, and build kernel_import.a
+    // + libcompat.a into lib\xbox. Args: product root, clang bundle root. Both trees
+    // are already laid down (manifest + Inno).
     if WizardIsComponentSelected('clang') then
     begin
       ExtractTemporaryFile('RxdkXdkUnpacker.exe');
