@@ -2,3 +2,7 @@
 	path = vendor/picolibc
 	url = https://github.com/Team-Resurgent/picolibc.git
 	branch = xbox
+[submodule "samples"]
+	path = samples
+	url = https://github.com/Team-Resurgent/RXDK360-Samples.git
+	branch = main
