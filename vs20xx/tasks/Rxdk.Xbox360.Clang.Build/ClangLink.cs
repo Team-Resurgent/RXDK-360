@@ -57,6 +57,14 @@ namespace Rxdk.Xbox360.Clang.Build
         public string AdditionalOptions { get; set; }
         public bool KeepElf { get; set; }
 
+        // Debug/instrumented XDK libs whose needed symbols (PIX*, RtlDebug*, DmDebug*)
+        // are weak COMDAT code in members (pix.o, rtldbg.o, debugheap.o) that a normal
+        // archive scan won't extract for a strong reference. Collected by ResolveLibraries
+        // and linked with --whole-archive so those members are force-included; --gc-sections
+        // then drops whatever the title doesn't use, and --allow-multiple-definition lets a
+        // strong kernel_import.a record override any weak import stub these also carry.
+        private readonly List<string> _wholeArchive = new List<string>();
+
         // Xbox 360 Image Conversion page (same metadata as legacy imagexex).
         public string TitleID { get; set; }
         public string LanKey { get; set; }
@@ -195,6 +203,15 @@ namespace Rxdk.Xbox360.Clang.Build
             args.AddRange(ldflags);
             args.AddRange(objs);
             if (stubs != null) args.Add(stubs);
+            // Force-include the debug XDK libs' weak COMDAT code (PIX*/RtlDebug*/DmDebug*)
+            // that a lazy archive scan skips; --gc-sections trims the unused remainder.
+            if (_wholeArchive.Count > 0)
+            {
+                args.Add("--whole-archive");
+                foreach (var wa in _wholeArchive)
+                    if (File.Exists(wa)) args.Add(wa);
+                args.Add("--no-whole-archive");
+            }
             if (libs.Count > 0)
             {
                 args.Add("--start-group");
@@ -254,9 +271,19 @@ namespace Rxdk.Xbox360.Clang.Build
                     { if (!string.IsNullOrEmpty(LibcDir)) user.Add(Path.Combine(LibcDir, "libc.a")); continue; }
                     if (lower == "libcpp" || lower == "libc++" || lower == "libcpmt" || lower == "libcpmtd")
                     { if (!string.IsNullOrEmpty(LibcDir)) user.Add(Path.Combine(LibcDir, "libcpp.a")); continue; }
-                    if (lower == "xapilib" || lower == "xapilibd")
+                    // Retail xapilib is the canonical clang-runtime companion; the debug
+                    // variant (xapilibd) carries extra debug-only code (PIX*, RtlDebug*)
+                    // the retail one lacks, so a Debug title must link xapilibd.a itself.
+                    if (lower == "xapilib")
                     { if (!string.IsNullOrEmpty(CoffDir)) user.Add(Path.Combine(CoffDir, "xapilib.a")); continue; }
-                    // XEX-import modules are resolved by genstubs, not linked.
+                    if (lower == "xapilibd")
+                    { if (!string.IsNullOrEmpty(CoffDir)) _wholeArchive.Add(Path.Combine(CoffDir, "xapilibd.a")); continue; }
+                    // xbdm is an XEX-import module for its console exports (genstubs handles
+                    // those), but its debug lib also ships real code (debugheap.o ->
+                    // DmDebugAlloc/Free) a Debug title calls -- pull that via whole-archive.
+                    if (lower == "xbdm")
+                    { if (!string.IsNullOrEmpty(CoffDir)) _wholeArchive.Add(Path.Combine(CoffDir, "xbdm.a")); continue; }
+                    // Other XEX-import modules are resolved by genstubs, not linked.
                     if (XexImportModules.Contains(lower)) continue;
                     // Everything else is a translated static library.
                     user.Add(Path.Combine(CoffDir ?? "", name + ".a"));

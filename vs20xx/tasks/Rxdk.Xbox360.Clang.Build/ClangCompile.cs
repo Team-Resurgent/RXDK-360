@@ -226,6 +226,28 @@ namespace Rxdk.Xbox360.Clang.Build
                 // XDK/ATG code brace-initializes signed fields with 0xFFFFFFFF etc.;
                 // MSVC allows it, C++11 makes narrowing in braced-init an error.
                 "-Wno-narrowing",
+                // Warnings inherent to compiling the stock XDK/ATG sample framework
+                // (ATG Common and the samples) with clang -- benign under MSVC, pure
+                // noise here. Suppressed centrally so a real diagnostic on new title
+                // code stays visible:
+                //  - switch: stock enums omit ForceDWORD/sentinel cases by design.
+                //  - ignored-attributes: __declspec(passinreg)/__stdcall/__cdecl have
+                //    no effect on the PPC ABI; the calls are still correct.
+                //  - nonportable-include-path: stock #includes differ in case / have a
+                //    trailing dot; harmless on Windows' case-insensitive FS.
+                //  - microsoft-extra-qualification: ATG headers write Foo::Foo::member.
+                //  - ignored-pragma-intrinsic: #pragma intrinsic(_WriteBarrier) etc.
+                //  - nontrivial-memcall: ATG memcpy/memset POD-ish vertex structs.
+                //  - delete-incomplete: ATG deletes through void*/LPCVOID (frees).
+                //  - tautological compares: ATG's -1 vs unsigned-enum range checks.
+                "-Wno-switch",
+                "-Wno-ignored-attributes",
+                "-Wno-nonportable-include-path",
+                "-Wno-microsoft-extra-qualification",
+                "-Wno-ignored-pragma-intrinsic",
+                "-Wno-nontrivial-memcall",
+                "-Wno-delete-incomplete",
+                "-Wno-tautological-constant-out-of-range-compare",
                 // XDK/ATG code assigns string literals to non-const CHAR*/WCHAR*
                 // (ATG HELP_CALLOUT tables, AddRowElement(L"..."), ...). MSVC keeps
                 // literals non-const (/Zc:strictStrings-); C++11 makes the implicit
