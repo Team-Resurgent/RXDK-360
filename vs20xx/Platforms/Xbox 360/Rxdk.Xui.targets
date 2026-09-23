@@ -1,0 +1,72 @@
+<!--
+***********************************************************************************************
+Rxdk.Xui.targets  -  RXDK-360 XUI content build rules
+
+Compile-time content steps for XUI source that a C++ title consumes, keyed on the
+file's item type (its "content type") so the rule applies to ANY project that
+declares such an item, not just one sample.
+
+  XuiStringTable  (.resx string table, e.g. Media\Xui\<name>.resx)
+      -> $(IntDir)<name>.h   the IDS_* id header the title #includes
+
+  The XDK's resx2bin generates the header; /I gives index-based ids so they match
+  an /I-built .xus string table at runtime. resx2bin ships in the RXDK bin
+  ($(RxdkBinDir), staged from the user's XDK by the installer) and is on the
+  toolset ExecutablePath.
+
+A project opts in by classifying the file:
+
+  <ItemGroup>
+    <XuiStringTable Include="..\..\Media\Xui\xuilocale_strings.resx" />
+  </ItemGroup>
+
+The generated-header directory ($(IntDir)) is put on the include path automatically
+for any project that has XuiStringTable items, so no per-config include edit is
+needed. Other XUI content (documents/skins via XuiTool, shaders via fxc) would be
+added here the same way, each behind its own item type.
+***********************************************************************************************
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!-- Make the item type selectable in the IDE's "Item Type" dropdown. -->
+  <ItemGroup>
+    <AvailableItemName Include="XuiStringTable">
+      <Targets>RxdkCompileXuiStringTables</Targets>
+    </AvailableItemName>
+  </ItemGroup>
+
+  <!-- Per-item default: the header lands in the intermediate dir, named after the
+       source (xuilocale_strings.resx -> $(IntDir)xuilocale_strings.h). -->
+  <ItemDefinitionGroup>
+    <XuiStringTable>
+      <HeaderOutput>$(IntDir)%(Filename).h</HeaderOutput>
+    </XuiStringTable>
+  </ItemDefinitionGroup>
+
+  <!-- Put the generated-header dir on the include path so a title can #include the
+       header the rule emits. This import is evaluated after the project's own
+       ItemDefinitionGroups (Platform.targets loads last), so
+       %(AdditionalIncludeDirectories) already holds the project's dirs and we
+       prepend $(IntDir). Unconditional: an item-list reference is not allowed in an
+       ItemDefinitionGroup condition, and $(IntDir) (the intermediate dir, always
+       present) is harmless to add for projects without generated headers. -->
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(IntDir);%(ClCompile.AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <Target Name="RxdkCompileXuiStringTables"
+          Condition="'@(XuiStringTable)' != ''"
+          BeforeTargets="ClCompile"
+          Inputs="@(XuiStringTable)"
+          Outputs="@(XuiStringTable->'%(HeaderOutput)')">
+    <MakeDir Directories="$(IntDir)" />
+    <Message Importance="High"
+             Text="XUI string table %(XuiStringTable.Identity) -&gt; %(XuiStringTable.HeaderOutput)" />
+    <!-- Full path to resx2bin: MSBuild's <Exec> uses the process PATH, not the
+         toolset ExecutablePath, so name the RXDK bin ($(RxdkBinDir)) explicitly. -->
+    <Exec Command="&quot;$(RxdkBinDir)\resx2bin.exe&quot; /NOLOGO /I /HEADER &quot;%(XuiStringTable.FullPath)&quot; &quot;%(XuiStringTable.HeaderOutput)&quot;" />
+  </Target>
+
+</Project>

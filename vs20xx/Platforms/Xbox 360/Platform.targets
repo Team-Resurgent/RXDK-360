@@ -18,6 +18,10 @@ Copyright (C) Microsoft Corporation. All rights reserved.
   <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\Microsoft.CppCommon.Xbox 360.targets"/>
   <Import Project="$(VCTargetsPath)\Microsoft.CppCommon.targets" Condition="'$(ConfigurationType)'!='Makefile'"/>
 
+  <!-- RXDK-360 XUI content build rules (string tables -> id headers, etc.), keyed
+       on item type so they apply to any project that declares such content. -->
+  <Import Project="$(MSBuildThisFileDirectory)Rxdk.Xui.targets"/>
+
   <!-- Load from the VC toolset directory (sibling of Microsoft.Build.CPPTasks.Common.dll).
        The assembly references that VC task base; LoadFrom the platform folder cannot
        resolve it, and MSBuild 18 then instantiates a metadata-only type (MSB4061).
