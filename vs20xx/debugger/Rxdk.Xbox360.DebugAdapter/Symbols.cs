@@ -143,7 +143,16 @@ namespace Rxdk.Xbox360.DebugAdapter
             if (site != null)
                 return new SourceLocation(site.File, site.Line, fnAt?.Name ?? "");
             var ln = Info.LineAt(exe);
-            if (ln == null) return null;
+            if (ln == null)
+            {
+                // Compiler-generated code (a switch/bounds trap stub, an outlined
+                // fragment) can sit inside a real function yet carry no line row at
+                // this exact PC. Fall back to the enclosing function's file and entry
+                // line so VS lands in the right source instead of "frame not in module".
+                if (fnAt != null && !string.IsNullOrEmpty(fnAt.File))
+                    return new SourceLocation(fnAt.File, Info.LineAt(fnAt.LowPc)?.Line ?? 0, fnAt.Name);
+                return null;
+            }
             return new SourceLocation(ln.File, ln.Line, fnAt?.Name ?? "");
         }
 
