@@ -463,6 +463,22 @@ namespace Rxdk.Xbox360.DebugAdapter
                 }
                 if (_holdingInitialBreak) return;
                 if (n.Kind is not ("break" or "singlestep" or "data" or "exception")) return;
+
+                // Pre-main / loader break: after the initial load break is continued, the
+                // kit can trap again before main() at an address that isn't in the loaded
+                // title and isn't a breakpoint we set (e.g. the loader's pre-main entry
+                // break, 0x800Axxxx). Breakpoints are already applied, so resume
+                // transparently instead of surfacing a "stopped" VS can't map to a frame.
+                if (n.Kind == "break" && _titleSize != 0 && n.Addr is uint bpc
+                    && !(bpc >= _titleBase && bpc < _titleBase + _titleSize)
+                    && !_breakpoints.Exists(e => e.addr == bpc))
+                {
+                    _dap.SendEvent("output", new { category = "console",
+                        output = $"KIT pre-main break addr=0x{bpc:X8} outside title -> continue\n" });
+                    try { _kit?.ContinueAll(); } catch { }
+                    return;
+                }
+
                 if (Interlocked.CompareExchange(ref _paused, 1, 0) != 0) return;
 
                 uint tid = n.Thread ?? 1;
