@@ -407,10 +407,17 @@ namespace Rxdk.Xdk.Unpacker
                     return 0;
                 }
 
-                // install: extract to a temp staging area (unless already extracted),
-                // then replay manifest.csv relocated for RXDK-360.
+                // install: extract to a staging area (unless already extracted), then
+                // replay manifest.csv relocated for RXDK-360. Stage under the DEST drive
+                // root with a short name (e.g. C:\rxs1a2b3c4d): the XDK carries very deep
+                // relative paths and %TEMP%\rxdk_stage_<32-char-GUID>\... can push a file
+                // past the 260-char MAX_PATH, aborting the extract mid-cab. A short prefix
+                // keeps them in range. (Installer runs elevated, so the drive root is
+                // writable; fall back to %TEMP% if the root can't be determined.)
+                string stageRoot = Path.GetPathRoot(Path.GetFullPath(dest));
+                if (string.IsNullOrEmpty(stageRoot)) stageRoot = Path.GetTempPath();
                 string staging = preExtracted ? setupExe
-                    : Path.Combine(Path.GetTempPath(), "rxdk_stage_" + Guid.NewGuid().ToString("N"));
+                    : Path.Combine(stageRoot, "rxs" + Guid.NewGuid().ToString("N").Substring(0, 8));
                 try
                 {
                     if (!preExtracted) { Directory.CreateDirectory(staging); ExtractAll(setupExe, staging); }
