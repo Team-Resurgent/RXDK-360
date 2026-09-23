@@ -87,7 +87,9 @@ Source: "..\README.md";   DestDir: "{app}\vsintegration"
 ; CI fills build/llvm from Team-Resurgent/llvm-project xbox360-windows-x64.zip
 ; (scripts/fetch-clang.ps1), XexTool from Team-Resurgent/XexTool latest
 ; (scripts/fetch-xextool.ps1), xdvdfs from Team-Resurgent/XDVDFS-TR.
-; coff/*.a are XDK translations (not redistributable); skip if absent.
+; coff/*.a are XDK translations (not redistributable); NOT shipped -- the
+; unpacker's stagemodern step generates them at install from the user's own XDK
+; libs (Coff2Elf), like kernel_import.a.
 ; bin\ - the tools the build drives
 Source: "..\..\build\llvm\bin\clang.exe";   DestDir: "{app}\modern\bin"; Components: modern
 Source: "..\..\build\llvm\bin\ld.lld.exe";  DestDir: "{app}\modern\bin"; Components: modern
@@ -100,7 +102,6 @@ Source: "..\..\build\llvm\lib\clang\*";     DestDir: "{app}\modern\lib\clang"; F
 ; install time from the user's own XDK import libs (their ordinals), so it always
 ; matches the installed XDK rather than whichever one the release was built on.
 Source: "..\..\build\libc\*.a";             DestDir: "{app}\modern\lib"; Excludes: "kernel_import.a"; Components: modern
-Source: "..\..\build\coff\*.a";             DestDir: "{app}\modern\lib"; Flags: skipifsourcedoesntexist; Components: modern
 ; include\ - the modern C/C++23 runtime headers (xbox\ is staged in at install time)
 Source: "..\..\runtime\config\*";           DestDir: "{app}\modern\include\config"; Flags: recursesubdirs createallsubdirs; Components: modern
 Source: "..\..\vendor\picolibc\libc\include\*";          DestDir: "{app}\modern\include\picolibc"; Flags: recursesubdirs createallsubdirs; Components: modern

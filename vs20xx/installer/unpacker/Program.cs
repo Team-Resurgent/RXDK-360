@@ -84,6 +84,35 @@ namespace Rxdk.Xdk.Unpacker
                 }
                 else
                     Report.Line("WARNING: clang/llvm-ar missing under {0}\\bin; kernel_import.a not built", modernRoot);
+
+                // Translate every staged XDK static .lib (big-endian PPC COFF, which
+                // lld cannot read) into a PPC32 ELF .a lld links natively (Coff2Elf,
+                // the byte-for-byte port of tools/coff2elf.py). These are XDK-derived
+                // (not redistributable), so they are generated here from the user's own
+                // libs rather than shipped. The runtime archives (libcpp.a/libc.a, laid
+                // down by the installer) form the external-strong set so a COMDAT
+                // signature the runtime owns strong stays strong.
+                var runtimes = new List<string>();
+                foreach (var rl in new[] { "libcpp.a", "libc.a" })
+                {
+                    var p = Path.Combine(dstLib, rl);
+                    if (File.Exists(p)) runtimes.Add(p);
+                }
+                int nlibs = 0;
+                foreach (var f in Directory.GetFiles(dstLib, "*.lib"))
+                {
+                    string outA = Path.Combine(dstLib, Path.GetFileNameWithoutExtension(f) + ".a");
+                    try
+                    {
+                        Coff2Elf.Translate(f, outA, runtimes.ToArray());
+                        undo.Add("file|" + outA);
+                        var man = Path.ChangeExtension(outA, ".imports.json");
+                        if (File.Exists(man)) undo.Add("file|" + man);
+                        nlibs++;
+                    }
+                    catch (Exception ex) { Report.Line("WARNING: coff2elf {0}: {1}", Path.GetFileName(f), ex.Message); }
+                }
+                Report.Line("translated {0} XDK libs -> ELF .a", nlibs);
             }
             // {app}\rxdk360-uninstall.log sits next to modern\, not under legacy\.
             string undoLog = Path.GetFullPath(Path.Combine(modernRoot, "..", UndoLog));
@@ -197,6 +226,18 @@ namespace Rxdk.Xdk.Unpacker
                     if (args.Length < 5) return Usage();
                     int ni = KernelImportLib.Generate(args[1], args[2], args[3], "powerpc-unknown-xbox360", args[4]);
                     Report.Line("kernel_import.a: {0} imports -> {1}", ni, args[4]);
+                    return 0;
+                }
+
+                // Test/CI helper: translate one PPC-COFF .lib to an ELF .a.
+                //   coffarchive <lib> <out.a> [<runtime1.a> <runtime2.a> ...]
+                if (args.Length >= 1 && args[0].Equals("coffarchive", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (args.Length < 3) return Usage();
+                    var runtimes = new string[Math.Max(0, args.Length - 3)];
+                    if (runtimes.Length > 0) Array.Copy(args, 3, runtimes, 0, runtimes.Length);
+                    int ns = Coff2Elf.Translate(args[1], args[2], runtimes);
+                    Report.Line("coffarchive: {0} indexed symbols -> {1}", ns, args[2]);
                     return 0;
                 }
 
