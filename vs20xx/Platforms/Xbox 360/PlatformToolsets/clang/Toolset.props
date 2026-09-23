@@ -67,7 +67,7 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild; a bad edit here breaks
     <!-- library dirs: the clean layout mirrors the XDK, so every archive (our
          libc/libcpp, the coff2elf ELF libs, kernel_import/libcompat, and the XDK
          import .libs for genstubs) lives together under {app}\lib\xbox next to the
-         stock console .libs (they coexist -- ours are .a, the XDK's are .lib). -->
+         stock console .libs (they coexist - ours are .a, the XDK's are .lib). -->
     <RxdkLibcDir Condition="'$(RxdkLibcDir)' == '' and '$(_RxdkClean)' == 'true'">$(_RxdkXdkRoot)\lib\xbox</RxdkLibcDir>
     <RxdkLibcDir Condition="'$(RxdkLibcDir)' == ''">$(RxdkClangRoot)\build\libc</RxdkLibcDir>
     <RxdkCoffDir Condition="'$(RxdkCoffDir)' == '' and '$(_RxdkClean)' == 'true'">$(_RxdkXdkRoot)\lib\xbox</RxdkCoffDir>
@@ -88,7 +88,7 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild; a bad edit here breaks
 
     <!-- XDK headers (for XDK-headers mode) + import .libs (for genstubs). The clean
          install keeps a single copy of the XDK tree at the product root (mirroring the
-         real XDK: {app}\include\xbox, {app}\lib\xbox) -- no staged duplicate under the
+         real XDK: {app}\include\xbox, {app}\lib\xbox) - no staged duplicate under the
          compiler bundle. -->
     <RxdkXdkIncludeDir Condition="'$(RxdkXdkIncludeDir)' == '' and '$(_RxdkClean)' == 'true'">$(_RxdkXdkRoot)\include\xbox</RxdkXdkIncludeDir>
     <RxdkXdkIncludeDir Condition="'$(RxdkXdkIncludeDir)' == ''">$(XDKInstallDir)include\xbox</RxdkXdkIncludeDir>

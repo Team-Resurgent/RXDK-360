@@ -1,5 +1,5 @@
 <!--
-  RXDK-360 on-disk layout -- mirrors the real Xbox 360 XDK tree (no modern/legacy
+  RXDK-360 on-disk layout - mirrors the real Xbox 360 XDK tree (no modern/legacy
   split). XdkPath == InstallPath == {app}; the XDK content sits at its native paths:
 
     {app}\                      InstallPath / %RXDK360% / XdkPath
