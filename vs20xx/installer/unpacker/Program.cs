@@ -155,6 +155,11 @@ namespace Rxdk.Xdk.Unpacker
                 "-fshort-wchar", "-ffunction-sections", "-fdata-sections",
                 "-fexceptions", "-funwind-tables", "-frtti",
                 "-D__Picolibc__", "-D_GNU_SOURCE",
+                // The compat sources include XDK headers but no libc++ ctype facets,
+                // and their XAPOBase.h chain pulls <ctype.h> before float.h. Opt out of
+                // picolibc's legacy single-letter ctype macros so _X (etc.) doesn't
+                // collide with float.h's `_chgsign(double _X)` parameter.
+                "-D_RXDK_NO_LEGACY_CTYPE",
                 "-I" + lx, "-I" + la, "-I" + cfg,
                 "-include", "__config_site", "-include", "rxdk_libcpp_prereq.h",
                 "-I" + pico, "-include", "picolibc.h",

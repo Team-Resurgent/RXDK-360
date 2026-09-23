@@ -39,5 +39,14 @@
    _PICOLIBC_LEGACY_CTYPE_MACROS): the __i386__ arm covers the original Xbox, so
    the PowerPC 360 must opt in explicitly. libc++'s <__locale_dir/ctype_base.h>
    (the _LIBCPP_LIBC_NEWLIB path) builds its ctype masks from these, so without it
-   libc++ and any title using <locale>/<cctype> facets fail to compile. */
+   libc++ and any title using <locale>/<cctype> facets fail to compile.
+
+   BUT these are single-uppercase-letter object-like macros (_X especially) that
+   collide with XDK headers using them as identifiers -- e.g. float.h's
+   `double _chgsign(double _X)` -- when a translation unit pulls <ctype.h> before the
+   XDK header (the compat sources' XAPOBase.h chain does; xtl.h-first titles do not).
+   A build that includes XDK headers but NOT libc++ ctype facets (the libcompat build)
+   opts out with -D_RXDK_NO_LEGACY_CTYPE to avoid the clash. */
+#if !defined(_RXDK_NO_LEGACY_CTYPE)
 #define _PICOLIBC_LEGACY_CTYPE_MACROS 1
+#endif
