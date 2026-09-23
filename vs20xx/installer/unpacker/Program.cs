@@ -113,11 +113,104 @@ namespace Rxdk.Xdk.Unpacker
                     catch (Exception ex) { Report.Line("WARNING: coff2elf {0}: {1}", Path.GetFileName(f), ex.Message); }
                 }
                 Report.Line("translated {0} XDK libs -> ELF .a", nlibs);
+
+                // Build the compat library (our clang reimplementations of XDK C++
+                // helper classes titles subclass -- XAPOBase, AsfWriterPropertyValue)
+                // HERE rather than shipping it prebuilt: its sources #include the XDK's
+                // own headers, so it can only be compiled where the XDK exists -- the
+                // install machine, not CI. Same self-contained rule as kernel_import.a
+                // and the coff translations.
+                if (File.Exists(clang) && File.Exists(ar))
+                {
+                    try
+                    {
+                        int nc = BuildCompatLib(modernRoot, dstLib, clang, ar);
+                        if (nc > 0) { undo.Add("file|" + Path.Combine(dstLib, "libcompat.a")); Report.Line("built libcompat.a ({0} sources) -> {1}", nc, dstLib); }
+                    }
+                    catch (Exception ex) { Report.Line("WARNING: libcompat.a not built: {0}", ex.Message); }
+                }
             }
             // {app}\rxdk360-uninstall.log sits next to modern\, not under legacy\.
             string undoLog = Path.GetFullPath(Path.Combine(modernRoot, "..", UndoLog));
             if (undo.Count > 0 && File.Exists(undoLog))
                 File.AppendAllLines(undoLog, undo);
+        }
+
+        // Compile the compat sources (modern\compat\*.cpp) into modern\lib\libcompat.a
+        // with the shipped clang, in XDK-headers mode against the staged XDK headers
+        // (mirrors tools/build_libcompat.py's flag recipe). Returns the source count,
+        // or 0 when there are no compat sources to build.
+        private static int BuildCompatLib(string modernRoot, string dstLib, string clang, string ar)
+        {
+            string srcDir = Path.Combine(modernRoot, "compat");
+            if (!Directory.Exists(srcDir)) return 0;
+            var sources = Directory.GetFiles(srcDir, "*.cpp");
+            if (sources.Length == 0) return 0;
+
+            string inc = Path.Combine(modernRoot, "include");
+            string cfg = Path.Combine(inc, "config");
+            string pico = Path.Combine(inc, "picolibc");
+            string lx = Path.Combine(inc, "libcxx");
+            string la = Path.Combine(inc, "libcxxabi");
+            string xdk = Path.Combine(inc, "xbox");
+            // AutoClangFlags(C++) + the XDK-headers MS-compat recipe (ClangCompile's
+            // XdkHeaderFlags / build_libcompat.py). -frtti so the base classes' _ZTI
+            // typeinfo the subclass needs is emitted.
+            var flags = new List<string> {
+                "--target=powerpc-unknown-xbox360", "-O2",
+                "-fshort-wchar", "-ffunction-sections", "-fdata-sections",
+                "-fexceptions", "-funwind-tables", "-frtti",
+                "-D__Picolibc__", "-D_GNU_SOURCE",
+                "-I" + lx, "-I" + la, "-I" + cfg,
+                "-include", "__config_site", "-include", "rxdk_libcpp_prereq.h",
+                "-I" + pico, "-include", "picolibc.h",
+                "-fms-extensions", "-fms-compatibility", "-fdeclspec", "-fms-compatibility-version=1920",
+                "-D_INTPTR_T_DEFINED", "-D_UINTPTR_T_DEFINED",
+                "-D__gnuc_va_list=__builtin_va_list", "-D_HAS_CHAR16_T_LANGUAGE_SUPPORT=1",
+                "-D__STDC_WANT_LIB_EXT1__=1", "-DDECLSPEC_UUID(x)=__declspec(uuid(x))",
+                "-D_MSC_FULL_VER=140050727", "-fdelayed-template-parsing",
+                "-Wno-invalid-token-paste", "-Wno-narrowing", "-fwritable-strings", "-fno-autolink",
+                "-D_WIN32=1", "-D_M_PPCBE=1", "-D_M_PPC=1", "-D_XBOX=1", "-D_XBOX_VER=200",
+                "-D__export=", "-D_SIZE_T_DEFINED", "-D_XM_NO_INTRINSICS_", "-Wno-everything",
+                "-include", "stdint.h", "-include", "__stddef_max_align_t.h",
+                "-include", "rxdk_msvcrt_compat.h", "-include", "rxdk_secure_overloads.h",
+                "-isystem", xdk,
+            };
+            var objs = new List<string>();
+            foreach (var src in sources)
+            {
+                string obj = Path.Combine(dstLib, "compat_" + Path.GetFileNameWithoutExtension(src) + ".o");
+                var a = new List<string>(flags) { "-c", src, "-o", obj };
+                RunOrThrow(clang, a, "compat compile " + Path.GetFileName(src));
+                objs.Add(obj);
+            }
+            string outA = Path.Combine(dstLib, "libcompat.a");
+            if (File.Exists(outA)) File.Delete(outA);
+            var arArgs = new List<string> { "rcs", outA };
+            arArgs.AddRange(objs);
+            RunOrThrow(ar, arArgs, "compat archive");
+            foreach (var o in objs) { try { File.Delete(o); } catch { } }
+            return sources.Length;
+        }
+
+        private static void RunOrThrow(string exe, List<string> args, string what)
+        {
+            // net472 has no ProcessStartInfo.ArgumentList; build a quoted command
+            // line (paths under Program Files contain spaces).
+            var parts = new List<string>();
+            foreach (var a in args) parts.Add(a.IndexOf(' ') >= 0 ? "\"" + a + "\"" : a);
+            var psi = new System.Diagnostics.ProcessStartInfo(exe, string.Join(" ", parts))
+            {
+                UseShellExecute = false, RedirectStandardOutput = true,
+                RedirectStandardError = true, CreateNoWindow = true,
+            };
+            using (var p = System.Diagnostics.Process.Start(psi))
+            {
+                string err = p.StandardError.ReadToEnd();
+                p.StandardOutput.ReadToEnd();
+                p.WaitForExit();
+                if (p.ExitCode != 0) throw new Exception(what + " failed: " + err);
+            }
         }
 
         // Small, idempotent fixups to stock XDK headers that only clang (not the

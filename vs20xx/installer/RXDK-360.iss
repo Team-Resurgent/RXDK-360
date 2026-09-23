@@ -98,10 +98,14 @@ Source: "..\..\build\xextool\XexTool.exe"; DestDir: "{app}\modern\bin"; Componen
 Source: "..\..\build\tools\xdvdfs.exe";     DestDir: "{app}\bin"; Components: modern
 ; lib\ - clang's resource dir (found relative to bin\..\lib\clang) + all archives
 Source: "..\..\build\llvm\lib\clang\*";     DestDir: "{app}\modern\lib\clang"; Flags: recursesubdirs createallsubdirs; Components: modern
-; kernel_import.a is NOT shipped: the unpacker's stagemodern step builds it at
-; install time from the user's own XDK import libs (their ordinals), so it always
-; matches the installed XDK rather than whichever one the release was built on.
-Source: "..\..\build\libc\*.a";             DestDir: "{app}\modern\lib"; Excludes: "kernel_import.a"; Components: modern
+; kernel_import.a and libcompat.a are NOT shipped: the unpacker's stagemodern
+; step builds them at install from the user's own XDK (import ordinals /
+; XDK-header C++ helpers), so they always match the installed XDK rather than
+; whichever one the release was built on -- and CI, which has no XDK, need not.
+Source: "..\..\build\libc\*.a";             DestDir: "{app}\modern\lib"; Excludes: "kernel_import.a,libcompat.a"; Components: modern
+; compat\ - our clang reimplementations of XDK C++ helper classes (source, since
+; they #include XDK headers); stagemodern compiles them into modern\lib\libcompat.a.
+Source: "..\..\runtime\compat\*";           DestDir: "{app}\modern\compat"; Components: modern
 ; include\ - the modern C/C++23 runtime headers (xbox\ is staged in at install time)
 Source: "..\..\runtime\config\*";           DestDir: "{app}\modern\include\config"; Flags: recursesubdirs createallsubdirs; Components: modern
 Source: "..\..\vendor\picolibc\libc\include\*";          DestDir: "{app}\modern\include\picolibc"; Flags: recursesubdirs createallsubdirs; Components: modern
