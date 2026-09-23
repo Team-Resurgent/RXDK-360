@@ -288,6 +288,12 @@ namespace Rxdk.Xbox360.Modern.Build
                     // old per-title trial-link + XexTool genstubs discovery.
                     var kimp = Path.Combine(LibcDir, "kernel_import.a");
                     if (File.Exists(kimp)) pre.Add(kimp);
+                    // Compat library: our clang reimplementations of XDK C++ helper
+                    // classes a title subclasses (CXAPOBase, ...), so the subclass
+                    // links a modern-ABI base instead of the MSVC-ABI XDK .lib. On
+                    // demand -- pulled only by a title that references a member.
+                    var compat = Path.Combine(LibcDir, "libcompat.a");
+                    if (File.Exists(compat)) pre.Add(compat);
                 }
                 if (!string.IsNullOrEmpty(CoffDir))
                     user.Add(Path.Combine(CoffDir, "xapilib.a"));
