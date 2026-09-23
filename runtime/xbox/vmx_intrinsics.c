@@ -443,6 +443,16 @@ __vector4 __vspltish(int sim)
 /* __fsel/__fself: comparand >= 0.0 (including -0.0) selects valGE, else valLT. */
 float __fself(float c, float ge, float lt) { return c >= 0.0f ? ge : lt; }
 
+/* ---- scalar float estimate/sqrt intrinsics (ppcintrinsics.h) --------------- */
+/* MSVC treats these as compiler intrinsics that emit a single PPC instruction;
+   clang has no such builtins, so a title using them (InlineAssembly's
+   ArrayMathFunctionCPP calls __frsqrte) otherwise links to an undefined symbol.
+   Provide them as the exact one-instruction leaf functions the XDK documents. */
+double __fsqrt(double x)  { double r; __asm__("fsqrt %0,%1"   : "=f"(r) : "f"(x)); return r; }
+float  __fsqrts(float x)  { float  r; __asm__("fsqrts %0,%1"  : "=f"(r) : "f"(x)); return r; }
+double __frsqrte(double x){ double r; __asm__("frsqrte %0,%1" : "=f"(r) : "f"(x)); return r; }
+float  __fres(double x)   { float  r; __asm__("fres %0,%1"    : "=f"(r) : "f"(x)); return r; }
+
 /* ---- VMX select / splat-halfword / alignment loads / partial stores ------- */
 
 /* Bitwise select: result bit = (VRC bit) ? VRB : VRA. */
