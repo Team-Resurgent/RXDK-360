@@ -113,7 +113,8 @@ Copyright (C) Microsoft Corporation. All rights reserved.
 
   <!-- Deploy the title's content tree (game:\Media\...). Stock XDK projects list
        their media on the Console Deployment page; the generated RXDK projects do
-       not, so deploy a sibling Media\ folder by convention. Without it a title's
+       not, so deploy the build's $(OutDir)Media\ tree by convention (the CustomBuild
+       content steps write shaders/xpr/fxobj/scenes there). Without it a title's
        LoadVertexShader("game:\Media\...") / texture loads fail and Initialize()
        aborts. Enumerate the media FILES (xbecopy is unreliable with a directory
        source) into DeploymentFiles as "remoteDir=localFile" pairs: the deploy task
@@ -121,9 +122,9 @@ Copyright (C) Microsoft Corporation. All rights reserved.
        and the file lands at <RemoteRoot>\Media\<subdir>\<file> = game:\Media\...
        RemoteRoot/DeploymentType come from the Deploy item defaults + the update
        below. -->
-  <ItemGroup Condition="'$(ConfigurationType)' != 'Makefile' and Exists('$(MSBuildProjectDirectory)\Media')">
+  <ItemGroup Condition="'$(ConfigurationType)' != 'Makefile' and Exists('$(OutDir)Media')">
     <Deploy Include="rxdk-media-content">
-      <DeploymentFiles>$(RemoteRoot)\Media=Media</DeploymentFiles>
+      <DeploymentFiles>$(RemoteRoot)\Media=$(OutDir)Media</DeploymentFiles>
     </Deploy>
   </ItemGroup>
 

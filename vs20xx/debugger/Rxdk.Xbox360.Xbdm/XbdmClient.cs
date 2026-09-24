@@ -452,15 +452,16 @@ namespace Rxdk.Xbox360.Xbdm
             string remote = d + Path.GetFileName(localXex);
             SendFile(localXex, remote);
 
-            // Also deploy the title's content: the sample's sibling Media\ folder (the
-            // xex is in <sample>\<Config>\, Media in <sample>\Media). VS's F5 launches
-            // through this adapter, NOT the MSBuild Deploy target, so without this the
-            // console never gets game:\Media\... and every content load fails.
+            // Also deploy the title's content: the build's $(OutDir)\Media\ tree, which
+            // sits next to the xex (the CustomBuild content steps write shaders/xpr/fxobj/
+            // scenes there). VS's F5 launches through this adapter, NOT the MSBuild Deploy
+            // target, so without this the console never gets game:\Media\... and every
+            // content load fails.
             LastMediaFilesDeployed = 0;
             try
             {
-                string? sampleDir = Path.GetDirectoryName(Path.GetDirectoryName(localXex));
-                string mediaLocal = sampleDir == null ? "" : Path.Combine(sampleDir, "Media");
+                string? outDir = Path.GetDirectoryName(localXex);   // $(OutDir), e.g. <sample>\Debug
+                string mediaLocal = outDir == null ? "" : Path.Combine(outDir, "Media");
                 if (Directory.Exists(mediaLocal))
                     DeployDirectory(mediaLocal, d.TrimEnd('\\') + "\\Media");
             }

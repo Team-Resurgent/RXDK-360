@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using RXDK360.SampleBrowser.Models;
 
@@ -19,13 +21,14 @@ public sealed class InstallResult
 /// copy the sample + Common into a chosen folder, rename the project, fix the
 /// now-shallower Common relative paths, then open the .sln in the chosen VS.
 ///
-/// Installed layout (clones the SDK tree so stock ..\..\ references resolve as-is):
-///   &lt;dest&gt;\Common\                (shared ATG framework, writable copy)
-///   &lt;dest&gt;\Media                  (junction to the SDK's shared media tree)
-///   &lt;dest&gt;\&lt;Area&gt;\&lt;Name&gt;\  &lt;Name&gt;.sln, &lt;Name&gt;.vcxproj, sources, built Media\
-/// The sample keeps its two-deep position, so both the project references and the
-/// content files' own internal refs (Resource.rdf -&gt; ..\..\Media\Textures\...)
-/// resolve natively - no path rewriting.
+/// Self-contained installed layout (matches the stock XDK Sample Browser):
+///   &lt;dest&gt;\&lt;Name&gt;\
+///       &lt;Name&gt;.sln, &lt;Name&gt;.vcxproj, sources, Resource.rdf
+///       Common\    (writable copy of the ATG framework, builds here)
+///       Media\     (just the media this sample references, mirrored from the SDK)
+/// The stock ..\..\Common\ / ..\..\Media\ references are rewritten to Common\ / Media\
+/// in the project AND the content files (Resource.rdf). Build outputs land in
+/// $(OutDir)\Media (deployed from there), kept distinct from this Media\ source.
 /// </summary>
 public sealed class InstallService
 {
@@ -54,36 +57,32 @@ public sealed class InstallService
             return new InstallResult { Success = false, Message = "Invalid project name." };
 
         var origName = Path.GetFileName(sample.FolderPath);
-        // Preserve the sample's position in the cloned tree (e.g. Graphics\<Name>) so the
-        // upgraded stock projects AND the content files' internal cross-references
-        // (Resource.rdf -> ..\..\Media\Textures\..., scene copies, etc.) resolve natively
-        // against the shared Common\ and Media\ at the install root - no path rewriting,
-        // which cannot reach references buried inside .rdf/.xatg assets.
-        var relParent = Path.GetDirectoryName(sample.RelativeFolder) ?? "";
-        var destSample = Path.Combine(destRoot, relParent, newName);
-        var destCommon = Path.Combine(destRoot, "Common");
+        // Self-contained install (matches the stock XDK Sample Browser): everything the
+        // sample needs lives under its own folder - Common\ and the referenced Media\
+        // subset as subfolders - and the stock ..\..\Common\ / ..\..\Media\ references are
+        // rewritten to Common\ / Media\ (in the project AND in the content files, e.g.
+        // Resource.rdf's ..\..\Media\Textures\...). Portable, no shared root state. Build
+        // outputs go to $(OutDir)\Media (deployed from there), distinct from this source.
+        var destSample = Path.Combine(destRoot, newName);
+        var destCommon = Path.Combine(destSample, "Common");
 
         Directory.CreateDirectory(destRoot);
         CopyTree(sample.FolderPath, destSample);
 
-        // Shared Common (writable copy - it builds here). Refresh when the SDK's copy is
-        // newer so an install never links against a stale framework; best-effort so a
-        // lock (VS building another sample's Common) doesn't fail the install.
+        // Common as a writable subfolder (it builds here). Refresh when the SDK's copy is
+        // newer so an install never links a stale framework; best-effort against a lock.
         var commonSrc = Path.Combine(_sdk.SamplesRoot, "Common");
         if (Directory.Exists(commonSrc) && CommonNeedsRefresh(commonSrc, destCommon))
             try { CopyTree(commonSrc, destCommon); } catch { /* keep existing on lock */ }
 
-        // Shared Media: the upgraded stock projects reference their build-time media
-        // sources (shaders/effects/resources/scenes) via ..\..\Media\ (rewritten to
-        // ..\Media below). Provide it once at the install root as a directory junction
-        // to the SDK's Media tree - read-only source, no per-install duplication. The
-        // sample still writes its OWN build outputs to <Name>\Media (deployed).
-        EnsureSharedMedia(destRoot);
+        // Copy just the media this sample references (project inputs + what its .rdf files
+        // bundle) into <sample>\Media, mirroring the SDK's Media\ subtree.
+        CopyReferencedMedia(destSample);
 
-        CopyMedia(sample, destSample);
-
-        // Rename project files (.sln / .vcxproj / .vcxproj.filters) and fix contents.
+        // Rename project files, then rewrite the shared paths to the self-contained layout
+        // in the project files AND the content files (.rdf) that carry their own refs.
         var newSln = RenameAndRewrite(destSample, origName, newName);
+        RewriteContentPaths(destSample);
 
         // Launch.
         if (newSln is not null)
@@ -133,55 +132,93 @@ public sealed class InstallService
                   .Any(seg => SkipDirs.Contains(seg, StringComparer.OrdinalIgnoreCase));
     }
 
-    // Provide <destRoot>\Media as a junction to the SDK's shared media tree, so the
-    // upgraded stock projects' ..\..\Media\ references (and the content files' internal
-    // refs) resolve without copying the (large) asset tree into every install root.
-    // Falls back to a copy if the junction fails.
-    private void EnsureSharedMedia(string destRoot)
+    // Copy the media this sample actually uses into <sample>\Media, mirroring the SDK's
+    // Media\ subtree: (1) the project's direct ..\..\Media\ inputs (shaders/effects/
+    // resources/scenes), then (2) whatever the .rdf files reference (textures, font data),
+    // resolved relative to each .rdf's own location.
+    private void CopyReferencedMedia(string destSample)
     {
-        var link = Path.Combine(destRoot, "Media");
-        if (Directory.Exists(link) || File.Exists(link)) return;
-        var target = Path.Combine(_sdk.SamplesRoot, "Media");
-        if (!Directory.Exists(target)) return;
-        try
+        var mediaSrc = Path.Combine(_sdk.SamplesRoot, "Media");
+        if (!Directory.Exists(mediaSrc)) return;
+
+        // (1) direct ..\..\Media\<rel> references in the project files.
+        var wanted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var proj in Directory.EnumerateFiles(destSample, "*.vcxproj"))
+            foreach (Match m in Regex.Matches(File.ReadAllText(proj),
+                     @"\.\.[\\/]+\.\.[\\/]+[Mm]edia[\\/]([^""<>;]+?\.[A-Za-z0-9]+)"))
+                wanted.Add(NormRel(m.Groups[1].Value));
+        CopyWanted(wanted, mediaSrc, destSample);
+
+        // (2) follow .rdf references (now that the referenced .rdf are present), resolving
+        // each token relative to Media\ (embedded ..\..\Media\ path) or the .rdf's own dir.
+        var more = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var mediaDst = Path.Combine(destSample, "Media");
+        foreach (var rdf in Directory.EnumerateFiles(destSample, "*.rdf", SearchOption.AllDirectories))
         {
-            var psi = new ProcessStartInfo("cmd.exe", $"/c mklink /J \"{link}\" \"{target}\"")
+            string baseRel = "";
+            if (rdf.StartsWith(mediaDst + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                baseRel = Path.GetDirectoryName(Path.GetRelativePath(mediaDst, rdf)) ?? "";
+            foreach (Match m in Regex.Matches(File.ReadAllText(rdf),
+                     @"[^""'<>\s]+?\.(?:tga|dds|abc|bin|wav|bmp|jpg|png)", RegexOptions.IgnoreCase))
             {
-                UseShellExecute = false, CreateNoWindow = true,
-                RedirectStandardOutput = true, RedirectStandardError = true,
-            };
-            Process.Start(psi)?.WaitForExit();
+                var raw = m.Value.Replace('/', '\\');
+                var idx = raw.IndexOf(@"Media\", StringComparison.OrdinalIgnoreCase);
+                var rel = idx >= 0 ? raw.Substring(idx + 6)
+                                   : (baseRel.Length > 0 ? baseRel + "\\" + raw : raw);
+                more.Add(NormRel(rel));
+            }
         }
-        catch { /* fall through to copy */ }
-        if (!Directory.Exists(link))
-        {
-            try { CopyTree(target, link); } catch { /* best effort */ }
-        }
+        CopyWanted(more, mediaSrc, destSample);
     }
 
-    private void CopyMedia(Sample sample, string destSample)
+    private static void CopyWanted(HashSet<string> rels, string mediaSrc, string destSample)
     {
-        var mediaRoot = Path.Combine(_sdk.SamplesRoot, "Media");
-        if (!Directory.Exists(mediaRoot) || sample.InstallMedia.Count == 0)
-            return;
-
-        foreach (var item in sample.InstallMedia)
+        foreach (var rel in rels)
         {
-            var rel = item.Replace('/', '\\').Trim('\\');
-            var src = Path.Combine(mediaRoot, rel);
+            if (rel.Length == 0) continue;
+            var src = Path.Combine(mediaSrc, rel);
+            if (!File.Exists(src)) continue;
             var dst = Path.Combine(destSample, "Media", rel);
             try
             {
-                if (Directory.Exists(src)) CopyTree(src, dst);
-                else if (File.Exists(src))
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
-                    File.Copy(src, dst, overwrite: true);
-                }
+                Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+                File.Copy(src, dst, overwrite: true);
             }
-            catch { /* media is best-effort; not required to build */ }
+            catch { /* best effort */ }
         }
     }
+
+    // Normalize a Media-relative path: backslashes, no leading separators, drop any stray
+    // leading ..\ a token may carry.
+    private static string NormRel(string rel)
+    {
+        rel = rel.Replace('/', '\\').Trim().TrimStart('\\');
+        while (rel.StartsWith(@"..\", StringComparison.Ordinal)) rel = rel.Substring(3);
+        return rel;
+    }
+
+    // Rewrite the content files' own shared references (Resource.rdf's
+    // ..\..\Media\Textures\... etc.) to the self-contained Media\ layout.
+    private static void RewriteContentPaths(string destSample)
+    {
+        foreach (var rdf in Directory.EnumerateFiles(destSample, "*.rdf", SearchOption.AllDirectories))
+        {
+            try
+            {
+                var text = File.ReadAllText(rdf);
+                var rewritten = ShallowSharedPaths(text);
+                if (rewritten != text) File.WriteAllText(rdf, rewritten);
+            }
+            catch { /* best effort */ }
+        }
+    }
+
+    // ..\..\Common -> Common and ..\..\Media -> Media (self-contained subfolders); the
+    // stock projects use both "Media" and "media".
+    private static string ShallowSharedPaths(string text) =>
+        text.Replace(@"..\..\Common", "Common")
+            .Replace(@"..\..\Media", "Media")
+            .Replace(@"..\..\media", "Media");
 
     // ---- rename + path fix -------------------------------------------------
 
@@ -198,8 +235,7 @@ public sealed class InstallService
             if (!isSln && !isProj && !isFilters) continue;
 
             var text = File.ReadAllText(file);
-            // No path shallowing: the sample keeps its tree depth, so ..\..\Common and
-            // ..\..\Media resolve natively (see Install()).
+            text = ShallowSharedPaths(text);   // ..\..\Common -> Common, ..\..\Media -> Media
             if (isSln)  text = RewriteSln(text, origName, newName);
             if (isProj) text = RewriteProj(text, origName, newName);
 
