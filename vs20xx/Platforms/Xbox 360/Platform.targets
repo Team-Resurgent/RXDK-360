@@ -88,6 +88,16 @@ Copyright (C) Microsoft Corporation. All rights reserved.
     <Copy Condition="'@(_XeniaDisc)' != ''"
           SourceFiles="@(_XeniaDisc)"
           DestinationFiles="@(_XeniaDisc->'$(_XeniaStage)%(RecursiveDir)%(Filename)%(Extension)')" />
+    <!-- Stage the sample's Media\ tree under the disc's Media\ so game:\Media\...
+         resolves in the emulator exactly as on console (a bare .xex mounts no
+         content). Same convention as the Copy to Hard Drive deploy above. -->
+    <ItemGroup>
+      <_XeniaContent Include="$(MSBuildProjectDirectory)\Media\**\*"
+                     Condition="Exists('$(MSBuildProjectDirectory)\Media')" />
+    </ItemGroup>
+    <Copy Condition="'@(_XeniaContent)' != ''"
+          SourceFiles="@(_XeniaContent)"
+          DestinationFiles="@(_XeniaContent->'$(_XeniaStage)Media\%(RecursiveDir)%(Filename)%(Extension)')" />
     <MakeDir Directories="$(OutDir)" />
     <Exec Command="&quot;$(RxdkXdvdfsPath)&quot; pack &quot;$(_XeniaStage.TrimEnd('\'))&quot; &quot;$(RxdkXeniaIsoPath)&quot;" />
     <Message Importance="High" Text="Xenia disc image -&gt; $(RxdkXeniaIsoPath)" />
@@ -99,6 +109,19 @@ Copyright (C) Microsoft Corporation. All rights reserved.
 
   <ItemGroup Condition="'$(ConfigurationType)' != 'Makefile'">
     <Deploy Include="%(ImageXex.ImageXexOutput)"/>
+  </ItemGroup>
+
+  <!-- Deploy the title's content tree (game:\Media\...). Stock XDK projects list
+       their media on the Console Deployment page; the generated RXDK projects do
+       not, so deploy a sibling Media\ folder by convention. The directory maps to
+       <RemoteRoot>\Media (xbcp recurses), i.e. game:\Media\... at runtime -- without
+       it a title's LoadVertexShader("game:\Media\...") / texture loads fail and
+       Initialize() aborts. RemoteRoot/DeploymentType come from the Deploy item
+       defaults (Microsoft.Deploy props) + the _RxdkDeployType update below. -->
+  <ItemGroup Condition="'$(ConfigurationType)' != 'Makefile' and Exists('$(MSBuildProjectDirectory)\Media')">
+    <Deploy Include="rxdk-media-content">
+      <DeploymentFiles>$(RemoteRoot)\Media=Media</DeploymentFiles>
+    </Deploy>
   </ItemGroup>
 
   <ItemGroup Condition="'$(ConfigurationType)' == 'Makefile'">
