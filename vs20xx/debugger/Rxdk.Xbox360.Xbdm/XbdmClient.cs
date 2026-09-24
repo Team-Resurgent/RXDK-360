@@ -485,12 +485,14 @@ namespace Rxdk.Xbox360.Xbdm
             }
         }
 
-        /// <summary>Reboot the console into a title. stopAtLoad is ignored for the reboot
-        /// flags — DMBOOT_STOP is pending-exec, used by <see cref="LaunchStopped"/>, not
-        /// a title reboot (title+STOP leaves EXEC_STOP, which then ignores the next reboot).</summary>
+        /// <summary>Reboot the console into a title. When <paramref name="stopAtLoad"/> the
+        /// reboot carries DMBOOT_STOP so the title halts at its entry breakpoint for this
+        /// launch only (the OG XDK debug-launch flag) - no persistent DmSetInitialBreakpoint.
+        /// The caller must continue the stopped threads before any later reboot, or xbdm
+        /// leaves the title in EXEC_STOP and ignores it (RebootToDashboard does this).</summary>
         public void LaunchTitle(string imagePath, string? mediaPath = null, bool stopAtLoad = false, string? cmdLine = null, bool cold = false)
         {
-            uint flags = DmBoot.Title | DmBoot.Wait | (cold ? DmBoot.Cold : 0);
+            uint flags = DmBoot.Title | DmBoot.Wait | (cold ? DmBoot.Cold : 0) | (stopAtLoad ? DmBoot.Stop : 0);
             NativeXbdm.DmSetConnectionTimeout(120_000, 120_000);
             // The 3rd DmRebootEx arg is the media root that GAME: maps to. Default it to
             // the title's DIRECTORY, not the .xex file -- pointing GAME: at the .xex makes
@@ -543,15 +545,16 @@ namespace Rxdk.Xbox360.Xbdm
             SetTitle(titleDir, titleName);
             AttachDebugger();
             try { Stop(); } catch { }
-            try { SetInitialBreakpoint(); } catch (XbdmException) { }
 
-            Notification += ArmInitialBreakpointOnPending;
-            try
+            // Stop at the title's entry via the per-launch DMBOOT_STOP flag (stopAtLoad:
+            // true) instead of a persistent DmSetInitialBreakpoint - so a later reboot that
+            // relaunches the title can't re-hit a lingering arm and wedge the console at the
+            // boot logo.
             {
                 while (_events.TryDequeue(out _)) { }
                 try
                 {
-                    LaunchTitle(remote, stopAtLoad: false, cold: false);
+                    LaunchTitle(remote, stopAtLoad: true, cold: false);
                 }
                 catch (XbdmException)
                 {
@@ -587,10 +590,6 @@ namespace Rxdk.Xbox360.Xbdm
                 }
                 throw new TimeoutException($"timed out waiting for {titleName} initial break" +
                     (last != null ? $" (last {last})" : ""));
-            }
-            finally
-            {
-                Notification -= ArmInitialBreakpointOnPending;
             }
         }
 
