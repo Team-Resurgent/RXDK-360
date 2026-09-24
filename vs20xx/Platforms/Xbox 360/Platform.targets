@@ -114,7 +114,7 @@ Copyright (C) Microsoft Corporation. All rights reserved.
   <!-- Deploy the title's content tree (game:\Media\...). Stock XDK projects list
        their media on the Console Deployment page; the generated RXDK projects do
        not, so deploy a sibling Media\ folder by convention. The directory maps to
-       <RemoteRoot>\Media (xbcp recurses), i.e. game:\Media\... at runtime -- without
+       <RemoteRoot>\Media (xbcp recurses), i.e. game:\Media\... at runtime. Without
        it a title's LoadVertexShader("game:\Media\...") / texture loads fail and
        Initialize() aborts. RemoteRoot/DeploymentType come from the Deploy item
        defaults (Microsoft.Deploy props) + the _RxdkDeployType update below. -->
