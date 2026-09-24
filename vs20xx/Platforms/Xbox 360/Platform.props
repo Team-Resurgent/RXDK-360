@@ -140,6 +140,15 @@ Copyright (C) Microsoft Corporation. All rights reserved.
 
     <Xbox360DebuggerCommand>$(RemotePath)</Xbox360DebuggerCommand>
     <Xbox360DebuggerCheckUpToDate>true</Xbox360DebuggerCheckUpToDate>
+
+    <!-- The clang toolset's ClangCompile/ClangLink tasks do their own per-file
+         up-to-date check (obj/src timestamps) but do not emit the tracker .tlog logs
+         VS's fast up-to-date check relies on, so VS wrongly reports the project
+         up-to-date after a source edit and never runs the build target (a plain Build
+         then misses changes; only Rebuild works). Disable VS's fast check so a Build
+         always invokes MSBuild; the tasks still skip unchanged files, so incremental
+         builds stay cheap. -->
+    <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
   </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter\*.props" Condition="Exists('$(VCTargetsPath)\Platforms\Xbox 360\ImportAfter')" />
