@@ -234,7 +234,11 @@ namespace Rxdk.Xbox360.DebugAdapter
             {
                 uint pc = _ctx.Iar;
                 var loc = _sym?.LineAtKit(pc, _titleBase);
-                string file = loc?.File ?? "";
+                // Normalize to Windows separators: clang DWARF paths mix '/' into an
+                // otherwise '\' path (e.g. ...\AdvancedLighting/AdvancedLighting.cpp), and
+                // VS then fails to match the open document, so it won't focus the editor on
+                // the stop line (you have to scroll to the breakpoint yourself).
+                string file = (loc?.File ?? "").Replace('/', '\\');
                 string fn = loc is { Function: { Length: > 0 } } ? loc.Value.Function : $"0x{pc:X8}";
                 string srcName = file.Length == 0 ? "unknown" : Path.GetFileName(file);
                 var frame = new Dictionary<string, object?>
