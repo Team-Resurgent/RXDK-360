@@ -133,6 +133,8 @@ namespace Rxdk.Xbox360.DebugAdapter
             _kit.Connect(console);
             _holdingInitialBreak = true;
             var stop = _kit.LaunchStopped(program, remoteDir: remoteDir);
+            _dap.SendEvent("output", new { category = "console",
+                output = $"deployed {Path.GetFileName(program)} + {_kit.LastMediaFilesDeployed} media file(s) -> {remoteDir}\n" });
             _remoteImage = "devkit:\\" + Path.GetFileNameWithoutExtension(program) + "\\" + Path.GetFileName(program);
             string titleHint = Path.GetFileNameWithoutExtension(program);
             _kit.TryFindModule(titleHint, out _titleBase, out _titleSize, out _);

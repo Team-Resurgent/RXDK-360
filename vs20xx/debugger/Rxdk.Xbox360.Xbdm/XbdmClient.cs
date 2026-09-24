@@ -451,7 +451,37 @@ namespace Rxdk.Xbox360.Xbdm
             }
             string remote = d + Path.GetFileName(localXex);
             SendFile(localXex, remote);
+
+            // Also deploy the title's content: the sample's sibling Media\ folder (the
+            // xex is in <sample>\<Config>\, Media in <sample>\Media). VS's F5 launches
+            // through this adapter, NOT the MSBuild Deploy target, so without this the
+            // console never gets game:\Media\... and every content load fails.
+            LastMediaFilesDeployed = 0;
+            try
+            {
+                string? sampleDir = Path.GetDirectoryName(Path.GetDirectoryName(localXex));
+                string mediaLocal = sampleDir == null ? "" : Path.Combine(sampleDir, "Media");
+                if (Directory.Exists(mediaLocal))
+                    DeployDirectory(mediaLocal, d.TrimEnd('\\') + "\\Media");
+            }
+            catch { /* content deploy is best-effort */ }
             return remote;
+        }
+
+        /// <summary>Count of media files sent by the most recent <see cref="DeployTitle"/>.</summary>
+        public int LastMediaFilesDeployed { get; private set; }
+
+        // Recursively copy a local directory onto the console, creating remote dirs.
+        private void DeployDirectory(string localDir, string remoteDir)
+        {
+            try { Mkdir(remoteDir); } catch { }
+            foreach (var sub in Directory.GetDirectories(localDir))
+                DeployDirectory(sub, remoteDir + "\\" + Path.GetFileName(sub));
+            foreach (var file in Directory.GetFiles(localDir))
+            {
+                try { SendFile(file, remoteDir + "\\" + Path.GetFileName(file)); LastMediaFilesDeployed++; }
+                catch { }
+            }
         }
 
         /// <summary>Reboot the console into a title. stopAtLoad is ignored for the reboot
