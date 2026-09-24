@@ -83,6 +83,21 @@ WARNING:  DO NOT MODIFY unless you understand MSBuild.
         AdditionalOptions="$(_RxdkOpt)" />
   </Target>
 
+  <!-- ***** Clean *****
+       ClangCompile writes its .o objects straight into $(IntDir) with no MSBuild
+       tracking log, so the stock Clean (which removes only tlog-tracked outputs)
+       leaves them behind. Since Rebuild is Clean+Build and ClangCompile skips any
+       source whose .o is newer, a Rebuild would otherwise silently relink stale
+       objects and source edits (especially in a StaticLibrary like Common) never
+       take effect. Delete the objects on Clean so Rebuild truly recompiles. -->
+  <Target Name="RxdkClangClean" AfterTargets="Clean">
+    <ItemGroup>
+      <_RxdkCleanObj Include="$(IntDir)*.o" />
+      <_RxdkCleanObj Include="$(RxdkClangLinkDir)*.o" Condition="'$(RxdkClangLinkDir)' != ''" />
+    </ItemGroup>
+    <Delete Files="@(_RxdkCleanObj)" TreatErrorsAsWarnings="true" />
+  </Target>
+
   <!-- ***** Link (compile discovery + pack straight to .xex) ***** -->
   <Target Name="Link"
           Condition="'@(Link)' != '' and ('$(ConfigurationType)' == 'Application' or '$(ConfigurationType)' == 'DynamicLibrary')"

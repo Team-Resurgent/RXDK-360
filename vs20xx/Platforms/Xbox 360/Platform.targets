@@ -122,9 +122,8 @@ Copyright (C) Microsoft Corporation. All rights reserved.
        RemoteRoot/DeploymentType come from the Deploy item defaults + the update
        below. -->
   <ItemGroup Condition="'$(ConfigurationType)' != 'Makefile' and Exists('$(MSBuildProjectDirectory)\Media')">
-    <_RxdkMedia Include="$(MSBuildProjectDirectory)\Media\**\*" />
-    <Deploy Include="rxdk-media-content" Condition="'@(_RxdkMedia)' != ''">
-      <DeploymentFiles>@(_RxdkMedia->'$(RemoteRoot)\Media\%(RecursiveDir)=Media\%(RecursiveDir)%(Filename)%(Extension)', ';')</DeploymentFiles>
+    <Deploy Include="rxdk-media-content">
+      <DeploymentFiles>$(RemoteRoot)\Media=Media</DeploymentFiles>
     </Deploy>
   </ItemGroup>
 
