@@ -938,13 +938,17 @@ namespace Rxdk.Xbox360.Xbdm
             // course and the title terminates), then reboot.
             try { foreach (var tid in GetThreads()) try { NativeXbdm.DmContinueThread(tid, false); } catch { } } catch { }
             try { NativeXbdm.DmGo(); } catch { }
-            // Warm reboot returns to the dashboard (the debugged title is not relaunched).
+            // Cold-reboot to the dashboard. A WARM reboot re-launches the currently set
+            // title (DmBoot.Title == 0 is the default, so DmReboot(Warm) == relaunch the
+            // crashed title) -- and because we armed the xbdm initial breakpoint at launch
+            // (DmSetInitialBreakpoint), the relaunch halts at the title's boot break waiting
+            // for a debugger that has already disconnected, leaving the console stuck at the
+            // logo (a later Neighborhood reboot re-arms the same trap). A cold reboot does
+            // not relaunch the title, so it returns cleanly to the dashboard.
             int hr = -1;
-            try { hr = NativeXbdm.DmReboot(DmBoot.Warm); } catch { }
-            // If the warm reboot was blocked by a wedged title, force a cold reboot,
-            // which always returns the console to the dashboard.
+            try { hr = NativeXbdm.DmReboot(DmBoot.Cold); } catch { }
             if (!XbdmHResults.IsSuccess(hr))
-                try { NativeXbdm.DmReboot(DmBoot.Cold); } catch { }
+                try { NativeXbdm.DmReboot(DmBoot.Cold | DmBoot.Wait); } catch { }
         }
 
         public void Dispose()
