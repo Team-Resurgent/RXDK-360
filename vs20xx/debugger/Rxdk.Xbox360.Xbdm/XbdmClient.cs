@@ -461,7 +461,20 @@ namespace Rxdk.Xbox360.Xbdm
         {
             uint flags = DmBoot.Title | DmBoot.Wait | (cold ? DmBoot.Cold : 0);
             NativeXbdm.DmSetConnectionTimeout(120_000, 120_000);
-            Check("DmRebootEx", NativeXbdm.DmRebootEx(flags, imagePath, mediaPath ?? imagePath, cmdLine));
+            // The 3rd DmRebootEx arg is the media root that GAME: maps to. Default it to
+            // the title's DIRECTORY, not the .xex file -- pointing GAME: at the .xex makes
+            // ObCreateSymbolicLink fail with STATUS_NOT_A_DIRECTORY (0xC0000103), so
+            // game:\Media\... never resolves and any content load (shaders, textures)
+            // fails in Initialize().
+            string media = mediaPath ?? XeDirOf(imagePath);
+            Check("DmRebootEx", NativeXbdm.DmRebootEx(flags, imagePath, media, cmdLine));
+        }
+
+        // Directory portion of an Xbox path (devkit:\Foo\Foo.xex -> devkit:\Foo).
+        private static string XeDirOf(string xePath)
+        {
+            int i = xePath.Replace('/', '\\').LastIndexOf('\\');
+            return i > 0 ? xePath.Substring(0, i) : xePath;
         }
 
         public void Reboot(uint flags)
