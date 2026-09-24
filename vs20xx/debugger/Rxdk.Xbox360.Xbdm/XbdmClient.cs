@@ -886,13 +886,21 @@ namespace Rxdk.Xbox360.Xbdm
         public void RebootToDashboard()
         {
             _debuggerAttached = false;
-            try { NativeXbdm.DmStop(); } catch { }
-            try
-            {
-                NativeXbdm.DmSetConnectionTimeout(8_000, 8_000);
-                NativeXbdm.DmReboot(DmBoot.Warm);
-            }
-            catch { }
+            NativeXbdm.DmSetConnectionTimeout(8_000, 8_000);
+            // A crashed title sits halted at its unhandled exception. Just DmStop +
+            // DmReboot leaves the console frozen there and the reboot never takes, so
+            // Stop appears to hang and never returns to the dashboard. First release
+            // the faulted threads (continue WITHOUT handling, so the exception runs its
+            // course and the title terminates), then reboot.
+            try { foreach (var tid in GetThreads()) try { NativeXbdm.DmContinueThread(tid, false); } catch { } } catch { }
+            try { NativeXbdm.DmGo(); } catch { }
+            // Warm reboot returns to the dashboard (the debugged title is not relaunched).
+            int hr = -1;
+            try { hr = NativeXbdm.DmReboot(DmBoot.Warm); } catch { }
+            // If the warm reboot was blocked by a wedged title, force a cold reboot,
+            // which always returns the console to the dashboard.
+            if (!XbdmHResults.IsSuccess(hr))
+                try { NativeXbdm.DmReboot(DmBoot.Cold); } catch { }
         }
 
         public void Dispose()
