@@ -37,6 +37,21 @@ namespace Rxdk.Xbox360.DebugAdapter
         private readonly Dictionary<int, string> _expand = new();
         private readonly List<(string path, uint addr, int line)> _breakpoints = new();
 
+        // ---- source-line stepping engine ----
+        // 0 = idle, 1 = step-over (next), 2 = step-in, 3 = step-out. Driven from the
+        // break notification: each break either satisfies the step (surface "stopped")
+        // or re-arms and continues. Breakpoints are code traps (proven), never the LR
+        // register alone -- LR is clobbered mid-function, which is what sent a step-out
+        // running wild into unrelated code.
+        private int _stepMode;
+        private uint _stepTid;
+        private uint _stepStartSp;      // r1 of the frame the step began in
+        private int _stepStartLine;
+        private string _stepStartFile = "";
+        private bool _stepReturning;    // phase 2: a return address is planted, running to the caller
+        private bool _stepStopping;     // the pending break should surface as reason "step"
+        private readonly HashSet<uint> _stepBps = new();  // kit VAs we planted for the step
+
         public bool Terminated { get; private set; }
 
         public DebugSession(DapConnection dap)
@@ -403,38 +418,218 @@ namespace Rxdk.Xbox360.DebugAdapter
             // Reply first. ContinueAll can hit the next source BP on the notify thread
             // before this returns; VS then treats a later continue-success as "running"
             // and the Stop/break UI dies (seen as stopped seq after continue seq).
+            EndStep();   // drop any half-finished step so its traps don't linger
             _haveCtx = false;
             _dap.SendResponse(req, true, new { allThreadsContinued = true });
             Interlocked.Exchange(ref _paused, 0);
             try { _kit?.ContinueAll(); } catch { }
         }
 
-        private void Step(DapConnection.Message req)
+        private uint TitleBase => _titleBase != 0 ? _titleBase : TitleAddress.DefaultBase;
+        private uint KitToExe(uint kit) => TitleAddress.XexToExe(kit, TitleBase);
+        private uint ExeToKit(ulong exe) => TitleAddress.ExeToXex((uint)exe, TitleBase);
+
+        // PPC branch decode (instruction words are big-endian, so opcode == w >> 26).
+        private static bool IsReturn(uint w) => (w >> 26) == 19 && ((w >> 1) & 0x3FF) == 16;   // bclr/blr family
+        private static bool IsDirectCall(uint w) => (w >> 26) == 18 && (w & 1) == 1;            // bl / bla (LK=1)
+        private static uint DirectBranchTarget(uint pc, uint w)
         {
-            // Line step: set temporary breakpoints at the following line rows in the
-            // current function (and the return address), then run. A break clears them.
-            if (_haveCtx && _sym != null && _sym.Info != null && _kit != null)
-            {
-                var fn = _sym.FunctionAt(_ctx.Iar);
-                var cur = _sym.LineAt(_ctx.Iar);
-                if (fn != null)
+            int li = (int)(w & 0x03FFFFFC);
+            li = (li << 6) >> 6;                 // sign-extend the 26-bit displacement
+            return (w & 2) != 0 ? (uint)li : (uint)(pc + (uint)li);   // AA=1 => absolute
+        }
+
+        private void PlantStepBp(uint kitAddr)
+        {
+            if (_kit == null || _stepBps.Contains(kitAddr)) return;
+            // a user breakpoint already traps here; leave it (removing it later would
+            // silently drop the user's breakpoint). It still stops the step.
+            if (_breakpoints.Exists(e => e.addr == kitAddr)) return;
+            try { _kit.SetBreakpoint(kitAddr); _stepBps.Add(kitAddr); } catch { }
+        }
+
+        private void ClearStepBps()
+        {
+            if (_kit != null)
+                foreach (var a in _stepBps) { try { _kit.RemoveBreakpoint(a); } catch { } }
+            _stepBps.Clear();
+        }
+
+        private void EndStep() { ClearStepBps(); _stepMode = 0; _stepReturning = false; }
+
+        private uint? ReadInsn(uint kitAddr) => new KitMemory(_kit!).ReadDword(kitAddr);
+
+        // Plant a trap at every return instruction in the function so a step that leaves
+        // the frame is caught at the actual epilogue -- where LR truly holds the caller.
+        private void ArmReturns(DwarfFunction? fn)
+        {
+            if (fn == null) return;
+            for (uint a = (uint)fn.LowPc; a < (uint)fn.HighPc; a += 4)
+                if (ReadInsn(ExeToKit(a)) is uint w && IsReturn(w))
+                    PlantStepBp(ExeToKit(a));
+        }
+
+        // The callee's first statement past the prologue (so step-in lands on real code,
+        // not the opening brace); fall back to the entry.
+        private uint FirstBodyLine(DwarfFunction fn)
+        {
+            uint best = uint.MaxValue;
+            foreach (var u in _sym!.Info!.Units)
+                foreach (var r in u.Lines)
+                    if (!r.EndSequence && r.IsStmt && r.Address > fn.LowPc && r.Address < fn.HighPc && r.Address < best)
+                        best = (uint)r.Address;
+            return best == uint.MaxValue ? (uint)fn.LowPc : best;
+        }
+
+        // Plant the candidate traps for over/in in the current frame: every other
+        // statement line of the function, its returns, and (step-in only) the entry of
+        // any direct call made on the current source line.
+        private void ArmOverIn(uint exePc, DwarfFunction? fn)
+        {
+            if (fn == null) { ArmReturns(fn); return; }
+            uint nextStmt = (uint)fn.HighPc;
+            foreach (var u in _sym!.Info!.Units)
+                foreach (var r in u.Lines)
                 {
-                    foreach (var u in _sym.Info.Units)
-                        foreach (var r in u.Lines)
-                            if (!r.EndSequence && r.Address > _ctx.Iar && r.Address >= fn.LowPc && r.Address < fn.HighPc
-                                && (cur == null || r.Line != cur.Line))
-                                try { _kit.SetBreakpoint((uint)r.Address); } catch { }
-                    try { _kit.SetBreakpoint((uint)_ctx.Lr); } catch { }        // return
+                    if (r.EndSequence || r.Address < fn.LowPc || r.Address >= fn.HighPc) continue;
+                    if (r.IsStmt && r.Address > exePc && r.Address < nextStmt) nextStmt = (uint)r.Address;
+                    if (r.IsStmt && (r.Line != _stepStartLine || r.File != _stepStartFile))
+                        PlantStepBp(ExeToKit(r.Address));
                 }
-            }
+            ArmReturns(fn);
+            if (_stepMode == 2)   // step-in: follow direct calls that have source
+                for (uint a = exePc; a < nextStmt; a += 4)
+                {
+                    if (ReadInsn(ExeToKit(a)) is not uint w || !IsDirectCall(w)) continue;
+                    var tfn = _sym.FunctionAt(DirectBranchTarget(a, w));
+                    if (tfn != null) PlantStepBp(ExeToKit(FirstBodyLine(tfn)));
+                }
+        }
+
+        private void ArmForPc(uint exePc, DwarfFunction? fn)
+        {
+            if (_stepMode == 3) ArmReturns(fn);
+            else ArmOverIn(exePc, fn);
+        }
+
+        private void ResumeStep()
+        {
             _haveCtx = false;
-            _dap.SendResponse(req, true);
             Interlocked.Exchange(ref _paused, 0);
             try { _kit?.ContinueAll(); } catch { }
         }
 
+        // At a return instruction LR holds the caller PC; run there and stop in the caller.
+        private void RunToReturn(uint lr)
+        {
+            ClearStepBps();
+            _stepReturning = true;
+            if (lr != 0) PlantStepBp(lr);
+            ResumeStep();
+        }
+
+        private void Step(DapConnection.Message req)
+        {
+            EnsureContext();
+            int mode = req.Command == "stepIn" ? 2 : req.Command == "stepOut" ? 3 : 1;
+            _dap.SendResponse(req, true);
+
+            // No context/symbols: nothing to line-step against -- just run.
+            if (!_haveCtx || _sym?.Info == null || _kit == null || _ctx.Gpr == null)
+            {
+                EndStep();
+                _haveCtx = false;
+                Interlocked.Exchange(ref _paused, 0);
+                try { _kit?.ContinueAll(); } catch { }
+                return;
+            }
+
+            uint iar = _ctx.Iar;
+            uint exePc = KitToExe(iar);
+            var fn = _sym.FunctionAt(exePc);
+            var ln = _sym.LineAt(exePc);
+
+            ClearStepBps();
+            _stepMode = mode;
+            _stepTid = _stoppedThread;
+            _stepStartSp = (uint)_ctx.Gpr[1];
+            _stepStartLine = ln?.Line ?? -1;
+            _stepStartFile = ln?.File ?? "";
+            _stepReturning = false;
+
+            // Step-out, or a step from a frame with no known return instruction, runs to
+            // the caller via the epilogue; if we are already sitting on a return, use LR now.
+            if (mode == 3 && ReadInsn(iar) is uint w0 && IsReturn(w0)) RunToReturn(_ctx.Lr);
+            else { ArmForPc(exePc, fn); ResumeStep(); }
+        }
+
+        /// <summary>
+        /// A break arrived while a step is in flight. Returns true if the step is
+        /// satisfied (let the caller surface "stopped"), false if it re-armed and
+        /// continued the title.
+        /// </summary>
+        private bool HandleStepBreak(XbdmNotification n)
+        {
+            if (_stepMode == 0 || _kit == null || _sym?.Info == null) { EndStep(); return true; }
+
+            // A user breakpoint always wins: honour it and drop the step.
+            if (n.Addr is uint ua && _breakpoints.Exists(e => e.addr == ua)) { EndStep(); return true; }
+
+            uint tid = n.Thread ?? _stepTid; if (tid == 0) tid = _stepTid;
+            XContext ctx;
+            try { ctx = _kit.GetContext(tid, XContextFlags.Control | XContextFlags.Integer); }
+            catch { EndStep(); return true; }
+            if (ctx.Gpr == null) { EndStep(); return true; }
+
+            uint iar = ctx.Iar;
+            uint sp = (uint)ctx.Gpr[1];
+            uint exePc = KitToExe(iar);
+            var fn = _sym.FunctionAt(exePc);
+            var ln = _sym.LineAt(exePc);
+
+            // Phase 2: we planted the caller's return address and ran to it. Only stop
+            // once we are back in the starting frame or shallower -- unwinding a recursive
+            // call passes through the same code at deeper SPs, which must not stop the step.
+            if (_stepReturning)
+            {
+                if (ln != null && sp >= _stepStartSp) { _stepStopping = true; EndStep(); return true; }
+                // still in a deeper frame, or returned into code with no source: keep unwinding.
+                _stepReturning = false;
+                ClearStepBps(); ArmReturns(fn); ResumeStep(); return false;
+            }
+
+            // Sitting on a return instruction: capture the caller from LR and run out.
+            if (ReadInsn(iar) is uint w && IsReturn(w)) { RunToReturn(ctx.Lr); return false; }
+
+            bool deeper = sp < _stepStartSp;      // entered a callee
+            bool returned = sp > _stepStartSp;    // popped back to a caller
+            bool sameFrame = sp == _stepStartSp;
+
+            if (_stepMode == 3)   // step-out: only a shallower frame counts
+            {
+                if (returned && ln != null) { _stepStopping = true; EndStep(); return true; }
+                ClearStepBps(); ArmReturns(fn); ResumeStep(); return false;
+            }
+
+            // step-over / step-in
+            if (deeper)
+            {
+                // step-in stops at a callee that has source; otherwise (and always for
+                // step-over) run the callee to completion -- never wander into libc.
+                if (_stepMode == 2 && ln != null) { _stepStopping = true; EndStep(); return true; }
+                ClearStepBps(); ArmReturns(fn); ResumeStep(); return false;
+            }
+            if (returned && ln != null) { _stepStopping = true; EndStep(); return true; }
+            if (sameFrame && ln != null && (ln.Line != _stepStartLine || ln.File != _stepStartFile))
+            { _stepStopping = true; EndStep(); return true; }
+
+            // still on the start line (or a wrong-frame recursion hit): re-arm and run on.
+            ClearStepBps(); ArmForPc(exePc, fn); ResumeStep(); return false;
+        }
+
         private void Pause(DapConnection.Message req)
         {
+            EndStep();   // an explicit break wins over any in-flight step
             try { _kit?.Stop(); } catch { }
             _dap.SendResponse(req, true);
             if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
@@ -508,7 +703,14 @@ namespace Rxdk.Xbox360.DebugAdapter
                     return;
                 }
 
+                // A step is in flight: the engine decides whether this break satisfies it
+                // (fall through and surface "stopped") or re-arms and keeps the title running.
+                if (_stepMode != 0 && n.Kind is "break" or "singlestep")
+                    if (!HandleStepBreak(n)) return;
+
                 if (Interlocked.CompareExchange(ref _paused, 1, 0) != 0) return;
+
+                EndStep();   // stopping for any reason ends stepping; drop leftover step traps
 
                 uint tid = n.Thread ?? 1;
                 if (tid == 0) tid = 1;
@@ -517,12 +719,13 @@ namespace Rxdk.Xbox360.DebugAdapter
                 _expand.Clear();
                 _nextChildRef = LocalsRef + 1;
                 _dap.SendEvent("output", new { category = "console", output = "KIT " + n + "\n" });
-                string reason = n.Kind switch
+                string reason = _stepStopping ? "step" : n.Kind switch
                 {
                     "break" or "data" => "breakpoint",
                     "exception" or "assert" => "exception",
                     _ => "step",
                 };
+                _stepStopping = false;
                 _dap.SendEvent("stopped", new Dictionary<string, object?>
                 {
                     ["reason"] = reason,
