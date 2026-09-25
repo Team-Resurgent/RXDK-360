@@ -1,0 +1,4 @@
+narrow int n=3 d=-42 u=7 x=ff
+narrow flt n=3 a=1.500000 b=2.250000 c=3.750000
+wide int n=1 d=123
+wide flt n=3 a=1.500000 b=2.000000 c=3.500000

@@ -9,6 +9,10 @@ extern "C" {
 #endif
 int  DbgPrint(const char* fmt, ...);          /* kernel output channel (ordinal 3) */
 int  sprintf(char* buf, const char* fmt, ...);/* CRT formatter under test */
+int  sscanf(const char* s, const char* fmt, ...);            /* CRT scanner under test */
+#ifdef __cplusplus
+int  swscanf(const wchar_t* s, const wchar_t* fmt, ...);     /* wide scanner (wchar_t builtin: C++ tests only) */
+#endif
 unsigned int strlen(const char* s);
 char* strcpy(char* d, const char* s);
 int   memcmp(const void* a, const void* b, unsigned int n);
